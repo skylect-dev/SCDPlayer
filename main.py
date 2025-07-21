@@ -9,19 +9,219 @@ from version import __version__
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QFileDialog, QLabel, QSlider, QSizePolicy,
     QMainWindow, QAction, QMenu, QDialog, QListWidget, QListWidgetItem, QCheckBox, QMessageBox, QSplitter,
-    QGroupBox, QFrame
+    QGroupBox, QFrame, QProgressDialog, QSplashScreen
 )
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
-from PyQt5.QtCore import QUrl, Qt, QTimer
-from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import QUrl, Qt, QTimer, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QPoint
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QPolygon
+
+
+class SplashScreen(QSplashScreen):
+    """Custom splash screen for SCDPlayer"""
+    def __init__(self):
+        # Create splash screen pixmap
+        splash_pixmap = self.create_splash_pixmap()
+        super().__init__(splash_pixmap)
+        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+        
+        # Show loading message
+        self.showMessage("Loading SCDPlayer...", Qt.AlignCenter | Qt.AlignBottom, Qt.white)
+        
+    def create_splash_pixmap(self):
+        """Create the splash screen image"""
+        pixmap = QPixmap(400, 300)
+        pixmap.fill(QColor("#1a1d23"))
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Draw background gradient effect
+        for i in range(20):
+            color = QColor("#23272e")
+            color.setAlpha(255 - i * 10)
+            painter.setBrush(color)
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(200 - i * 10, 150 - i * 8, i * 20, i * 16)
+        
+        # Draw large music note icon
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#4a9eff"))
+        
+        # Note head
+        painter.drawEllipse(160, 180, 40, 30)
+        # Note stem
+        painter.drawRect(195, 120, 8, 70)
+        # Note flag
+        painter.drawEllipse(203, 110, 30, 40)
+        
+        # Draw title
+        font = QFont("Arial", 24, QFont.Bold)
+        painter.setFont(font)
+        painter.setPen(QColor("#f0f0f0"))
+        painter.drawText(pixmap.rect(), Qt.AlignCenter, "SCDPlayer")
+        
+        # Draw version
+        font = QFont("Arial", 12)
+        painter.setFont(font)
+        painter.setPen(QColor("#888888"))
+        version_rect = pixmap.rect()
+        version_rect.adjust(0, 40, 0, 0)
+        painter.drawText(version_rect, Qt.AlignCenter, f"v{__version__}")
+        
+        painter.end()
+        return pixmap
+
+
+class FileLoadThread(QThread):
+    """Thread for loading files in the background"""
+    finished = pyqtSignal(str)  # Signal emitted when file loading is complete
+    error = pyqtSignal(str)     # Signal emitted when an error occurs
+    
+    def __init__(self, file_path):
+        super().__init__()
+        self.file_path = file_path
+        
+    def run(self):
+        try:
+            file_ext = os.path.splitext(self.file_path)[1].lower()
+            if file_ext == '.scd':
+                # For SCD files, we need to convert them
+                self.finished.emit(self.file_path)
+            else:
+                # For other formats, just signal completion
+                self.finished.emit(self.file_path)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class ScrollingLabel(QLabel):
+    """Label that scrolls text when it's too long"""
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.full_text = text
+        self.scroll_timer = QTimer()
+        self.scroll_timer.timeout.connect(self.scroll_text)
+        self.scroll_position = 0
+        self.pause_counter = 0
+        self.pause_duration = 20  # Pause at start for 2 seconds (20 * 100ms)
+        self.end_pause_duration = 15  # Pause at end for 1.5 seconds
+        self.end_pause_counter = 0
+        self.visible_length = 35  # Increased from 30 for more visible text
+        self.scrolling_forward = True
+        
+    def setText(self, text):
+        self.full_text = text
+        self.scroll_position = 0
+        self.pause_counter = 0
+        self.end_pause_counter = 0
+        self.scrolling_forward = True
+        
+        if len(text) > self.visible_length:
+            super().setText(text[:self.visible_length])
+            self.scroll_timer.start(100)  # Update every 100ms
+        else:
+            super().setText(text)
+            self.scroll_timer.stop()
+    
+    def scroll_text(self):
+        if len(self.full_text) <= self.visible_length:
+            self.scroll_timer.stop()
+            return
+            
+        # Pause at the beginning
+        if self.scrolling_forward and self.pause_counter < self.pause_duration:
+            self.pause_counter += 1
+            return
+            
+        # Pause at the end
+        if not self.scrolling_forward and self.end_pause_counter < self.end_pause_duration:
+            self.end_pause_counter += 1
+            return
+            
+        # Create scrolling effect
+        if self.scrolling_forward:
+            if self.scroll_position <= len(self.full_text) - self.visible_length:
+                display_text = self.full_text[self.scroll_position:self.scroll_position + self.visible_length]
+                super().setText(display_text)
+                self.scroll_position += 1
+            else:
+                # Reached the end, start scrolling back
+                self.scrolling_forward = False
+                self.end_pause_counter = 0
+        else:
+            if self.scroll_position > 0:
+                self.scroll_position -= 1
+                display_text = self.full_text[self.scroll_position:self.scroll_position + self.visible_length]
+                super().setText(display_text)
+            else:
+                # Reached the beginning, start scrolling forward
+                self.scrolling_forward = True
+                self.pause_counter = 0
+
+
+def create_icon(icon_type, size=24):
+    """Create simple icons using QPainter"""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor("#f0f0f0"))
+    
+    center = size // 2
+    
+    if icon_type == "play":
+        # Triangle pointing right
+        triangle = QPolygon([
+            QPoint(center - 6, center - 8),
+            QPoint(center - 6, center + 8),
+            QPoint(center + 8, center)
+        ])
+        painter.drawPolygon(triangle)
+        
+    elif icon_type == "pause":
+        # Two rectangles
+        painter.drawRect(center - 8, center - 8, 5, 16)
+        painter.drawRect(center + 3, center - 8, 5, 16)
+        
+    elif icon_type == "stop":
+        # Square
+        painter.drawRect(center - 6, center - 6, 12, 12)
+        
+    elif icon_type == "previous":
+        # Left-pointing triangle with line
+        painter.drawRect(center - 8, center - 8, 2, 16)
+        triangle = QPolygon([
+            QPoint(center + 6, center - 8),
+            QPoint(center + 6, center + 8),
+            QPoint(center - 4, center)
+        ])
+        painter.drawPolygon(triangle)
+        
+    elif icon_type == "next":
+        # Right-pointing triangle with line
+        triangle = QPolygon([
+            QPoint(center - 6, center - 8),
+            QPoint(center - 6, center + 8),
+            QPoint(center + 4, center)
+        ])
+        painter.drawPolygon(triangle)
+        painter.drawRect(center + 6, center - 8, 2, 16)
+    
+    painter.end()
+    return QIcon(pixmap)
 
 
 class SCDPlayer(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f'SCDPlayer v{__version__}')
-        self.setGeometry(100, 100, 800, 600)
+        self.setGeometry(100, 100, 1000, 700)  # Bigger default window size
         self.config_file = 'scdplayer_config.json'
+        
+        # Set window icon
+        self.setWindowIcon(self.create_app_icon())
 
         # Load settings
         self.load_settings()
@@ -36,12 +236,13 @@ class SCDPlayer(QMainWindow):
         
         # Left panel - Player controls
         player_panel = QWidget()
-        player_panel.setFixedWidth(400)
+        player_panel.setFixedWidth(450)  # Slightly wider
         player_layout = QVBoxLayout()
+        player_layout.setSpacing(8)  # Reduce spacing between elements
         
-        # File info
+        # File info (at the top)
         info_layout = QHBoxLayout()
-        self.label = QLabel('No file loaded')
+        self.label = ScrollingLabel('No file loaded')
         self.label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         info_layout.addWidget(self.label)
 
@@ -50,12 +251,61 @@ class SCDPlayer(QMainWindow):
         self.time_label.setFixedWidth(120)
         info_layout.addWidget(self.time_label)
         player_layout.addLayout(info_layout)
-
-        # Seek bar
+        
+        # Seek bar (directly below title)
         self.seek_slider = QSlider(Qt.Horizontal)
         self.seek_slider.setRange(0, 0)
         self.seek_slider.sliderMoved.connect(self.seek_position)
         player_layout.addWidget(self.seek_slider)
+
+        # Playback controls with icons (directly below seek bar)
+        controls_layout = QHBoxLayout()
+        controls_layout.setSpacing(5)  # Reduce spacing between buttons
+        
+        self.prev_btn = QPushButton()
+        self.prev_btn.setIcon(create_icon("previous"))
+        self.prev_btn.setToolTip("Previous Track")
+        self.prev_btn.clicked.connect(self.previous_track)
+        self.prev_btn.setEnabled(False)
+        self.prev_btn.setFixedSize(40, 40)  # Make buttons more compact
+        controls_layout.addWidget(self.prev_btn)
+        
+        self.play_btn = QPushButton()
+        self.play_btn.setIcon(create_icon("play"))
+        self.play_btn.setToolTip("Play")
+        self.play_btn.clicked.connect(self.play_audio)
+        self.play_btn.setEnabled(False)
+        self.play_btn.setFixedSize(40, 40)
+        controls_layout.addWidget(self.play_btn)
+
+        self.pause_btn = QPushButton()
+        self.pause_btn.setIcon(create_icon("pause"))
+        self.pause_btn.setToolTip("Pause")
+        self.pause_btn.clicked.connect(self.pause_audio)
+        self.pause_btn.setEnabled(False)
+        self.pause_btn.setFixedSize(40, 40)
+        controls_layout.addWidget(self.pause_btn)
+
+        self.stop_btn = QPushButton()
+        self.stop_btn.setIcon(create_icon("stop"))
+        self.stop_btn.setToolTip("Stop")
+        self.stop_btn.clicked.connect(self.stop_audio)
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.setFixedSize(40, 40)
+        controls_layout.addWidget(self.stop_btn)
+        
+        self.next_btn = QPushButton()
+        self.next_btn.setIcon(create_icon("next"))
+        self.next_btn.setToolTip("Next Track")
+        self.next_btn.clicked.connect(self.next_track)
+        self.next_btn.setEnabled(False)
+        self.next_btn.setFixedSize(40, 40)
+        controls_layout.addWidget(self.next_btn)
+        
+        player_layout.addLayout(controls_layout)
+
+        # Add some spacing before load button
+        player_layout.addSpacing(15)
 
         # Load controls
         load_layout = QHBoxLayout()
@@ -64,23 +314,8 @@ class SCDPlayer(QMainWindow):
         load_layout.addWidget(self.load_file_btn)
         player_layout.addLayout(load_layout)
 
-        # Playback controls
-        controls_layout = QHBoxLayout()
-        self.play_btn = QPushButton('Play')
-        self.play_btn.clicked.connect(self.play_audio)
-        self.play_btn.setEnabled(False)
-        controls_layout.addWidget(self.play_btn)
-
-        self.pause_btn = QPushButton('Pause')
-        self.pause_btn.clicked.connect(self.pause_audio)
-        self.pause_btn.setEnabled(False)
-        controls_layout.addWidget(self.pause_btn)
-
-        self.stop_btn = QPushButton('Stop')
-        self.stop_btn.clicked.connect(self.stop_audio)
-        self.stop_btn.setEnabled(False)
-        controls_layout.addWidget(self.stop_btn)
-        player_layout.addLayout(controls_layout)
+        # Add some spacing before conversion buttons
+        player_layout.addSpacing(15)
 
         # Conversion controls
         convert_layout = QHBoxLayout()
@@ -94,6 +329,9 @@ class SCDPlayer(QMainWindow):
         self.convert_to_scd_btn.setEnabled(False)
         convert_layout.addWidget(self.convert_to_scd_btn)
         player_layout.addLayout(convert_layout)
+
+        # Add stretch to push everything to the top
+        player_layout.addStretch()
 
         player_panel.setLayout(player_layout)
         splitter.addWidget(player_panel)
@@ -121,12 +359,12 @@ class SCDPlayer(QMainWindow):
         folder_controls.addWidget(rescan_btn)
         header_layout.addLayout(folder_controls)
         
-        # Folder list
+        # Folder list with proper spacing
+        header_layout.addWidget(QLabel('Scan Folders:'))
         self.folder_list = QListWidget()
         self.folder_list.setMaximumHeight(100)
         for folder in self.library_folders:
             self.folder_list.addItem(folder)
-        header_layout.addWidget(QLabel('Scan Folders:'))
         header_layout.addWidget(self.folder_list)
         
         # Scan subdirs toggle
@@ -148,9 +386,17 @@ class SCDPlayer(QMainWindow):
         splitter.addWidget(library_panel)
         
         # Set splitter sizes
-        splitter.setSizes([400, 400])
+        splitter.setSizes([450, 550])  # Adjusted for bigger window
         main_layout.addWidget(splitter)
         main_widget.setLayout(main_layout)
+
+        # Loading progress dialog
+        self.progress_dialog = None
+        self.file_load_thread = None
+        
+        # Track current playlist position
+        self.current_playlist_index = -1
+        self.playlist = []
 
         # Basic style for a cleaner look
         self.setStyleSheet('''
@@ -236,6 +482,7 @@ class SCDPlayer(QMainWindow):
         self.player.positionChanged.connect(self.update_position)
         self.player.durationChanged.connect(self.update_duration)
         self.player.stateChanged.connect(self.update_state)
+        self.player.mediaStatusChanged.connect(self.media_status_changed)  # Add this for auto-advance
         self.wav_file = None
         self.duration = 0
 
@@ -246,6 +493,28 @@ class SCDPlayer(QMainWindow):
 
         # Initial library scan
         self.rescan_library()
+
+    def create_app_icon(self):
+        """Create application icon"""
+        pixmap = QPixmap(32, 32)
+        pixmap.fill(Qt.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Draw a music note-like icon
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#4a9eff"))
+        
+        # Note head
+        painter.drawEllipse(8, 20, 8, 6)
+        # Note stem
+        painter.drawRect(15, 10, 2, 16)
+        # Note flag
+        painter.drawEllipse(17, 8, 6, 8)
+        
+        painter.end()
+        return QIcon(pixmap)
 
     def load_settings(self):
         """Load settings from config file"""
@@ -333,10 +602,10 @@ class SCDPlayer(QMainWindow):
             pass
 
     def load_from_library(self, item):
-        """Load file from library double-click"""
+        """Load file from library double-click and auto-play"""
         file_path = item.data(Qt.UserRole)
         if file_path:
-            self.load_file_path(file_path)
+            self.load_file_path(file_path, auto_play=True)
 
     def load_file(self):
         """Load audio file via file dialog"""
@@ -347,44 +616,117 @@ class SCDPlayer(QMainWindow):
         if file_path:
             self.load_file_path(file_path)
 
-    def load_file_path(self, file_path):
+    def load_file_path(self, file_path, auto_play=False):
         """Load audio file from path - handles SCD, WAV, and other formats"""
+        self.auto_play_after_load = auto_play  # Store auto-play flag
+        
+        # Show loading indicator
+        self.progress_dialog = QProgressDialog("Loading audio file...", None, 0, 0, self)
+        self.progress_dialog.setWindowTitle("Loading")
+        self.progress_dialog.setWindowModality(Qt.ApplicationModal)
+        self.progress_dialog.setMinimumDuration(0)
+        self.progress_dialog.show()
+        
+        # Start file loading in thread
+        self.file_load_thread = FileLoadThread(file_path)
+        self.file_load_thread.finished.connect(self.on_file_loaded)
+        self.file_load_thread.error.connect(self.on_file_load_error)
+        self.file_load_thread.start()
+        
+    def on_file_loaded(self, file_path):
+        """Handle file loaded signal"""
         self.cleanup_temp_wavs()
         self.current_file = file_path
         file_ext = os.path.splitext(file_path)[1].lower()
-        self.label.setText(f'Loaded: {os.path.basename(file_path)}')
-        self.setWindowTitle(f'SCDPlayer v{__version__} - {os.path.basename(file_path)}')
+        filename = os.path.basename(file_path)
+        
+        self.label.setText(f'{filename}')
+        self.setWindowTitle(f'SCDPlayer v{__version__} - {filename}')
+        
+        # Update playlist
+        self.update_playlist_position(file_path)
         
         if file_ext == '.scd':
             # Convert SCD to WAV for playback
             self.wav_file = self.convert_scd_to_wav(file_path)
             if self.wav_file:
-                self.play_btn.setEnabled(True)
-                self.pause_btn.setEnabled(True)
-                self.stop_btn.setEnabled(True)
+                self.enable_playback_controls()
                 self.convert_to_wav_btn.setEnabled(True)
                 self.convert_to_scd_btn.setEnabled(False)  # Already SCD
                 self.player.setMedia(QMediaContent(QUrl.fromLocalFile(self.wav_file)))
             else:
                 self.label.setText('Failed to convert SCD file.')
+                self.progress_dialog.close()
                 return
-        else:
-            # Direct playback for WAV, MP3, OGG, FLAC
+        elif file_ext == '.wav':
+            # Direct WAV playback
             self.wav_file = None  # Not using temp file
-            self.play_btn.setEnabled(True)
-            self.pause_btn.setEnabled(True)
-            self.stop_btn.setEnabled(True)
+            self.enable_playback_controls()
+            self.convert_to_wav_btn.setEnabled(False)  # Already WAV
+            self.convert_to_scd_btn.setEnabled(True)
             
-            # Enable appropriate conversion buttons
-            if file_ext == '.wav':
-                self.convert_to_wav_btn.setEnabled(False)  # Already WAV
-                self.convert_to_scd_btn.setEnabled(True)
-            else:
-                # For MP3, OGG, FLAC - can convert to WAV or SCD
+            media_url = QUrl.fromLocalFile(os.path.abspath(file_path))
+            self.player.setMedia(QMediaContent(media_url))
+        else:
+            # For MP3, OGG, FLAC - convert to WAV for reliable playback
+            # This fixes codec issues on Windows systems
+            self.wav_file = self.convert_to_wav_temp(file_path)
+            if self.wav_file:
+                self.enable_playback_controls()
                 self.convert_to_wav_btn.setEnabled(True)
                 self.convert_to_scd_btn.setEnabled(True)
+                self.player.setMedia(QMediaContent(QUrl.fromLocalFile(self.wav_file)))
+            else:
+                self.label.setText(f'Failed to convert {file_ext.upper()} file for playback.')
+                self.progress_dialog.close()
+                return
             
-            self.player.setMedia(QMediaContent(QUrl.fromLocalFile(file_path)))
+        self.progress_dialog.close()
+        
+        # Auto-play if requested
+        if hasattr(self, 'auto_play_after_load') and self.auto_play_after_load:
+            self.auto_play_after_load = False  # Reset flag
+            QTimer.singleShot(100, self.play_audio)  # Short delay to ensure media is ready
+        
+    def on_file_load_error(self, error_msg):
+        """Handle file load error"""
+        self.label.setText(f'Error loading file: {error_msg}')
+        if self.progress_dialog:
+            self.progress_dialog.close()
+            
+    def enable_playback_controls(self):
+        """Enable all playback control buttons"""
+        self.play_btn.setEnabled(True)
+        self.pause_btn.setEnabled(True)
+        self.stop_btn.setEnabled(True)
+        self.prev_btn.setEnabled(len(self.playlist) > 1)
+        self.next_btn.setEnabled(len(self.playlist) > 1)
+        
+    def update_playlist_position(self, file_path):
+        """Update current position in playlist"""
+        # Get current library files as playlist
+        self.playlist = []
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            self.playlist.append(item.data(Qt.UserRole))
+            
+        # Find current file index
+        try:
+            self.current_playlist_index = self.playlist.index(file_path)
+        except ValueError:
+            self.current_playlist_index = -1
+            
+    def previous_track(self):
+        """Play previous track in playlist"""
+        if len(self.playlist) > 1 and self.current_playlist_index > 0:
+            self.current_playlist_index -= 1
+            self.load_file_path(self.playlist[self.current_playlist_index], auto_play=True)
+            
+    def next_track(self):
+        """Play next track in playlist"""
+        if len(self.playlist) > 1 and self.current_playlist_index < len(self.playlist) - 1:
+            self.current_playlist_index += 1
+            self.load_file_path(self.playlist[self.current_playlist_index], auto_play=True)
 
     def convert_current_to_wav(self):
         """Convert currently loaded audio file to WAV and save"""
@@ -474,13 +816,22 @@ class SCDPlayer(QMainWindow):
 
     def convert_with_ffmpeg(self, input_path, output_path, format):
         """Convert audio files using bundled FFmpeg"""
-        ffmpeg_path = self.get_bundled_path('ffmpeg', 'ffmpeg.exe')
+        ffmpeg_path = self.get_bundled_path('ffmpeg', 'bin/ffmpeg.exe')
         if not os.path.exists(ffmpeg_path):
             return False
         
         try:
+            # Hide console window by setting creation flags
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            
             cmd = [ffmpeg_path, '-i', input_path, '-y', output_path]
-            subprocess.run(cmd, check=True, capture_output=True)
+            subprocess.run(cmd, 
+                         check=True, 
+                         capture_output=True,
+                         startupinfo=startupinfo,
+                         creationflags=subprocess.CREATE_NO_WINDOW)
             return True
         except Exception:
             return False
@@ -494,6 +845,33 @@ class SCDPlayer(QMainWindow):
             return True
         except Exception:
             return False
+
+    def convert_to_wav_temp(self, input_path):
+        """Convert audio file to temporary WAV for playback"""
+        try:
+            # Create temp WAV file
+            fd, wav_path = tempfile.mkstemp(suffix='.wav', prefix='scdplayer_', dir=tempfile.gettempdir())
+            os.close(fd)
+            
+            # Convert using FFmpeg
+            success = self.convert_with_ffmpeg(input_path, wav_path, 'wav')
+            
+            if success:
+                # Track temp files for cleanup
+                if not hasattr(self, '_temp_wavs'):
+                    self._temp_wavs = []
+                self._temp_wavs.append(wav_path)
+                return wav_path
+            else:
+                # Clean up failed conversion
+                try:
+                    os.remove(wav_path)
+                except:
+                    pass
+                return None
+                
+        except Exception:
+            return None
 
     def get_bundled_path(self, subfolder, filename):
         """Get the path to a bundled executable in a subfolder, handling both development and PyInstaller modes"""
@@ -519,7 +897,16 @@ class SCDPlayer(QMainWindow):
             return None
         
         try:
-            subprocess.run([vgmstream_path, '-o', wav_path, scd_path], check=True)
+            # Hide console window by setting creation flags
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            
+            subprocess.run([vgmstream_path, '-o', wav_path, scd_path], 
+                         check=True, 
+                         startupinfo=startupinfo,
+                         creationflags=subprocess.CREATE_NO_WINDOW)
+            
             # Track temp wavs for cleanup
             if out_path is None:
                 if not hasattr(self, '_temp_wavs'):
@@ -540,6 +927,16 @@ class SCDPlayer(QMainWindow):
             self._temp_wavs = []
 
     def closeEvent(self, event):
+        # Clean up thread
+        if self.file_load_thread and self.file_load_thread.isRunning():
+            self.file_load_thread.quit()
+            self.file_load_thread.wait()
+        
+        # Clean up progress dialog
+        if self.progress_dialog:
+            self.progress_dialog.close()
+            
+        # Clean up temp files
         self.cleanup_temp_wavs()
         event.accept()
 
@@ -578,6 +975,14 @@ class SCDPlayer(QMainWindow):
     def update_state(self, state):
         if state == QMediaPlayer.StoppedState:
             self.timer.stop()
+            
+    def media_status_changed(self, status):
+        """Handle media status changes for auto-advance"""
+        from PyQt5.QtMultimedia import QMediaPlayer
+        if status == QMediaPlayer.EndOfMedia:
+            # Current track finished, play next track automatically
+            if len(self.playlist) > 1 and self.current_playlist_index < len(self.playlist) - 1:
+                self.next_track()
 
     @staticmethod
     def format_time(seconds):
@@ -599,7 +1004,32 @@ class SCDPlayer(QMainWindow):
 
 
 if __name__ == '__main__':
+    import time
     app = QApplication(sys.argv)
+    
+    # Show splash screen
+    splash = SplashScreen()
+    splash.show()
+    app.processEvents()  # Allow splash to show
+    
+    # Simulate loading time and create main window
+    splash.showMessage("Initializing audio system...", Qt.AlignCenter | Qt.AlignBottom, Qt.white)
+    app.processEvents()
+    time.sleep(0.5)  # Brief pause
+    
+    splash.showMessage("Loading interface...", Qt.AlignCenter | Qt.AlignBottom, Qt.white)
+    app.processEvents()
+    time.sleep(0.3)
+    
+    # Create main window
     window = SCDPlayer()
+    
+    # Show main window and close splash
+    splash.showMessage("Ready!", Qt.AlignCenter | Qt.AlignBottom, Qt.white)
+    app.processEvents()
+    time.sleep(0.2)
+    
     window.show()
+    splash.finish(window)
+    
     sys.exit(app.exec_())
