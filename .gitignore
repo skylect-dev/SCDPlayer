@@ -54,3 +54,6 @@ temp_*
 # Temporary files
 *.log
 *.bak
+
+# Copilot
+.github/copilot-instructions.md
