@@ -1,0 +1,12 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run SCDPlayer",
+            "type": "shell",
+            "command": "C:/Python313/python.exe main.py",
+            "group": "build",
+            "problemMatcher": []
+        }
+    ]
+}

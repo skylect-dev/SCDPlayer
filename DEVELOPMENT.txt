@@ -1,0 +1,114 @@
+SCDPlayer Development Setup Guide
+==================================
+
+This guide helps you set up the development environment and build dependencies.
+
+FOLDER STRUCTURE:
+================
+
+SCDPlayer/
+├── main.py                 # Main application
+├── version.py              # Version information
+├── requirements.txt        # Python dependencies
+├── SCDPlayer.spec          # PyInstaller specification
+├── build.bat / build.ps1   # Build scripts
+├── vgmstream/              # vgmstream folder (not in git)
+│   ├── vgmstream-cli.exe  # Main vgmstream executable
+│   ├── *.dll              # Required DLL files
+│   └── ...                # Other vgmstream files
+├── ffmpeg/                 # FFmpeg folder (not in git)
+│   ├── ffmpeg.exe         # Main FFmpeg executable
+│   ├── *.dll              # Required DLL files
+│   └── ...                # Other FFmpeg files
+└── README.md
+
+SETTING UP DEPENDENCIES:
+========================
+
+1. VGMSTREAM SETUP:
+   - Go to: https://github.com/vgmstream/vgmstream/releases
+   - Download the latest Windows release (vgmstream-win64.zip)
+   - Create a "vgmstream" folder in your SCDPlayer directory
+   - Extract ALL files from the zip into the vgmstream/ folder
+   - Ensure vgmstream-cli.exe and all DLL files are in vgmstream/
+
+2. FFMPEG SETUP:
+   - Go to: https://ffmpeg.org/download.html (Windows builds)
+   - Download the "essentials" build (smaller) or "full" build
+   - Create an "ffmpeg" folder in your SCDPlayer directory
+   - Extract ALL files from the zip into the ffmpeg/ folder
+   - Ensure ffmpeg.exe and all DLL files are in ffmpeg/
+
+3. PYTHON DEPENDENCIES:
+   pip install PyQt5 pyinstaller
+
+BUILDING THE EXECUTABLE:
+========================
+
+METHOD 1 - Windows Batch:
+   Double-click build.bat or run from command line
+
+METHOD 2 - PowerShell:
+   Run build.ps1 from PowerShell
+
+METHOD 3 - Manual:
+   python -m PyInstaller SCDPlayer.spec
+
+The build process will:
+- Check for vgmstream and FFmpeg folders
+- Bundle all executables and DLLs
+- Create a single SCDPlayer.exe file
+- Report which features are included
+
+WHY SUBFOLDERS?
+===============
+
+Both vgmstream and FFmpeg come with multiple DLL files that are required
+for proper operation:
+
+VGMSTREAM DLLS (examples):
+- libao-4.dll
+- libFLAC-8.dll  
+- libgcc_s_seh-1.dll
+- libstdc++-6.dll
+- libwinpthread-1.dll
+- ... and more
+
+FFMPEG DLLS (examples):
+- avcodec-60.dll
+- avformat-60.dll
+- avutil-58.dll
+- swresample-4.dll
+- ... and more
+
+By using subfolders, we ensure ALL required files are bundled correctly
+into the final executable.
+
+TESTING:
+========
+
+Before building, test that dependencies work:
+
+1. Test vgmstream:
+   vgmstream\vgmstream-cli.exe your_scd_file.scd
+
+2. Test FFmpeg:
+   ffmpeg\ffmpeg.exe -i input.mp3 output.wav
+
+3. Test application:
+   python main.py
+
+TROUBLESHOOTING:
+================
+
+Q: Build fails with "file not found"
+A: Ensure vgmstream/ and ffmpeg/ folders exist with all files
+
+Q: Executable doesn't support SCD files
+A: vgmstream folder missing or incomplete - redownload and extract all files
+
+Q: Executable can't convert MP3/OGG/FLAC
+A: FFmpeg folder missing or incomplete - redownload and extract all files
+
+Q: Application runs but crashes when playing files
+A: Missing DLL files - ensure you extracted ALL files from the archives

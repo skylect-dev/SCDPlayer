@@ -1,0 +1,74 @@
+name: Build and Release SCDPlayer
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install PyQt5 pyinstaller
+    
+    - name: Download dependencies
+      run: |
+        # Create directories
+        mkdir vgmstream
+        mkdir ffmpeg
+        
+        # Download vgmstream
+        Invoke-WebRequest -Uri "https://github.com/vgmstream/vgmstream/releases/latest/download/vgmstream-win64.zip" -OutFile "vgmstream.zip"
+        Expand-Archive -Path "vgmstream.zip" -DestinationPath "vgmstream-temp"
+        Copy-Item -Path "vgmstream-temp\*" -Destination "vgmstream\" -Recurse -Force
+        
+        # Download FFmpeg
+        Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "ffmpeg.zip"
+        Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg-temp"
+        $ffmpegDir = Get-ChildItem -Path "ffmpeg-temp" -Directory | Select-Object -First 1
+        Copy-Item -Path "$($ffmpegDir.FullName)\*" -Destination "ffmpeg\" -Recurse -Force
+    
+    - name: Build executable
+      run: |
+        pyinstaller SCDPlayer.spec
+        
+    - name: Create release package
+      run: |
+        mkdir SCDPlayer-Release
+        copy dist\SCDPlayer.exe SCDPlayer-Release\
+        copy README.md SCDPlayer-Release\
+        copy QUICKSTART.txt SCDPlayer-Release\
+        echo "SCDPlayer - Portable Audio Player" > SCDPlayer-Release\README.txt
+        echo "=================================" >> SCDPlayer-Release\README.txt
+        echo "" >> SCDPlayer-Release\README.txt
+        echo "This is a completely self-contained executable." >> SCDPlayer-Release\README.txt
+        echo "No additional downloads required!" >> SCDPlayer-Release\README.txt
+        echo "" >> SCDPlayer-Release\README.txt
+        echo "Simply run SCDPlayer.exe to start playing your game music files." >> SCDPlayer-Release\README.txt
+    
+    - name: Archive Release
+      run: |
+        Compress-Archive -Path SCDPlayer-Release\* -DestinationPath SCDPlayer-${{ github.ref_name }}.zip
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: SCDPlayer-${{ github.ref_name }}.zip
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
