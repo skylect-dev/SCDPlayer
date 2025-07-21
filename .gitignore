@@ -24,7 +24,7 @@ MANIFEST
 
 # PyInstaller
 *.manifest
-*.spec
+
 
 # Virtual environments
 venv/
@@ -54,3 +54,6 @@ temp_*
 # Temporary files
 *.log
 *.bak
+
+# Copilot
+.github/copilot-instructions.md

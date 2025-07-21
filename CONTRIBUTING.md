@@ -1,6 +1,6 @@
 # Contributing to SCDPlayer
 
-Thank you for your interest in contributing to SCDPlayer! This guide will help you get started.
+Thank you for contributing to SCDPlayer! This guide will help you get started with development.
 
 ## Development Setup
 
@@ -12,20 +12,16 @@ Thank you for your interest in contributing to SCDPlayer! This guide will help y
 
 2. **Install Python dependencies:**
    ```bash
-   pip install -r requirements.txt
+   pip install PyQt5 pyinstaller
    ```
 
 3. **Set up external dependencies:**
    
-   **For vgmstream:**
-   - Download from: https://github.com/vgmstream/vgmstream/releases
-   - Create `vgmstream/` folder in project root
-   - Extract all files to `vgmstream/` folder
+   Create folders and download dependencies:
+   - **vgmstream/**: Download from [vgmstream releases](https://github.com/vgmstream/vgmstream/releases)
+   - **ffmpeg/**: Download from [FFmpeg](https://ffmpeg.org/download.html) - extract to `ffmpeg/bin/`
 
-   **For FFmpeg (optional):**
-   - Download from: https://ffmpeg.org/download.html
-   - Create `ffmpeg/` folder in project root  
-   - Extract all files to `ffmpeg/` folder
+   See DEVELOPMENT.txt for detailed setup instructions.
 
 4. **Test the setup:**
    ```bash
@@ -36,79 +32,84 @@ Thank you for your interest in contributing to SCDPlayer! This guide will help y
 
 ```
 SCDPlayer/
-├── main.py                 # Main application
-├── version.py              # Version information
-├── requirements.txt        # Python dependencies
-├── SCDPlayer.spec          # PyInstaller configuration
+├── main.py                 # Main application with GUI
+├── version.py              # Version information  
+├── DEVELOPMENT.txt         # Detailed setup guide
+├── SCDPlayer.spec          # PyInstaller build config
 ├── build.bat/.ps1          # Build scripts
-├── .github/workflows/      # GitHub Actions
-├── vgmstream/             # External dependency (not in git)
-├── ffmpeg/                # External dependency (not in git)
-└── docs/                  # Documentation
+├── .github/workflows/      # Automated CI/CD
+├── vgmstream/             # SCD conversion tools (not in git)
+├── ffmpeg/                # Audio conversion tools (not in git)
+└── README.md              # User documentation
 ```
+
+## Development Workflow
+
+**Branch Strategy:**
+- `main`: Stable releases only
+- `dev`: Active development 
+- `feature/name`: New features
+
+**Making Changes:**
+1. Fork the repository
+2. Create feature branch from `dev`: `git checkout -b feature/your-feature`
+3. Make your changes
+4. Test thoroughly
+5. Submit PR to `dev` branch
+
+**Code Guidelines:**
+- Follow PEP 8 style guidelines
+- Add docstrings to new functions
+- Test with various audio files
+- Ensure UI remains responsive
 
 ## Building
 
-To build the executable:
+Build the standalone executable:
 
-1. **Windows Batch:**
-   ```bash
-   build.bat
-   ```
+```bash
+# Windows batch
+build.bat
 
-2. **PowerShell:**
-   ```bash
-   ./build.ps1
-   ```
+# PowerShell  
+./build.ps1
 
-3. **Manual:**
-   ```bash
-   python -m PyInstaller SCDPlayer.spec
-   ```
-
-## Code Style
-
-- Follow PEP 8 style guidelines
-- Use descriptive variable names
-- Add docstrings to functions and classes
-- Keep functions focused and small
+# Manual
+pyinstaller SCDPlayer.spec
+```
 
 ## Testing
 
-Before submitting changes:
+Test these scenarios before submitting:
+- SCD file playback and conversion
+- MP3/OGG/FLAC playback (auto-conversion to WAV)
+- Library folder scanning
+- Auto-play and playlist advancement
+- UI responsiveness during file loading
+- Built executable functionality
 
-1. Test with various SCD files
-2. Test with different audio formats (WAV, MP3, OGG, FLAC)
-3. Test library scanning functionality
-4. Test conversion features
-5. Ensure the built executable works
+## Features Overview
 
-## Pull Requests
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+**Current Features:**
+- Multi-format audio playback (SCD, WAV, MP3, OGG, FLAC)
+- Professional dark theme with splash screen
+- Auto-play and playlist management
+- Smart codec handling (MP3 → WAV conversion)
+- Library folder scanning
+- Audio format conversion
+- Scrolling track titles
 
 ## Reporting Issues
 
-When reporting issues, please include:
-
-- Operating System and version
-- Python version
+Include in your issue report:
+- Windows version
+- Audio file format and source
 - Steps to reproduce
-- Expected vs actual behavior
-- Screenshots if relevant
-- Sample files (if safe to share)
+- Screenshots if helpful
+- Error messages or logs
 
 ## External Dependencies
 
-**Note:** vgmstream and FFmpeg are NOT included in the repository due to:
-- Large file sizes
-- Licensing considerations
-- Frequent updates
+**vgmstream** and **FFmpeg** are not in the repository due to size and licensing. They're downloaded during automated builds and must be set up manually for development.
 
-These are downloaded automatically during CI builds and must be set up manually for development.
-
-Thank you for contributing!
+Thanks for contributing!
