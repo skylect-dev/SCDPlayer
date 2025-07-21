@@ -52,8 +52,9 @@ jobs:
         Remove-Item "dist\SCDPlayer\_internal\vgmstream\README.md" -Force -ErrorAction SilentlyContinue
         Remove-Item "dist\SCDPlayer\_internal\vgmstream\USAGE.md" -Force -ErrorAction SilentlyContinue
         Remove-Item "dist\SCDPlayer\_internal\vgmstream\COPYING" -Force -ErrorAction SilentlyContinue
-        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\LICENSE.txt" -Force -ErrorAction SilentlyContinue
         Remove-Item "dist\SCDPlayer\_internal\ffmpeg\doc" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\README.txt" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\LICENSE.txt" -Force -ErrorAction SilentlyContinue
         
         # Remove extra FFmpeg executables (keep only ffmpeg.exe)
         Remove-Item "dist\SCDPlayer\_internal\ffmpeg\bin\ffplay.exe" -Force -ErrorAction SilentlyContinue
@@ -84,6 +85,16 @@ jobs:
         Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\translations" -Recurse -Force -ErrorAction SilentlyContinue
         
         Write-Host "Cleanup completed - removed documentation, extra executables, and unused plugins"
+        
+        # Debug: Show what files remain after cleanup
+        Write-Host "Remaining FFmpeg files:"
+        if (Test-Path "dist\SCDPlayer\_internal\ffmpeg\bin") {
+            Get-ChildItem "dist\SCDPlayer\_internal\ffmpeg\bin" | ForEach-Object { Write-Host "  $_" }
+        }
+        Write-Host "Remaining vgmstream files:"
+        if (Test-Path "dist\SCDPlayer\_internal\vgmstream") {
+            Get-ChildItem "dist\SCDPlayer\_internal\vgmstream" | ForEach-Object { Write-Host "  $_" }
+        }
         
     - name: Create release package
       run: |
