@@ -16,7 +16,24 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        # Exclude unused Python modules to reduce size
+        'tkinter',
+        'tkinter.*',
+        'matplotlib',
+        'PIL.ImageQt',
+        'distutils',
+        'setuptools',
+        'email',
+        'http',
+        'urllib3',
+        'xml',
+        'unittest',
+        'pydoc',
+        'doctest',
+        # Exclude modules that might auto-detect FFmpeg/vgmstream DLLs
+        # We'll use our manually downloaded versions instead
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

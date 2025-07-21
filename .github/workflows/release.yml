@@ -44,7 +44,46 @@ jobs:
     
     - name: Build executable
       run: |
-        pyinstaller SCDPlayer.spec
+        python -m PyInstaller SCDPlayer.spec
+        
+    - name: Clean up redundant files
+      run: |
+        # Remove documentation files from tool directories
+        Remove-Item "dist\SCDPlayer\_internal\vgmstream\README.md" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\vgmstream\USAGE.md" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\vgmstream\COPYING" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\LICENSE.txt" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\doc" -Recurse -Force -ErrorAction SilentlyContinue
+        
+        # Remove extra FFmpeg executables (keep only ffmpeg.exe)
+        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\bin\ffplay.exe" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\bin\ffprobe.exe" -Force -ErrorAction SilentlyContinue
+        
+        # Remove unused FFmpeg development files
+        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\include" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\lib" -Recurse -Force -ErrorAction SilentlyContinue
+        
+        # Remove unused Qt plugins to reduce size (keep only essential ones)
+        # Keep qwindows.dll (Windows platform), remove others
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\platforms\qminimal.dll" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\platforms\qoffscreen.dll" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\platforms\qwebgl.dll" -Force -ErrorAction SilentlyContinue
+        
+        # Remove unused image format plugins (keep common ones)
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\imageformats\qicns.dll" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\imageformats\qtga.dll" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\imageformats\qwbmp.dll" -Force -ErrorAction SilentlyContinue
+        
+        # Remove unused Qt plugin directories
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\bearer" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\generic" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\playlistformats" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\platformthemes" -Recurse -Force -ErrorAction SilentlyContinue
+        
+        # Remove Qt translations (English-only app)
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\translations" -Recurse -Force -ErrorAction SilentlyContinue
+        
+        Write-Host "Cleanup completed - removed documentation, extra executables, and unused plugins"
         
     - name: Create release package
       run: |
