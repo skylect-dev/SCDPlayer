@@ -1,53 +1,63 @@
 # SCDPlayer
 
-A standalone Windows GUI application for playing SCD music files from games like Kingdom Hearts and Final Fantasy XIV.
+A Windows audio player for SCD music files from games like Kingdom Hearts and Final Fantasy XIV. Also supports WAV, MP3, OGG, and FLAC files.
 
 ## Features
 
-- **Multi-format Support**: Play SCD, WAV, MP3, OGG, and FLAC files
-- **Audio Library**: Scan folders for audio files with persistent settings
-- **File Conversion**: Convert between different audio formats
-- **Modern GUI**: Dark theme with professional audio player interface
-- **Temporary File Handling**: SCD files are converted to temporary WAV files for playback
-
-## Requirements
-
-**For Pre-built Executable:**
-- No additional requirements! Everything is bundled.
-
-**For Running from Source:**
-- Python 3.13.5 or later
-- PyQt5
-- **vgmstream** - Required for SCD file playback and conversion
-- **FFmpeg** - Optional, for converting MP3/OGG/FLAC files
+- Play SCD, WAV, MP3, OGG, and FLAC audio files
+- Modern dark interface with splash screen
+- Audio library with folder scanning
+- Auto-play and playlist functionality
+- Convert between audio formats
+- Scrolling track titles for long filenames
+- All dependencies bundled in executable
 
 ## Installation
 
-### Option 1: Download Pre-built Executable (Recommended)
-1. Go to the [Releases](https://github.com/skylect-dev/SCDPlayer/releases) page
-2. Download the latest `SCDPlayer-v*.zip` file
-3. Extract the ZIP file to a folder of your choice
-4. Run `SCDPlayer.exe` - **Everything is already bundled!**
+**Download the executable (recommended):**
+1. Go to [Releases](https://github.com/skylect-dev/SCDPlayer/releases)
+2. Download `SCDPlayer-v1.0.2.zip`
+3. Extract and run `SCDPlayer.exe`
 
-**No additional downloads needed!** The executable includes:
-- ✅ **vgmstream** (for SCD files)  
-- ✅ **FFmpeg** (for MP3/OGG/FLAC conversion)
-- ✅ **All Python dependencies**
+No additional setup needed - everything is included.
 
-### Option 2: Run from Source
-1. Install Python dependencies:
-   ```
-   pip install PyQt5
-   ```
+**Run from source:**
+```bash
+git clone https://github.com/skylect-dev/SCDPlayer.git
+cd SCDPlayer
+pip install PyQt5
+python main.py
+```
 
-2. Create `vgmstream/` and `ffmpeg/` subfolders in the project directory
-3. Download vgmstream and extract all files to `vgmstream/` folder
-4. Download FFmpeg and extract all files to `ffmpeg/` folder
+You'll also need to download vgmstream and FFmpeg to the appropriate folders.
 
 ## Usage
 
-1. Run the application:
-   ```
+1. Launch SCDPlayer
+2. Add folders containing your audio files
+3. Double-click any file to play
+4. Use the conversion buttons to convert files between formats
+
+The app remembers your library folders and settings.
+
+## Technical Notes
+
+- SCD conversion uses vgmstream
+- MP3/OGG/FLAC conversion uses FFmpeg  
+- MP3 files are automatically converted to WAV for reliable playback
+- Tracks auto-advance when finished
+
+## Building
+
+To build your own executable:
+```bash
+pip install PyInstaller
+pyinstaller scdplayer.spec
+```
+
+## License
+
+MIT License - see LICENSE file for details.
    python main.py
    ```
 
