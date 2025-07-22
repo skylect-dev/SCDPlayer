@@ -44,31 +44,95 @@ jobs:
     
     - name: Build executable
       run: |
-        pyinstaller SCDPlayer.spec
+        python -m PyInstaller SCDPlayer.spec
+        
+    - name: Clean up redundant files
+      run: |
+        # Remove documentation files from tool directories
+        Remove-Item "dist\SCDPlayer\_internal\vgmstream\README.md" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\vgmstream\USAGE.md" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\vgmstream\COPYING" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\doc" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\README.txt" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\LICENSE.txt" -Force -ErrorAction SilentlyContinue
+        
+        # Remove extra FFmpeg executables (keep only ffmpeg.exe)
+        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\bin\ffplay.exe" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\bin\ffprobe.exe" -Force -ErrorAction SilentlyContinue
+        
+        # Remove unused FFmpeg development files
+        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\include" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\ffmpeg\lib" -Recurse -Force -ErrorAction SilentlyContinue
+        
+        # Remove unused Qt plugins to reduce size (keep only essential ones)
+        # Keep qwindows.dll (Windows platform), remove others
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\platforms\qminimal.dll" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\platforms\qoffscreen.dll" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\platforms\qwebgl.dll" -Force -ErrorAction SilentlyContinue
+        
+        # Remove unused image format plugins (keep common ones)
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\imageformats\qicns.dll" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\imageformats\qtga.dll" -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\imageformats\qwbmp.dll" -Force -ErrorAction SilentlyContinue
+        
+        # Remove unused Qt plugin directories
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\bearer" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\generic" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\playlistformats" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\plugins\platformthemes" -Recurse -Force -ErrorAction SilentlyContinue
+        
+        # Remove Qt translations (English-only app)
+        Remove-Item "dist\SCDPlayer\_internal\PyQt5\Qt5\translations" -Recurse -Force -ErrorAction SilentlyContinue
+        
+        Write-Host "Cleanup completed - removed documentation, extra executables, and unused plugins"
+        
+        # Debug: Show what files remain after cleanup
+        Write-Host "Remaining FFmpeg files:"
+        if (Test-Path "dist\SCDPlayer\_internal\ffmpeg\bin") {
+            Get-ChildItem "dist\SCDPlayer\_internal\ffmpeg\bin" | ForEach-Object { Write-Host "  $_" }
+        }
+        Write-Host "Remaining vgmstream files:"
+        if (Test-Path "dist\SCDPlayer\_internal\vgmstream") {
+            Get-ChildItem "dist\SCDPlayer\_internal\vgmstream" | ForEach-Object { Write-Host "  $_" }
+        }
         
     - name: Create release package
       run: |
+        # Create release directory structure
         mkdir SCDPlayer-Release
-        copy dist\SCDPlayer.exe SCDPlayer-Release\
+        
+        # Copy the entire PyInstaller onedir output
+        Copy-Item -Path "dist\SCDPlayer\*" -Destination "SCDPlayer-Release\" -Recurse -Force
+        
+        # Add additional documentation
         copy README.md SCDPlayer-Release\
-        copy QUICKSTART.txt SCDPlayer-Release\
-        echo "SCDPlayer - Portable Audio Player" > SCDPlayer-Release\README.txt
-        echo "=================================" >> SCDPlayer-Release\README.txt
-        echo "" >> SCDPlayer-Release\README.txt
-        echo "This is a completely self-contained executable." >> SCDPlayer-Release\README.txt
-        echo "No additional downloads required!" >> SCDPlayer-Release\README.txt
-        echo "" >> SCDPlayer-Release\README.txt
-        echo "Simply run SCDPlayer.exe to start playing your game music files." >> SCDPlayer-Release\README.txt
+        
+        # Create a simple readme for users
+        echo "SCDPlayer - Portable Audio Player for Game Music" > SCDPlayer-Release\INSTRUCTIONS.txt
+        echo "=================================================" >> SCDPlayer-Release\INSTRUCTIONS.txt
+        echo "" >> SCDPlayer-Release\INSTRUCTIONS.txt
+        echo "To run SCDPlayer:" >> SCDPlayer-Release\INSTRUCTIONS.txt
+        echo "1. Extract this entire folder anywhere on your computer" >> SCDPlayer-Release\INSTRUCTIONS.txt
+        echo "2. Double-click SCDPlayer.exe to start the application" >> SCDPlayer-Release\INSTRUCTIONS.txt
+        echo "" >> SCDPlayer-Release\INSTRUCTIONS.txt
+        echo "Features:" >> SCDPlayer-Release\INSTRUCTIONS.txt
+        echo "- Play SCD files from Kingdom Hearts and Final Fantasy XIV" >> SCDPlayer-Release\INSTRUCTIONS.txt
+        echo "- Support for WAV, MP3, OGG, FLAC audio formats" >> SCDPlayer-Release\INSTRUCTIONS.txt
+        echo "- Audio file conversion capabilities" >> SCDPlayer-Release\INSTRUCTIONS.txt
+        echo "- Built-in audio library management" >> SCDPlayer-Release\INSTRUCTIONS.txt
+        echo "" >> SCDPlayer-Release\INSTRUCTIONS.txt
+        echo "No additional downloads or installations required!" >> SCDPlayer-Release\INSTRUCTIONS.txt
     
     - name: Archive Release
       run: |
-        copy SCDPlayer-Release\SCDPlayer.exe SCDPlayer-${{ github.ref_name }}.exe
+        # Create ZIP file for the release
+        Compress-Archive -Path "SCDPlayer-Release\*" -DestinationPath "SCDPlayer-${{ github.ref_name }}-Windows.zip"
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: SCDPlayer-${{ github.ref_name }}.exe
+        files: SCDPlayer-${{ github.ref_name }}-Windows.zip
         draft: false
         prerelease: false
         generate_release_notes: true
