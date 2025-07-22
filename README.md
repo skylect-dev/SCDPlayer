@@ -2,16 +2,6 @@
 
 A Windows audio player for SCD music files from games like Kingdom Hearts and Final Fantasy XIV. Also supports WAV, MP3, OGG, and FLAC files.
 
-## Features
-
-- Play SCD, WAV, MP3, OGG, and FLAC audio files
-- Modern dark interface with splash screen
-- Audio library with folder scanning
-- Auto-play and playlist functionality
-- Convert between audio formats
-- Scrolling track titles for long filenames
-- All dependencies bundled in executable
-
 ## Installation
 
 **Download the executable (recommended):**
