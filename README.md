@@ -2,16 +2,6 @@
 
 A Windows audio player for SCD music files from games like Kingdom Hearts and Final Fantasy XIV. Also supports WAV, MP3, OGG, and FLAC files.
 
-## Features
-
-- Play SCD, WAV, MP3, OGG, and FLAC audio files
-- Modern dark interface with splash screen
-- Audio library with folder scanning
-- Auto-play and playlist functionality
-- Convert between audio formats
-- Scrolling track titles for long filenames
-- All dependencies bundled in executable
-
 ## Installation
 
 **Download the executable (recommended):**
@@ -34,37 +24,10 @@ You'll also need to download vgmstream and FFmpeg to the appropriate folders.
 ## Usage
 
 1. Launch SCDPlayer
-2. Add folders containing your audio files
-3. Double-click any file to play
+2. Add folders containing your audio files using the "Add Folder" button
+3. Double-click any file in the library to play
 4. Use the conversion buttons to convert files between formats
-
-The app remembers your library folders and settings.
-
-## Technical Notes
-
-- SCD conversion uses vgmstream
-- MP3/OGG/FLAC conversion uses FFmpeg  
-- MP3 files are automatically converted to WAV for reliable playback
-- Tracks auto-advance when finished
-
-## Building
-
-To build your own executable:
-```bash
-pip install PyInstaller
-pyinstaller scdplayer.spec
-```
-
-## License
-
-MIT License - see LICENSE file for details.
-   python main.py
-   ```
-
-2. **Add Library Folders**: Use the "Add Folder" button to scan directories for audio files
-3. **Load Files**: Either use "Load File" button or double-click files in the library
-4. **Convert Files**: Use the conversion buttons to convert between formats
-5. **Settings Persistence**: Your library folders and preferences are automatically saved
+5. Your library folders and preferences are automatically saved
 
 ## Supported Formats
 
@@ -74,12 +37,14 @@ MIT License - see LICENSE file for details.
 - **OGG**: Compressed audio (requires FFmpeg for conversion)  
 - **FLAC**: Lossless compressed audio (requires FFmpeg for conversion)
 
-## Notes
+## Technical Notes
 
 - **Portable Executable**: The `.exe` version is completely self-contained with all dependencies bundled
 - SCD to WAV conversion uses bundled vgmstream
 - WAV to SCD conversion is currently a placeholder (copies file with .scd extension)
 - Format conversions use bundled FFmpeg
+- MP3 files are automatically converted to WAV for reliable playback
+- Tracks auto-advance when finished
 - Temporary files are automatically cleaned up when the application closes
 
 ## Building from Source
@@ -115,3 +80,7 @@ pyinstaller SCDPlayer.spec
 ```
 
 The resulting executable is completely portable and self-contained!
+
+## License
+
+MIT License - see LICENSE file for details.
