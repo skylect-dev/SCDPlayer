@@ -147,10 +147,8 @@ class AutoUpdater:
         )
         
         if reply == QMessageBox.Yes:
-            # Prefer exe update if available, otherwise use zip
-            if update_info['exe_asset']:
-                self.download_update(update_info['exe_asset']['browser_download_url'], 'exe')
-            elif update_info['zip_asset']:
+            # For onedir builds, always use ZIP update (exe alone won't work)
+            if update_info['zip_asset']:
                 self.download_update(update_info['zip_asset']['browser_download_url'], 'zip')
             else:
                 show_themed_message(
