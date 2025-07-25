@@ -39,6 +39,9 @@ def main():
     window.show()
     splash.finish(window)
     
+    # Check for updates after UI is loaded
+    window.check_for_updates_startup()
+    
     sys.exit(app.exec_())
 
 

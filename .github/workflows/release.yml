@@ -147,21 +147,31 @@ jobs:
         } else {
           $version = "dev-$(Get-Date -Format 'yyyy-MM-dd-HHmm')"
         }
+        
+        # Create full ZIP package
         Compress-Archive -Path "SCDPlayer-Release\*" -DestinationPath "SCDPlayer-$version-Windows.zip"
+        
+        # Create standalone EXE for auto-updates (just the exe file)
+        Copy-Item -Path "SCDPlayer-Release\SCDPlayer.exe" -Destination "SCDPlayer-$version.exe"
+        
         echo "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: SCDPlayer-${{ env.RELEASE_VERSION }}-Windows
-        path: SCDPlayer-${{ env.RELEASE_VERSION }}-Windows.zip
+        path: |
+          SCDPlayer-${{ env.RELEASE_VERSION }}-Windows.zip
+          SCDPlayer-${{ env.RELEASE_VERSION }}.exe
         retention-days: 30
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: SCDPlayer-${{ env.RELEASE_VERSION }}-Windows.zip
+        files: |
+          SCDPlayer-${{ env.RELEASE_VERSION }}-Windows.zip
+          SCDPlayer-${{ env.RELEASE_VERSION }}.exe
         draft: false
         prerelease: false
         generate_release_notes: true

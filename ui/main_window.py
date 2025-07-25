@@ -24,6 +24,7 @@ from core.library import AudioLibrary
 from core.kh_rando import KHRandoExporter
 from utils.config import Config
 from utils.helpers import format_time
+from utils.updater import AutoUpdater
 
 
 class SCDPlayer(QMainWindow):
@@ -53,6 +54,7 @@ class SCDPlayer(QMainWindow):
         # Initialize managers after UI is created
         self.conversion_manager = ConversionManager(self)
         self.kh_rando_manager = KHRandoManager(self)
+        self.auto_updater = AutoUpdater(self)
         
         # Setup keyboard shortcuts
         self.setup_shortcuts()
@@ -77,10 +79,26 @@ class SCDPlayer(QMainWindow):
         help_action.triggered.connect(self.show_help_dialog)
         help_menu.addAction(help_action)
         
+        help_menu.addSeparator()
+        
+        check_updates_action = QAction('Check for &Updates', self)
+        check_updates_action.triggered.connect(self.check_for_updates_manual)
+        help_menu.addAction(check_updates_action)
+        
     def show_help_dialog(self):
         """Show the help dialog"""
         help_dialog = HelpDialog(self)
         help_dialog.exec_()
+        
+    def check_for_updates_startup(self):
+        """Check for updates silently on startup"""
+        if hasattr(self, 'auto_updater'):
+            self.auto_updater.check_for_updates(silent=True)
+    
+    def check_for_updates_manual(self):
+        """Manually check for updates (show result)"""
+        if hasattr(self, 'auto_updater'):
+            self.auto_updater.check_for_updates(silent=False)
         
     def setup_ui(self):
         """Setup the user interface"""
@@ -283,11 +301,6 @@ class SCDPlayer(QMainWindow):
         self.export_missing_btn.clicked.connect(self.export_missing_to_kh_rando)
         self.export_missing_btn.setToolTip('Export library files that are not in KH Rando folder')
         library_buttons_layout.addWidget(self.export_missing_btn)
-        
-        self.fix_duplicates_btn = QPushButton('Fix Duplicates')
-        self.fix_duplicates_btn.clicked.connect(self.fix_duplicates_in_kh_rando)
-        self.fix_duplicates_btn.setToolTip('Remove duplicate files from KH Rando folder')
-        library_buttons_layout.addWidget(self.fix_duplicates_btn)
         
         self.delete_selected_btn = QPushButton('Delete Selected')
         self.delete_selected_btn.clicked.connect(self.delete_selected_files)
@@ -747,10 +760,6 @@ Path: {file_path}"""
         """Wrapper method for KH Rando manager"""
         self.kh_rando_manager.export_missing_to_kh_rando()
     
-    def fix_duplicates_in_kh_rando(self):
-        """Wrapper method for KH Rando manager"""
-        self.kh_rando_manager.fix_duplicates_in_kh_rando()
-
     def closeEvent(self, event):
         """Handle application close"""
         # Clean up thread
