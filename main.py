@@ -19,25 +19,23 @@ def main():
     # Show splash screen
     splash = SplashScreen()
     splash.show()
-    app.processEvents()  # Allow splash to show
     
-    # Simulate loading time and create main window
-    splash.showMessage("Initializing audio system...", Qt.AlignCenter | Qt.AlignBottom, Qt.white)
-    app.processEvents()
-    time.sleep(0.5)  # Brief pause
+    # Helper function to update splash with consistent timing
+    def update_splash(message, delay=0.3):
+        splash.showMessage(message, Qt.AlignCenter | Qt.AlignBottom, Qt.white)
+        app.processEvents()
+        if delay > 0:
+            time.sleep(delay)
     
-    splash.showMessage("Loading interface...", Qt.AlignCenter | Qt.AlignBottom, Qt.white)
-    app.processEvents()
-    time.sleep(0.3)
+    # Loading sequence
+    update_splash("Initializing audio system...", 0.5)
+    update_splash("Loading interface...", 0.3)
     
     # Create main window
     window = SCDPlayer()
     
-    # Show main window and close splash
-    splash.showMessage("Ready!", Qt.AlignCenter | Qt.AlignBottom, Qt.white)
-    app.processEvents()
-    time.sleep(0.2)
-    
+    # Finalize splash
+    update_splash("Ready!", 0.2)
     window.show()
     splash.finish(window)
     

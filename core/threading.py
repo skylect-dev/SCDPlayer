@@ -1,5 +1,5 @@
 """Background threading for file operations"""
-import os
+from pathlib import Path
 from PyQt5.QtCore import QThread, pyqtSignal
 
 
@@ -13,13 +13,22 @@ class FileLoadThread(QThread):
         self.file_path = file_path
         
     def run(self):
+        """Run the file loading operation"""
         try:
-            file_ext = os.path.splitext(self.file_path)[1].lower()
-            if file_ext == '.scd':
-                # For SCD files, we need to convert them
-                self.finished.emit(self.file_path)
-            else:
-                # For other formats, just signal completion
-                self.finished.emit(self.file_path)
+            file_path = Path(self.file_path)
+            
+            # Validate file exists
+            if not file_path.exists():
+                self.error.emit(f"File not found: {self.file_path}")
+                return
+                
+            # Validate file is readable
+            if not file_path.is_file():
+                self.error.emit(f"Path is not a file: {self.file_path}")
+                return
+            
+            # Emit success signal with the validated path
+            self.finished.emit(str(file_path))
+            
         except Exception as e:
-            self.error.emit(str(e))
+            self.error.emit(f"Error loading file: {e}")

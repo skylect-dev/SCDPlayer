@@ -86,9 +86,32 @@ MIT License - see LICENSE file for details.
 
 If you want to build the executable yourself:
 
-1. Install dependencies: `pip install PyQt5 pyinstaller`
-2. Create `vgmstream/` and `ffmpeg/` folders
-3. Extract vgmstream files to `vgmstream/` folder (ensure `vgmstream-cli.exe` is present)
-4. Extract FFmpeg files to `ffmpeg/` folder  
-5. Run `build.bat` or `build.ps1`
-6. The resulting `SCDPlayer.exe` will be completely portable
+**Prerequisites:**
+1. Python 3.7+ with PyQt5 installed: `pip install PyQt5 pyinstaller`
+2. **vgmstream** (for SCD support): 
+   - Download from [vgmstream releases](https://github.com/vgmstream/vgmstream/releases)
+   - Extract all files to `vgmstream/` folder
+   - Ensure `vgmstream-cli.exe` is present
+3. **FFmpeg** (for format conversion):
+   - Download from [FFmpeg](https://ffmpeg.org/download.html)
+   - Extract to `ffmpeg/` folder (maintaining the `bin/`, `lib/`, etc. structure)
+   - Ensure `ffmpeg/bin/ffmpeg.exe` is present
+
+**Build Steps:**
+```bash
+# Clone and navigate to project
+git clone https://github.com/skylect-dev/SCDPlayer.git
+cd SCDPlayer
+
+# Install Python dependencies
+pip install PyQt5 pyinstaller
+
+# Set up vgmstream and ffmpeg folders (see above)
+
+# Build the executable
+pyinstaller SCDPlayer.spec
+
+# The executable will be in dist/SCDPlayer/SCDPlayer.exe
+```
+
+The resulting executable is completely portable and self-contained!

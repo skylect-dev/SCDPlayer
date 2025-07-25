@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="32" cy="32" r="30" fill="#2a2a2a" stroke="#4a9eff" stroke-width="2"/>
+  
+  <!-- Musical note head (quarter note) -->
+  <ellipse cx="24" cy="45" rx="6" ry="4" fill="#4a9eff" transform="rotate(-15 24 45)"/>
+  
+  <!-- Musical note stem -->
+  <rect x="29" y="25" width="2.5" height="22" fill="#4a9eff"/>
+  
+  <!-- Musical note flag -->
+  <path d="M31.5 25 Q40 22 42 28 Q40 32 31.5 30 Z" fill="#4a9eff"/>
+  
+  <!-- Sound waves -->
+  <path d="M45 28 Q50 32 45 36" stroke="#6bb6ff" stroke-width="2" fill="none" opacity="0.8"/>
+  <path d="M48 26 Q54 32 48 38" stroke="#6bb6ff" stroke-width="1.5" fill="none" opacity="0.6"/>
+  <path d="M51 24 Q58 32 51 40" stroke="#6bb6ff" stroke-width="1" fill="none" opacity="0.4"/>
+  
+  <!-- Waveform visualization at bottom -->
+  <g opacity="0.6">
+    <rect x="8" y="52" width="2" height="4" fill="#4a9eff"/>
+    <rect x="12" y="50" width="2" height="8" fill="#4a9eff"/>
+    <rect x="16" y="48" width="2" height="12" fill="#4a9eff"/>
+    <rect x="20" y="51" width="2" height="6" fill="#4a9eff"/>
+    <rect x="24" y="49" width="2" height="10" fill="#4a9eff"/>
+    <rect x="28" y="52" width="2" height="4" fill="#4a9eff"/>
+    <rect x="32" y="50" width="2" height="8" fill="#4a9eff"/>
+    <rect x="36" y="48" width="2" height="12" fill="#4a9eff"/>
+    <rect x="40" y="51" width="2" height="6" fill="#4a9eff"/>
+    <rect x="44" y="53" width="2" height="2" fill="#4a9eff"/>
+    <rect x="48" y="52" width="2" height="4" fill="#4a9eff"/>
+    <rect x="52" y="50" width="2" height="8" fill="#4a9eff"/>
+    <rect x="56" y="54" width="2" height="2" fill="#4a9eff"/>
+  </g>
+  
+  <!-- Subtle highlight -->
+  <circle cx="32" cy="32" r="30" fill="none" stroke="url(#highlight)" stroke-width="1" opacity="0.3"/>
+  
+  <defs>
+    <linearGradient id="highlight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.5"/>
+      <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0"/>
+    </linearGradient>
+  </defs>
+</svg>

@@ -1,8 +1,9 @@
 """Custom UI widgets for SCDPlayer"""
 from PyQt5.QtWidgets import QLabel, QSplashScreen
 from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QPolygon
-from PyQt5.QtCore import QPoint
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QPolygon, QPen
+from PyQt5.QtCore import QPoint, QRect
+from PyQt5.QtSvg import QSvgRenderer
 from version import __version__
 
 
@@ -91,40 +92,81 @@ class SplashScreen(QSplashScreen):
         painter.setRenderHint(QPainter.Antialiasing)
         
         # Draw background gradient effect
-        for i in range(20):
+        for i in range(15):
             color = QColor("#23272e")
-            color.setAlpha(255 - i * 10)
+            color.setAlpha(255 - i * 15)
             painter.setBrush(color)
             painter.setPen(Qt.NoPen)
-            painter.drawEllipse(200 - i * 10, 150 - i * 8, i * 20, i * 16)
+            painter.drawEllipse(200 - i * 8, 150 - i * 6, i * 16, i * 12)
         
-        # Draw large music note icon
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#4a9eff"))
-        
-        # Note head
-        painter.drawEllipse(160, 180, 40, 30)
-        # Note stem
-        painter.drawRect(195, 120, 8, 70)
-        # Note flag
-        painter.drawEllipse(203, 110, 30, 40)
+        # Use the new app icon as the centerpiece (larger size)
+        app_icon = create_app_icon(80)
+        icon_pixmap = app_icon.pixmap(80, 80)
+        painter.drawPixmap(160, 120, icon_pixmap)
         
         # Draw title
-        font = QFont("Arial", 24, QFont.Bold)
+        font = QFont("Segoe UI", 28, QFont.Bold)
         painter.setFont(font)
-        painter.setPen(QColor("#f0f0f0"))
-        painter.drawText(pixmap.rect(), Qt.AlignCenter, "SCDPlayer")
+        painter.setPen(QColor("#ffffff"))
+        title_rect = QRect(0, 220, 400, 40)
+        painter.drawText(title_rect, Qt.AlignCenter, "SCDPlayer")
         
-        # Draw version
-        font = QFont("Arial", 12)
+        # Draw version with better contrast
+        font = QFont("Segoe UI", 14)
         painter.setFont(font)
-        painter.setPen(QColor("#888888"))
-        version_rect = pixmap.rect()
-        version_rect.adjust(0, 40, 0, 0)
+        painter.setPen(QColor("#4a9eff"))  # Use brand color for better visibility
+        version_rect = QRect(0, 250, 400, 30)
         painter.drawText(version_rect, Qt.AlignCenter, f"v{__version__}")
+        
+        # Add subtitle
+        font = QFont("Segoe UI", 11)
+        painter.setFont(font)
+        painter.setPen(QColor("#cccccc"))
+        subtitle_rect = QRect(0, 270, 400, 20)
+        painter.drawText(subtitle_rect, Qt.AlignCenter, "Kingdom Hearts Audio Player")
         
         painter.end()
         return pixmap
+
+
+def create_app_icon(size=32):
+    """Load application icon from SVG file"""
+    import os
+    from pathlib import Path
+    
+    # Try to load SVG icon first
+    assets_dir = Path(__file__).parent.parent / "assets"
+    svg_path = assets_dir / "icon.svg"
+    
+    if svg_path.exists():
+        try:
+            # Load SVG and create icon
+            svg_renderer = QSvgRenderer(str(svg_path))
+            if svg_renderer.isValid():
+                pixmap = QPixmap(size, size)
+                pixmap.fill(Qt.transparent)
+                painter = QPainter(pixmap)
+                painter.setRenderHint(QPainter.Antialiasing)
+                svg_renderer.render(painter)
+                painter.end()
+                return QIcon(pixmap)
+        except Exception as e:
+            print(f"Failed to load SVG icon: {e}")
+    
+    # Fallback to simple generated icon
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    
+    # Simple music note icon as fallback
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor("#4a9eff"))
+    painter.drawEllipse(size//4, size//2, size//3, size//4)
+    painter.drawRect(size//2, size//4, size//16, size//2)
+    
+    painter.end()
+    return QIcon(pixmap)
 
 
 def create_icon(icon_type, size=24):
