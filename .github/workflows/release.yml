@@ -147,7 +147,10 @@ jobs:
         } else {
           $version = "dev-$(Get-Date -Format 'yyyy-MM-dd-HHmm')"
         }
+        
+        # Create full ZIP package (only package needed for onedir updates)
         Compress-Archive -Path "SCDPlayer-Release\*" -DestinationPath "SCDPlayer-$version-Windows.zip"
+        
         echo "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
 
     - name: Upload Build Artifacts
