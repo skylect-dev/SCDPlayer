@@ -2,7 +2,7 @@
 import os
 import shutil
 from typing import Dict, List, Set, Optional
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QListWidget, QFileDialog, QMessageBox, QGroupBox, QCheckBox
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QListWidget, QFileDialog, QMessageBox, QGroupBox, QCheckBox, QScrollArea, QWidget
 from PyQt5.QtCore import Qt
 from ui.dialogs import apply_title_bar_theming
 
@@ -26,26 +26,6 @@ class KHRandoExporter:
         self.kh_rando_path = None
         self.existing_files: Dict[str, Set[str]] = {}
         
-    def detect_kh_rando_folder(self, base_path: str = None) -> Optional[str]:
-        """Auto-detect KH Rando music folder structure"""
-        search_paths = []
-        
-        if base_path:
-            search_paths.append(base_path)
-        
-        # Common KH Rando locations
-        search_paths.extend([
-            "D:/KHRandoReMix/Seed Gen/music",
-            "C:/KHRandoReMix/Seed Gen/music", 
-            "E:/KHRandoReMix/Seed Gen/music"
-        ])
-        
-        for path in search_paths:
-            if self.is_valid_kh_rando_folder(path):
-                return path
-                
-        return None
-    
     def is_valid_kh_rando_folder(self, path: str) -> bool:
         """Check if path contains valid KH Rando music folder structure"""
         if not os.path.exists(path):
@@ -212,8 +192,9 @@ class KHRandoExportDialog(QDialog):
         
         self.setLayout(layout)
         
-        # Try to auto-detect on startup
-        self.auto_detect_kh_rando()
+        # Use already configured KH Rando path if available
+        if self.exporter.kh_rando_path:
+            self.set_kh_rando_path(self.exporter.kh_rando_path)
     
     def create_path_selection_group(self):
         """Create the KH Rando path selection group"""
@@ -227,10 +208,6 @@ class KHRandoExportDialog(QDialog):
         self.browse_btn = QPushButton("Browse...")
         self.browse_btn.clicked.connect(self.browse_kh_rando_path)
         path_btn_layout.addWidget(self.browse_btn)
-        
-        self.auto_detect_btn = QPushButton("Auto-Detect")
-        self.auto_detect_btn.clicked.connect(self.auto_detect_kh_rando)
-        path_btn_layout.addWidget(self.auto_detect_btn)
         
         path_btn_layout.addStretch()
         path_layout.addLayout(path_btn_layout)
@@ -252,10 +229,26 @@ class KHRandoExportDialog(QDialog):
         separator.setStyleSheet("background-color: #404040; margin: 5px 0px;")
         files_layout.addWidget(separator)
         
+        # Create scrollable area for file assignments
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setMaximumHeight(400)  # Limit height to keep dialog manageable
+        
+        # Create widget to hold file assignments
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        scroll_layout.setContentsMargins(5, 5, 5, 5)
+        
         # Individual file assignments
         for file_path in self.files_to_export:
-            files_layout.addLayout(self.create_file_assignment_row(file_path))
-            
+            scroll_layout.addLayout(self.create_file_assignment_row(file_path))
+        
+        scroll_layout.addStretch()  # Add stretch to push items to top
+        scroll_area.setWidget(scroll_widget)
+        files_layout.addWidget(scroll_area)
+        
         files_group.setLayout(files_layout)
         return files_group
     
@@ -387,22 +380,6 @@ class KHRandoExportDialog(QDialog):
             if selected:
                 self.set_kh_rando_path(selected[0])
 
-    def auto_detect_kh_rando(self):
-        """Auto-detect KH Rando folder"""
-        detected_path = self.exporter.detect_kh_rando_folder()
-        if detected_path:
-            self.set_kh_rando_path(detected_path)
-        else:
-            msg_box = QMessageBox(self)
-            msg_box.setIcon(QMessageBox.Information)
-            msg_box.setWindowTitle("Auto-Detection")
-            msg_box.setText("Could not auto-detect KH Rando music folder.\nPlease browse to select it manually.")
-            msg_box.setStandardButtons(QMessageBox.Ok)
-            
-            # Apply title bar theming
-            apply_title_bar_theming(msg_box)
-            msg_box.exec_()
-    
     def set_kh_rando_path(self, path: str):
         """Set and validate KH Rando path"""
         if self.exporter.is_valid_kh_rando_folder(path):
