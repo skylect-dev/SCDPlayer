@@ -163,6 +163,11 @@ class KHRandoExporter:
             self.existing_files = self.scan_existing_files(path)
         else:
             self.existing_files = {}
+    
+    def refresh_existing_files(self):
+        """Refresh the existing files cache if KH Rando path is set"""
+        if self.kh_rando_path:
+            self.existing_files = self.scan_existing_files(self.kh_rando_path)
 
 
 class KHRandoExportDialog(QDialog):

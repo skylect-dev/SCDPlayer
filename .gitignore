@@ -49,7 +49,7 @@ SCDPlayer.exe
 vgmstream/
 ffmpeg/
 scdplayer_config.json
-CHANGELOG_TEMPLATE.md
+CHANGELOG*.md
 temp_*
 *.wav.tmp
 

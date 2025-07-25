@@ -145,23 +145,35 @@ class SCDPlayer(QMainWindow):
         # Seek bar
         self.seek_slider = QSlider(Qt.Horizontal)
         self.seek_slider.setRange(0, 0)
+        # Add state tracking for scrubbing
+        self.is_playing_before_scrub = False
+        self.is_scrubbing = False
+        
+        # Connect slider events for better scrubbing behavior
+        self.seek_slider.sliderPressed.connect(self.on_scrub_start)
+        self.seek_slider.sliderReleased.connect(self.on_scrub_end)
         self.seek_slider.sliderMoved.connect(self.seek_position)
         player_layout.addWidget(self.seek_slider)
 
-        # Playback controls
-        controls_layout = QHBoxLayout()
-        controls_layout.setSpacing(5)
+        # Playback controls - create a tightly grouped container
+        controls_container = QWidget()
+        controls_layout = QHBoxLayout(controls_container)
+        controls_layout.setSpacing(5)  # Small spacing between buttons
+        controls_layout.setContentsMargins(0, 0, 0, 0)  # No margins
         
         self.prev_btn = self.create_control_button("previous", "Previous Track", self.previous_track)
-        self.play_btn = self.create_control_button("play", "Play", self.play_audio)
-        self.pause_btn = self.create_control_button("pause", "Pause", self.pause_audio)
-        self.stop_btn = self.create_control_button("stop", "Stop", self.stop_audio)
+        self.prev_btn.setFixedSize(45, 40)  # Make prev/next buttons wider
+        # Combined play/pause button - starts as play button
+        self.play_pause_btn = self.create_control_button("play", "Play", self.toggle_play_pause)
+        self.play_pause_btn.setFixedSize(50, 40)  # Keep play/pause button wider
         self.next_btn = self.create_control_button("next", "Next Track", self.next_track)
+        self.next_btn.setFixedSize(45, 40)  # Make prev/next buttons wider
         
-        for btn in [self.prev_btn, self.play_btn, self.pause_btn, self.stop_btn, self.next_btn]:
+        for btn in [self.prev_btn, self.play_pause_btn, self.next_btn]:
             controls_layout.addWidget(btn)
         
-        player_layout.addLayout(controls_layout)
+        # Add the controls container to the player layout
+        player_layout.addWidget(controls_container, alignment=Qt.AlignCenter)
         player_layout.addSpacing(15)
 
         # Load controls
@@ -187,15 +199,6 @@ class SCDPlayer(QMainWindow):
         self.convert_to_scd_btn.setEnabled(False)
         convert_row1.addWidget(self.convert_to_scd_btn)
         convert_layout.addLayout(convert_row1)
-        
-        # Second row: KH Rando export
-        convert_row2 = QHBoxLayout()
-        self.export_selected_btn = QPushButton('Export Selected to KH Rando')
-        self.export_selected_btn.clicked.connect(self.export_selected_to_kh_rando)
-        self.export_selected_btn.setEnabled(False)
-        self.export_selected_btn.setToolTip('Export selected library files to Kingdom Hearts Randomizer music folder')
-        convert_row2.addWidget(self.export_selected_btn)
-        convert_layout.addLayout(convert_row2)
         
         player_layout.addLayout(convert_layout)
 
@@ -223,6 +226,7 @@ class SCDPlayer(QMainWindow):
         """Create a playback control button"""
         btn = QPushButton()
         btn.setIcon(create_icon(icon_type))
+        btn.setText("")  # Ensure no text is set
         btn.setToolTip(tooltip)
         btn.clicked.connect(callback)
         btn.setEnabled(False)
@@ -246,6 +250,7 @@ class SCDPlayer(QMainWindow):
         
         remove_folder_btn = QPushButton('Remove Folder')
         remove_folder_btn.clicked.connect(self.remove_library_folder)
+        self.remove_folder_btn = remove_folder_btn  # Store reference for enabling/disabling
         folder_controls.addWidget(remove_folder_btn)
         
         rescan_btn = QPushButton('Rescan')
@@ -257,9 +262,12 @@ class SCDPlayer(QMainWindow):
         header_layout.addWidget(QLabel('Scan Folders:'))
         self.folder_list = QListWidget()
         self.folder_list.setMaximumHeight(100)
+        self.folder_list.itemSelectionChanged.connect(self.on_folder_selection_changed)
         # Populate folder list with saved folders on initial load
         for folder in self.config.library_folders:
             self.folder_list.addItem(folder)
+        # Initially disable remove button if no selection
+        self.remove_folder_btn.setEnabled(False)
         header_layout.addWidget(self.folder_list)
 
         # Scan subdirs toggle
@@ -296,6 +304,12 @@ class SCDPlayer(QMainWindow):
 
         # Library management buttons
         library_buttons_layout = QHBoxLayout()
+        
+        self.export_selected_btn = QPushButton('Export Selected to KH Rando')
+        self.export_selected_btn.clicked.connect(self.export_selected_to_kh_rando)
+        self.export_selected_btn.setEnabled(False)
+        self.export_selected_btn.setToolTip('Export selected library files to Kingdom Hearts Randomizer music folder')
+        library_buttons_layout.addWidget(self.export_selected_btn)
         
         self.export_missing_btn = QPushButton('Export Missing to KH Rando')
         self.export_missing_btn.clicked.connect(self.export_missing_to_kh_rando)
@@ -355,6 +369,11 @@ class SCDPlayer(QMainWindow):
             self.folder_list.addItem(folder)
             self.config.save_settings()
             self.rescan_library()
+
+    def on_folder_selection_changed(self):
+        """Handle folder list selection changes"""
+        has_selection = self.folder_list.currentItem() is not None
+        self.remove_folder_btn.setEnabled(has_selection)
 
     def remove_library_folder(self):
         """Remove selected folder from library"""
@@ -588,13 +607,21 @@ class SCDPlayer(QMainWindow):
 
     def enable_playback_controls(self):
         """Enable all playback control buttons"""
-        self.play_btn.setEnabled(True)
-        self.pause_btn.setEnabled(True)
-        self.stop_btn.setEnabled(True)
+        self.play_pause_btn.setEnabled(True)
+        self.play_pause_btn.setIcon(create_icon("play"))
+        self.play_pause_btn.setText("")  # Ensure no text
+        self.play_pause_btn.setToolTip("Play")
         self.prev_btn.setEnabled(len(self.playlist) > 1)
         self.next_btn.setEnabled(len(self.playlist) > 1)
 
     # === Playback Controls ===
+    def toggle_play_pause(self):
+        """Toggle between play and pause states"""
+        if self.player.state() == QMediaPlayer.PlayingState:
+            self.pause_audio()
+        else:
+            self.play_audio()
+
     def play_audio(self):
         if self.current_file:
             self.player.play()
@@ -620,7 +647,24 @@ class SCDPlayer(QMainWindow):
             self.current_playlist_index += 1
             self.load_file_path(self.playlist[self.current_playlist_index], auto_play=True)
 
+    def on_scrub_start(self):
+        """Called when user starts dragging the slider"""
+        self.is_scrubbing = True
+        self.is_playing_before_scrub = (self.player.state() == QMediaPlayer.PlayingState)
+        if self.is_playing_before_scrub:
+            # Directly pause the player without updating UI
+            self.player.pause()
+
+    def on_scrub_end(self):
+        """Called when user releases the slider"""
+        # Resume playing if it was playing before scrubbing
+        if self.is_playing_before_scrub:
+            # Directly resume the player without updating UI
+            self.player.play()
+        self.is_scrubbing = False  # Set this AFTER resuming to allow final icon update
+
     def seek_position(self, position):
+        """Seek to position - only actually seek when not scrubbing rapidly"""
         self.player.setPosition(position)
 
     def update_position(self, position):
@@ -640,8 +684,26 @@ class SCDPlayer(QMainWindow):
         self.time_label.setText(f'{format_time(pos)} / {format_time(dur)}')
 
     def update_state(self, state):
+        # Don't update UI during scrubbing
+        if getattr(self, 'is_scrubbing', False):
+            return
+            
         if state == QMediaPlayer.StoppedState:
             self.timer.stop()
+            # Update icon to play state when stopped
+            self.play_pause_btn.setIcon(create_icon("play"))
+            self.play_pause_btn.setText("")  # Ensure no text
+            self.play_pause_btn.setToolTip("Play")
+        elif state == QMediaPlayer.PlayingState:
+            # Update to pause icon when playing
+            self.play_pause_btn.setIcon(create_icon("pause"))
+            self.play_pause_btn.setText("")  # Ensure no text
+            self.play_pause_btn.setToolTip("Pause")
+        elif state == QMediaPlayer.PausedState:
+            # Update to play icon when paused
+            self.play_pause_btn.setIcon(create_icon("play"))
+            self.play_pause_btn.setText("")  # Ensure no text
+            self.play_pause_btn.setToolTip("Play")
 
     def media_status_changed(self, status):
         """Handle media status changes for auto-advance"""

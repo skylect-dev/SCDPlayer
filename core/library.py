@@ -21,13 +21,17 @@ class AudioLibrary:
         """Scan library folders for supported audio files"""
         self.file_list.clear()
         
-        # Combine regular folders with KH Rando folder
-        all_folders = list(folders)
-        if kh_rando_folder and kh_rando_folder not in all_folders:
-            all_folders.append(kh_rando_folder)
+        # Refresh KH Rando existing files cache before scanning
+        if self.kh_rando_exporter:
+            self.kh_rando_exporter.refresh_existing_files()
         
-        for folder in all_folders:
+        # Scan regular library folders with user's subdirectory preference
+        for folder in folders:
             self._scan_single_folder(Path(folder), scan_subdirs)
+        
+        # Scan KH Rando folder separately - always with subdirectories enabled
+        if kh_rando_folder and kh_rando_folder not in folders:
+            self._scan_single_folder(Path(kh_rando_folder), True)
     
     def _scan_single_folder(self, folder_path: Path, scan_subdirs: bool) -> None:
         """Scan a single folder for audio files"""
