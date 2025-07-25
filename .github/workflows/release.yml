@@ -96,6 +96,22 @@ jobs:
             Get-ChildItem "dist\SCDPlayer\_internal\vgmstream" | ForEach-Object { Write-Host "  $_" }
         }
         
+    - name: Verify build output
+      run: |
+        Write-Host "Build completed successfully!"
+        Write-Host "Checking build output structure:"
+        if (Test-Path "dist\SCDPlayer") {
+            Write-Host "Main application files:"
+            Get-ChildItem "dist\SCDPlayer" | ForEach-Object { Write-Host "  $_" }
+            Write-Host ""
+            Write-Host "Build size information:"
+            $totalSize = (Get-ChildItem "dist\SCDPlayer" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+            Write-Host "Total build size: $([math]::Round($totalSize, 2)) MB"
+        } else {
+            Write-Host "ERROR: Build output directory not found!"
+            exit 1
+        }
+        
     - name: Create release package
       run: |
         # Create release directory structure
@@ -126,13 +142,26 @@ jobs:
     - name: Archive Release
       run: |
         # Create ZIP file for the release
-        Compress-Archive -Path "SCDPlayer-Release\*" -DestinationPath "SCDPlayer-${{ github.ref_name }}-Windows.zip"
+        if ("${{ github.ref_type }}" -eq "tag") {
+          $version = "${{ github.ref_name }}"
+        } else {
+          $version = "dev-$(Get-Date -Format 'yyyy-MM-dd-HHmm')"
+        }
+        Compress-Archive -Path "SCDPlayer-Release\*" -DestinationPath "SCDPlayer-$version-Windows.zip"
+        echo "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: SCDPlayer-${{ env.RELEASE_VERSION }}-Windows
+        path: SCDPlayer-${{ env.RELEASE_VERSION }}-Windows.zip
+        retention-days: 30
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: SCDPlayer-${{ github.ref_name }}-Windows.zip
+        files: SCDPlayer-${{ env.RELEASE_VERSION }}-Windows.zip
         draft: false
         prerelease: false
         generate_release_notes: true
