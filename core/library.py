@@ -82,6 +82,9 @@ class AudioLibrary:
                 else:
                     return f" [KH: root folder - misplaced]", False
         
+        # Default case: file is not related to KH Rando
+        return "", False
+        
     def _add_file_to_library(self, file_path: Path) -> None:
         """Add a single file to the library list"""
         try:
