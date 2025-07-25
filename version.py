@@ -1,5 +1,5 @@
 # SCDPlayer Version Information
-__version__ = "2.1.3 - 'Auto Symphony'"
+__version__ = "2.2.0 - 'Dark Symphony'"
 __author__ = "skylect-dev"
 __description__ = "A standalone Windows GUI application for playing SCD music files from games like Kingdom Hearts and Final Fantasy XIV with KH Randomizer integration"
 __url__ = "https://github.com/skylect-dev/SCDPlayer"
