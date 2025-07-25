@@ -28,11 +28,12 @@ MANIFEST
 
 # Virtual environments
 venv/
+.venv/
 env/
 ENV/
 
 # IDE
-.vscode/settings.json
+.vscode/
 .idea/
 *.swp
 *.swo
@@ -48,6 +49,7 @@ SCDPlayer.exe
 vgmstream/
 ffmpeg/
 scdplayer_config.json
+CHANGELOG_TEMPLATE.md
 temp_*
 *.wav.tmp
 
