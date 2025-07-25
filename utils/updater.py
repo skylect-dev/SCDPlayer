@@ -276,11 +276,53 @@ del "%~f0"
             )
             
             if reply == QMessageBox.Ok:
-                # Create update script
+                # Create update script that handles nested folder structure
                 script_content = f'''@echo off
 echo Updating SCDPlayer...
 timeout /t 3 /nobreak >nul
-powershell -Command "Expand-Archive -Path '{zip_path}' -DestinationPath '{current_dir}' -Force"
+
+REM Create temp directory for extraction
+set TEMP_DIR=%TEMP%\\scd_update_extract
+if exist "%TEMP_DIR%" rmdir /s /q "%TEMP_DIR%"
+mkdir "%TEMP_DIR%"
+
+REM Extract to temp directory first
+echo Extracting update archive...
+powershell -Command "Expand-Archive -Path '{zip_path}' -DestinationPath '%TEMP_DIR%' -Force"
+if errorlevel 1 (
+    echo ERROR: Failed to extract update archive
+    pause
+    goto :cleanup
+)
+
+REM Check if extraction created a nested SCDPlayer folder
+if exist "%TEMP_DIR%\\SCDPlayer" (
+    echo Found nested folder structure, copying contents...
+    REM Copy from nested folder to current directory, overwriting existing files
+    xcopy /s /e /y /h /r "%TEMP_DIR%\\SCDPlayer\\*" "{current_dir}\\"
+    if errorlevel 1 (
+        echo ERROR: Failed to copy files from nested structure
+        pause
+        goto :cleanup
+    )
+) else (
+    echo Found direct structure, copying contents...
+    REM Copy directly from temp to current directory, overwriting existing files
+    xcopy /s /e /y /h /r "%TEMP_DIR%\\*" "{current_dir}\\"
+    if errorlevel 1 (
+        echo ERROR: Failed to copy files from direct structure
+        pause
+        goto :cleanup
+    )
+)
+
+echo Update applied successfully!
+
+:cleanup
+REM Clean up temp directory and ZIP file
+if exist "%TEMP_DIR%" rmdir /s /q "%TEMP_DIR%"
+if exist "{zip_path}" del /f /q "{zip_path}"
+
 echo Update complete!
 timeout /t 2 /nobreak >nul
 start "" "{sys.executable}"
