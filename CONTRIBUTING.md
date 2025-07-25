@@ -65,17 +65,31 @@ SCDPlayer/
 
 ## Building
 
-Build the standalone executable:
+**Requirements:**
+- Python 3.7+ with pip
+- Required Python packages: `pip install -r requirements.txt`
+- FFmpeg: Download from https://ffmpeg.org and extract to `ffmpeg/bin/ffmpeg.exe`
+- VGMStream: Download from https://github.com/vgmstream/vgmstream and extract to `vgmstream/vgmstream.exe`
+
+**Build the standalone executable:**
 
 ```bash
-# Windows batch
-build.bat
+# Install PyInstaller
+pip install pyinstaller
 
-# PowerShell  
-./build.ps1
-
-# Manual
+# Build executable
 pyinstaller SCDPlayer.spec
+
+# Executable will be in dist/SCDPlayer/
+```
+
+**File Structure Required:**
+```
+SCDPlayer/
+├── assets/
+├── ffmpeg/bin/ffmpeg.exe
+├── vgmstream/vgmstream.exe
+└── dist/SCDPlayer/ (after build)
 ```
 
 ## Testing

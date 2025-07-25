@@ -11,6 +11,8 @@ a = Analysis(
     ],
     datas=[
         ('README.md', '.'),
+        ('assets/icon.svg', 'assets'),
+        ('assets/icon.ico', 'assets'),
     ],
     hiddenimports=[],
     hookspath=[],
@@ -57,7 +59,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # Add icon=None or specify an .ico file path
+    icon='assets/icon.ico',  # Use the Kingdom Hearts themed icon
 )
 
 coll = COLLECT(

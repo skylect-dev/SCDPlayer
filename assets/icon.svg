@@ -1,0 +1,42 @@
+<svg width="200" height="200" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-labelledby="title" role="img">
+  <title id="title">Minimalist Sound Wave Music Icon</title>
+  <desc>An icon with three glowing, curved lines representing sound waves radiating from a central circle, on a dark gradient background.</desc>
+
+  <!-- Definitions for gradients and filters -->
+  <defs>
+    <!-- Dark, sophisticated background gradient -->
+    <radialGradient id="waveBgGradient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#1e293b;" /> <!-- Dark Slate -->
+      <stop offset="100%" style="stop-color:#0f172a;" /> <!-- Very Dark Blue -->
+    </radialGradient>
+
+    <!-- Vibrant, glowing gradient for the icon itself -->
+    <linearGradient id="waveGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#22d3ee;" /> <!-- Bright Cyan -->
+      <stop offset="100%" style="stop-color:#34d399;" /> <!-- Emerald Green -->
+    </linearGradient>
+
+    <!-- Filter for the subtle glow effect -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.5" result="coloredBlur" in="SourceGraphic" />
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background Circle -->
+  <circle cx="50" cy="50" r="50" fill="url(#waveBgGradient)" />
+
+  <!-- Sound Wave Icon -->
+  <g fill="none" stroke="url(#waveGradient)" stroke-linecap="round" filter="url(#glow)">
+    <!-- Central Circle -->
+    <circle cx="50" cy="50" r="8" stroke-width="3" />
+    
+    <!-- Radiating Sound Waves -->
+    <path d="M 30 50 C 30 38.95, 38.95 30, 50 30" stroke-width="3.5" opacity="0.6" />
+    <path d="M 22 50 C 22 34.53, 34.53 22, 50 22" stroke-width="3.5" opacity="0.8" />
+    <path d="M 14 50 C 14 30.12, 30.12 14, 50 14" stroke-width="3.5" />
+  </g>
+</svg>
