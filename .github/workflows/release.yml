@@ -114,57 +114,60 @@ jobs:
         
     - name: Create release package
       run: |
-        # Create release directory structure
-        mkdir SCDPlayer-Release
+        # Create release directory with clean name
+        mkdir SCDPlayer
         
         # Copy the entire PyInstaller onedir output
-        Copy-Item -Path "dist\SCDPlayer\*" -Destination "SCDPlayer-Release\" -Recurse -Force
+        Copy-Item -Path "dist\SCDPlayer\*" -Destination "SCDPlayer\" -Recurse -Force
         
         # Add additional documentation
-        copy README.md SCDPlayer-Release\
+        copy README.md SCDPlayer\
         
         # Create a simple readme for users
-        echo "SCDPlayer - Portable Audio Player for Game Music" > SCDPlayer-Release\INSTRUCTIONS.txt
-        echo "=================================================" >> SCDPlayer-Release\INSTRUCTIONS.txt
-        echo "" >> SCDPlayer-Release\INSTRUCTIONS.txt
-        echo "To run SCDPlayer:" >> SCDPlayer-Release\INSTRUCTIONS.txt
-        echo "1. Extract this entire folder anywhere on your computer" >> SCDPlayer-Release\INSTRUCTIONS.txt
-        echo "2. Double-click SCDPlayer.exe to start the application" >> SCDPlayer-Release\INSTRUCTIONS.txt
-        echo "" >> SCDPlayer-Release\INSTRUCTIONS.txt
-        echo "Features:" >> SCDPlayer-Release\INSTRUCTIONS.txt
-        echo "- Play SCD files from Kingdom Hearts and Final Fantasy XIV" >> SCDPlayer-Release\INSTRUCTIONS.txt
-        echo "- Support for WAV, MP3, OGG, FLAC audio formats" >> SCDPlayer-Release\INSTRUCTIONS.txt
-        echo "- Audio file conversion capabilities" >> SCDPlayer-Release\INSTRUCTIONS.txt
-        echo "- Built-in audio library management" >> SCDPlayer-Release\INSTRUCTIONS.txt
-        echo "" >> SCDPlayer-Release\INSTRUCTIONS.txt
-        echo "No additional downloads or installations required!" >> SCDPlayer-Release\INSTRUCTIONS.txt
-    
-    - name: Archive Release
+        echo "SCDPlayer - Portable Audio Player for Game Music" > SCDPlayer\INSTRUCTIONS.txt
+        echo "=================================================" >> SCDPlayer\INSTRUCTIONS.txt
+        echo "" >> SCDPlayer\INSTRUCTIONS.txt
+        echo "To run SCDPlayer:" >> SCDPlayer\INSTRUCTIONS.txt
+        echo "1. Extract this entire folder anywhere on your computer" >> SCDPlayer\INSTRUCTIONS.txt
+        echo "2. Double-click SCDPlayer.exe to start the application" >> SCDPlayer\INSTRUCTIONS.txt
+        echo "" >> SCDPlayer\INSTRUCTIONS.txt
+        echo "Features:" >> SCDPlayer\INSTRUCTIONS.txt
+        echo "- Play SCD files from Kingdom Hearts and Final Fantasy XIV" >> SCDPlayer\INSTRUCTIONS.txt
+        echo "- Support for WAV, MP3, OGG, FLAC audio formats" >> SCDPlayer\INSTRUCTIONS.txt
+        echo "- Audio file conversion capabilities" >> SCDPlayer\INSTRUCTIONS.txt
+        echo "- Built-in audio library management" >> SCDPlayer\INSTRUCTIONS.txt
+        echo "" >> SCDPlayer\INSTRUCTIONS.txt
+        echo "No additional downloads or installations required!" >> SCDPlayer\INSTRUCTIONS.txt
+
+    - name: Set version for naming
+      id: set_version
       run: |
-        # Create ZIP file for the release
+        # Set version for artifact naming
         if ("${{ github.ref_type }}" -eq "tag") {
           $version = "${{ github.ref_name }}"
         } else {
           $version = "dev-$(Get-Date -Format 'yyyy-MM-dd-HHmm')"
         }
         
-        # Create full ZIP package (only package needed for onedir updates)
-        Compress-Archive -Path "SCDPlayer-Release\*" -DestinationPath "SCDPlayer-$version-Windows.zip"
-        
         echo "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+    
+    - name: Archive Release
+      run: |
+        # Create ZIP file with clean name (no version number)
+        Compress-Archive -Path "SCDPlayer" -DestinationPath "SCDPlayer-Windows.zip"
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: SCDPlayer-${{ env.RELEASE_VERSION }}-Windows
-        path: SCDPlayer-${{ env.RELEASE_VERSION }}-Windows.zip
+        path: SCDPlayer-Windows.zip
         retention-days: 30
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: SCDPlayer-${{ env.RELEASE_VERSION }}-Windows.zip
+        files: SCDPlayer-Windows.zip
         draft: false
         prerelease: false
         generate_release_notes: true

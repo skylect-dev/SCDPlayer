@@ -6,7 +6,7 @@ A Windows audio player for SCD music files from games like Kingdom Hearts and Fi
 
 **Download the executable (recommended):**
 1. Go to [Releases](https://github.com/skylect-dev/SCDPlayer/releases)
-2. Download `SCDPlayer-v1.0.2.zip`
+2. Download `SCDPlayer-vX.X.X.zip`
 3. Extract and run `SCDPlayer.exe`
 
 No additional setup needed - everything is included.
