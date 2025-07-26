@@ -8,7 +8,6 @@ Features:
 - Fine control with Ctrl+drag
 """
 import logging
-
 import sys
 import os
 import wave
@@ -19,7 +18,6 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
-import logging
 
 class WaveformWidget(QWidget):
     """High-performance waveform display widget"""

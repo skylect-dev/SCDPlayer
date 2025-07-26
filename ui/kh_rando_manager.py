@@ -1,10 +1,13 @@
 """KH Rando management features for SCDPlayer"""
 import os
 import tempfile
+import logging
+import time
 from PyQt5.QtWidgets import QMessageBox, QDialog, QProgressDialog, QApplication
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from core.kh_rando import KHRandoExportDialog
 from ui.dialogs import show_themed_message
+from ui.conversion_manager import SimpleStatusDialog
 
 
 class KHRandoManager:
@@ -61,31 +64,28 @@ class KHRandoManager:
         final_files = scd_files.copy()
         converted_files = []
         
-        # Convert non-SCD files to SCD with progress indicator
+        # Convert non-SCD files to SCD with status indicator
         if files_to_convert:
-            # Create progress dialog
-            progress_dialog = QProgressDialog("Converting files for KH Rando export...", "Cancel", 0, len(files_to_convert), self.main_window)
-            progress_dialog.setWindowTitle("Converting Files")
-            progress_dialog.setModal(True)
-            progress_dialog.setMinimumDuration(0)
-            progress_dialog.show()
+            # Create simple status dialog
+            status_dialog = SimpleStatusDialog("Converting Files", self.main_window)
+            status_dialog.update_status("Preparing files for KH Rando export...")
+            status_dialog.show()
             
-            # Apply theme to progress dialog
+            # Apply theme to status dialog
             try:
                 from ui.styles import apply_title_bar_theming
-                apply_title_bar_theming(progress_dialog)
+                apply_title_bar_theming(status_dialog)
             except:
                 pass
             
             for i, file_path in enumerate(files_to_convert):
-                if progress_dialog.wasCanceled():
-                    break
-                    
                 try:
                     filename = os.path.basename(file_path)
-                    progress_dialog.setLabelText(f"Converting {filename}...")
-                    progress_dialog.setValue(i)
-                    QApplication.processEvents()
+                    current_file = i + 1
+                    total_files = len(files_to_convert)
+                    
+                    status_text = f"Converting {filename}...\n\nFile {current_file} of {total_files}"
+                    status_dialog.update_status(status_text)
                     
                     # Create temp SCD file with original name
                     base_name = os.path.splitext(os.path.basename(file_path))[0]
@@ -106,10 +106,13 @@ class KHRandoManager:
                         converted_files.append(temp_scd)
                 
                 except Exception as e:
-                    print(f"Failed to convert {file_path}: {e}")
+                    logging.error(f"Failed to convert {file_path}: {e}")
             
-            progress_dialog.setValue(len(files_to_convert))
-            progress_dialog.close()
+            status_dialog.update_status(f"Conversion complete!\n\nProcessed {len(files_to_convert)} files")
+            QApplication.processEvents()
+            import time
+            time.sleep(1)  # Brief pause to show completion
+            status_dialog.close_dialog()
         
         if not final_files:
             show_themed_message(self.main_window, QMessageBox.Warning, "No Valid Files", "No files could be prepared for export.")
@@ -222,7 +225,7 @@ class KHRandoManager:
                         converted_files.append(temp_scd)
                 
                 except Exception as e:
-                    print(f"Failed to convert {file_path}: {e}")
+                    logging.error(f"Failed to convert {file_path}: {e}")
         
         # Show export dialog
         dialog = KHRandoExportDialog(final_files, self.kh_rando_exporter, self.main_window)

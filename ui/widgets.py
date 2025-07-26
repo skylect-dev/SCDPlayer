@@ -1,5 +1,6 @@
 """Custom UI widgets for SCDPlayer"""
 import math
+import logging
 from PyQt5.QtWidgets import QLabel, QSplashScreen
 from PyQt5.QtCore import QTimer, Qt, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QPolygon, QPen, QLinearGradient, QRadialGradient
@@ -234,7 +235,7 @@ def create_app_icon(size=32):
                 painter.end()
                 return QIcon(pixmap)
         except Exception as e:
-            print(f"Failed to load SVG icon: {e}")
+            logging.error(f"Failed to load SVG icon: {e}")
     
     # Fallback to simple generated icon
     pixmap = QPixmap(size, size)

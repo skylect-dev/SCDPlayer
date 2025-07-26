@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QFileDialog, 
     QLabel, QSlider, QSizePolicy, QListWidget, QCheckBox, QMessageBox, 
     QSplitter, QGroupBox, QProgressBar, QComboBox, QDialog, QShortcut,
-    QMenuBar, QAction
+    QMenuBar, QAction, QApplication
 )
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtCore import QUrl, Qt, QTimer
@@ -683,23 +683,38 @@ class SCDPlayer(QMainWindow):
             return
         
         try:
+            # Show loading dialog
+            from ui.conversion_manager import SimpleStatusDialog
+            
+            loading_dialog = SimpleStatusDialog("Loop Editor", self)
+            loading_dialog.update_status("Loading loop editor...")
+            loading_dialog.show()
+            
             # Load the file into the loop manager
             if ext.endswith('.wav'):
+                loading_dialog.update_status("Loading WAV file...")
                 # For WAV files, use them directly
                 success = self.loop_manager.load_wav_file(file_path)
             else:
+                loading_dialog.update_status("Converting SCD to WAV...")
                 # For SCD files, use the existing conversion workflow
                 success = self.loop_manager.load_file_for_editing(file_path)
             
             if not success:
+                loading_dialog.close_dialog()
                 show_themed_message(self, QMessageBox.Critical, "Load Error", 
                                    "Failed to load audio file for editing.")
                 return
             
+            loading_dialog.update_status("Initializing loop editor...")
+            
             # Create and show the loop editor dialog
             loop_editor = LoopEditorDialog(self.loop_manager, self)
+            loading_dialog.close_dialog()
             loop_editor.exec_()
         except Exception as e:
+            if 'loading_dialog' in locals():
+                loading_dialog.close_dialog()
             show_themed_message(self, QMessageBox.Critical, "Loop Editor Error", 
                                f"Failed to open loop editor:\n{str(e)}")
 

@@ -1,9 +1,47 @@
 """Conversion features for SCDPlayer"""
 import os
 import tempfile
-from PyQt5.QtWidgets import QMessageBox, QProgressDialog, QApplication
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtWidgets import QMessageBox, QLabel, QDialog, QVBoxLayout, QApplication
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from ui.dialogs import show_themed_message, show_themed_file_dialog
+
+
+class SimpleStatusDialog(QDialog):
+    """Simple text-based status dialog for operations"""
+    def __init__(self, title, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.setMinimumSize(300, 100)
+        self.setMaximumSize(400, 150)
+        
+        # Apply dark theme
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QLabel {
+                color: #ffffff;
+                font-size: 12px;
+                padding: 10px;
+            }
+        """)
+        
+        layout = QVBoxLayout(self)
+        self.status_label = QLabel("Initializing...")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+        
+    def update_status(self, message):
+        """Update the status message"""
+        self.status_label.setText(message)
+        QApplication.processEvents()
+        
+    def close_dialog(self):
+        """Close the dialog"""
+        self.close()
 
 
 class ConversionWorker(QThread):
@@ -199,19 +237,16 @@ class ConversionManager:
             self._start_conversion_with_progress(files_to_convert, 'to_scd', output_dir)
     
     def _start_conversion_with_progress(self, files, operation_type, output_dir):
-        """Start conversion operation with progress dialog"""
-        # Create progress dialog
+        """Start conversion operation with status dialog"""
+        # Create simple status dialog
         operation_name = "WAV" if operation_type == 'to_wav' else "SCD"
-        progress_dialog = QProgressDialog(f"Converting files to {operation_name}...", "Cancel", 0, 100, self.main_window)
-        progress_dialog.setWindowTitle(f"Converting to {operation_name}")
-        progress_dialog.setModal(True)
-        progress_dialog.setMinimumDuration(0)
-        progress_dialog.show()
+        self.status_dialog = SimpleStatusDialog(f"Converting to {operation_name}", self.main_window)
+        self.status_dialog.show()
         
-        # Apply theme to progress dialog
+        # Apply theme to status dialog
         try:
             from ui.styles import apply_title_bar_theming
-            apply_title_bar_theming(progress_dialog)
+            apply_title_bar_theming(self.status_dialog)
         except:
             pass
         
@@ -220,26 +255,30 @@ class ConversionManager:
         
         # Connect signals
         self.conversion_worker.progress_update.connect(
-            lambda progress, message: self._update_progress(progress_dialog, progress, message)
+            lambda progress, message: self._update_status(progress, message)
         )
         self.conversion_worker.conversion_complete.connect(
-            lambda success, message: self._conversion_finished(progress_dialog, success, message)
+            lambda success, message: self._conversion_finished(success, message)
         )
-        progress_dialog.canceled.connect(self.conversion_worker.requestInterruption)
         
         # Start conversion
         self.conversion_worker.start()
     
-    def _update_progress(self, progress_dialog, progress, message):
-        """Update progress dialog"""
-        if not progress_dialog.wasCanceled():
-            progress_dialog.setValue(progress)
-            progress_dialog.setLabelText(message)
-            QApplication.processEvents()
+    def _update_status(self, progress, message):
+        """Update status dialog with text-based progress"""
+        total_files = len(self.conversion_worker.files) if hasattr(self, 'conversion_worker') else 1
+        current_file = int((progress / 100) * total_files) + 1
+        
+        if progress < 100:
+            status_text = f"{message}\n\nFile {current_file} of {total_files} ({progress}%)"
+        else:
+            status_text = f"{message}\n\nCompleted all {total_files} files!"
+            
+        self.status_dialog.update_status(status_text)
     
-    def _conversion_finished(self, progress_dialog, success, message):
+    def _conversion_finished(self, success, message):
         """Handle conversion completion"""
-        progress_dialog.close()
+        self.status_dialog.close_dialog()
         
         if success:
             show_themed_message(self.main_window, QMessageBox.Information, 'Conversion Complete', message)

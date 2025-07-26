@@ -1,6 +1,7 @@
 """Utility to clean up temporary files in khpc_tools directory"""
 import os
 import glob
+import logging
 from pathlib import Path
 from utils.helpers import get_bundled_path
 
@@ -26,9 +27,9 @@ def cleanup_khpc_tools():
                     try:
                         file_path.unlink()
                         cleanup_count += 1
-                        print(f"Cleaned up: {file_path.name}")
+                        logging.debug(f"Cleaned up: {file_path.name}")
                     except Exception as e:
-                        print(f"Failed to clean up {file_path.name}: {e}")
+                        logging.debug(f"Failed to clean up {file_path.name}: {e}")
         
         # Clean up output directory except test.scd
         # (Note: output directory should only contain generated SCD files)
@@ -38,14 +39,14 @@ def cleanup_khpc_tools():
                     try:
                         file_path.unlink()
                         cleanup_count += 1
-                        print(f"Cleaned up: output/{file_path.name}")
+                        logging.debug(f"Cleaned up: output/{file_path.name}")
                     except Exception as e:
-                        print(f"Failed to clean up output/{file_path.name}: {e}")
+                        logging.debug(f"Failed to clean up output/{file_path.name}: {e}")
         
         return cleanup_count
         
     except Exception as e:
-        print(f"Error during khpc_tools cleanup: {e}")
+        logging.error(f"Error during khpc_tools cleanup: {e}")
         return 0
 
 
