@@ -73,13 +73,35 @@ class WaveformWidget(QWidget):
         # Track if initial zoom has been calculated
         self._initial_zoom_set = False
         
+        # Focus icon properties
+        self.focus_icon_rect = QRect()
+        self.focus_icon_hovered = False
+        self.focus_callback = None  # Will be set by the dialog
+        self.follow_callback = None  # Will be set by the dialog for auto-follow
+        self.is_focused_on_position = False  # Track if currently focused on playback position
+        
+        # Follow mode timing control
+        self._last_follow_time = 0
+        self._follow_cooldown = 250  # Only allow follow adjustments every 250ms
+        
+        # Smooth scrolling
+        self._smooth_scroll_timer = QTimer()
+        self._smooth_scroll_timer.timeout.connect(self._update_smooth_scroll)
+        self._smooth_scroll_timer.setSingleShot(False)
+        self._smooth_scroll_start = 0
+        self._smooth_scroll_target = 0
+        self._smooth_scroll_duration = 200  # 200ms for smooth scroll
+        self._smooth_scroll_start_time = 0
+        
     def showEvent(self, event):
         """Handle show event to set proper initial zoom"""
         super().showEvent(event)
         
         # Set proper initial zoom when widget is first shown and properly sized
         if not self._initial_zoom_set and self.audio_data is not None and self.width() > 0:
-            self.samples_per_pixel = max(1, self.total_samples // self.width())
+            # Show the full track length initially
+            self.samples_per_pixel = max(1, self.total_samples / self.width())
+            
             self._initial_zoom_set = True
             self.update()
             
@@ -129,7 +151,9 @@ class WaveformWidget(QWidget):
                 
                 # Calculate initial samples per pixel only if widget is properly sized
                 if self.width() > 0:
-                    self.samples_per_pixel = max(1, self.total_samples // self.width())
+                    # Show the full track length initially
+                    self.samples_per_pixel = max(1, len(audio_array) / self.width())
+                    
                     self._initial_zoom_set = True
                 else:
                     # Will be calculated in showEvent when widget is properly sized
@@ -152,11 +176,66 @@ class WaveformWidget(QWidget):
     def set_current_position(self, position: int):
         """Set current playback position"""
         self.current_position = max(0, min(position, self.total_samples))
+        
+        # If we're in focused mode, auto-follow the cursor
+        if self.is_focused_on_position and self.follow_callback:
+            self.follow_callback(self.current_position)
+        
         self.update()
+        
+    def smooth_scroll_to(self, target_position):
+        """Smoothly scroll to a target position"""
+        import time
+        
+        # Don't start a new animation if we're already close to the target
+        if abs(target_position - self.scroll_position) < 5:
+            return
+            
+        self._smooth_scroll_start = self.scroll_position
+        self._smooth_scroll_target = target_position
+        self._smooth_scroll_start_time = time.time() * 1000
+        
+        # Start the smooth scroll timer (60 FPS)
+        self._smooth_scroll_timer.start(16)
+        
+    def _update_smooth_scroll(self):
+        """Update smooth scroll animation"""
+        import time
+        
+        current_time = time.time() * 1000
+        elapsed = current_time - self._smooth_scroll_start_time
+        
+        if elapsed >= self._smooth_scroll_duration:
+            # Animation complete
+            self._smooth_scroll_timer.stop()
+            self.scroll_position = self._smooth_scroll_target
+            self.update()
+            
+            # Update scrollbar to match final position
+            if hasattr(self, 'parent') and hasattr(self.parent(), 'waveform_scroll'):
+                parent_dialog = self
+                while parent_dialog and not hasattr(parent_dialog, 'waveform_scroll'):
+                    parent_dialog = parent_dialog.parent()
+                if parent_dialog and hasattr(parent_dialog, 'waveform_scroll'):
+                    parent_dialog.waveform_scroll.setValue(int(self.scroll_position))
+        else:
+            # Calculate eased position (ease-out cubic)
+            progress = elapsed / self._smooth_scroll_duration
+            progress = 1 - pow(1 - progress, 3)  # Ease-out cubic
+            
+            self.scroll_position = self._smooth_scroll_start + (self._smooth_scroll_target - self._smooth_scroll_start) * progress
+            self.update()
         
     def set_scroll_position(self, scroll_pos):
         """Set the scroll position"""
+        # Stop any smooth scrolling animation
+        if self._smooth_scroll_timer.isActive():
+            self._smooth_scroll_timer.stop()
+            
         self.scroll_position = scroll_pos
+        # Only reset focus state for manual user scrolling, not programmatic scrolling
+        if not hasattr(self, '_setting_focus_scroll') and not hasattr(self, '_programmatic_scroll'):
+            self.is_focused_on_position = False
         self.update()
         
         # Update timeline if callback exists
@@ -216,47 +295,67 @@ class WaveformWidget(QWidget):
                 )
                 painter.fillRect(loop_rect, self.loop_region_color)
         
-        # Draw waveform
+        # Draw waveform with improved accuracy
         painter.setPen(QPen(self.waveform_color, 1))
         
-        # Downsample for display
+        # More sophisticated waveform rendering
         samples_to_draw = end_sample - start_sample
-        if samples_to_draw > width * 2:
-            # Need to downsample
-            step = samples_to_draw // (width * 2)
+        
+        # Always use min/max rendering for better accuracy
+        for x in range(width):
+            sample_start = start_sample + int(x * self.samples_per_pixel)
+            sample_end = start_sample + int((x + 1) * self.samples_per_pixel)
+            sample_end = min(sample_end, len(self.audio_data))
             
-            points = []
-            for i in range(0, width, 2):
-                sample_idx = start_sample + int(i * self.samples_per_pixel)
-                if sample_idx < len(self.audio_data):
-                    # Get min/max in this pixel range
-                    end_idx = min(sample_idx + step, len(self.audio_data))
-                    chunk = self.audio_data[sample_idx:end_idx]
-                    
-                    if len(chunk) > 0:
-                        min_val = np.min(chunk)
-                        max_val = np.max(chunk)
-                        
-                        # Convert to pixel coordinates
-                        y_center = height // 2
-                        y_min = int(y_center - min_val * y_center * 0.8)
-                        y_max = int(y_center - max_val * y_center * 0.8)
-                        
-                        # Draw vertical line for this pixel
-                        painter.drawLine(i, y_max, i, y_min)
-        else:
-            # Can draw individual samples
-            prev_point = None
-            for i in range(width):
-                sample_idx = start_sample + int(i * self.samples_per_pixel)
-                if sample_idx < len(self.audio_data):
-                    sample_val = self.audio_data[sample_idx]
-                    y = int(height // 2 - sample_val * height // 2 * 0.8)
-                    
-                    current_point = QPoint(i, y)
-                    if prev_point:
-                        painter.drawLine(prev_point, current_point)
-                    prev_point = current_point
+            if sample_start >= len(self.audio_data):
+                break
+                
+            if sample_end <= sample_start:
+                sample_end = sample_start + 1
+                
+            # Get the chunk of audio data for this pixel
+            chunk = self.audio_data[sample_start:sample_end]
+            
+            if len(chunk) > 0:
+                # Calculate min, max, and RMS for better visualization
+                min_val = float(np.min(chunk))
+                max_val = float(np.max(chunk))
+                rms_val = float(np.sqrt(np.mean(chunk ** 2)))
+                
+                # Convert to pixel coordinates
+                y_center = height // 2
+                scale_factor = 0.9  # Use 90% of available height
+                
+                y_min = int(y_center - min_val * y_center * scale_factor)
+                y_max = int(y_center - max_val * y_center * scale_factor)
+                y_rms_pos = int(y_center - rms_val * y_center * scale_factor)
+                y_rms_neg = int(y_center + rms_val * y_center * scale_factor)
+                
+                # Ensure y values are within bounds
+                y_min = max(0, min(height - 1, y_min))
+                y_max = max(0, min(height - 1, y_max))
+                y_rms_pos = max(0, min(height - 1, y_rms_pos))
+                y_rms_neg = max(0, min(height - 1, y_rms_neg))
+                
+                # Draw min/max line for peak information
+                if y_max != y_min:
+                    painter.setPen(QPen(self.waveform_color, 1))
+                    painter.drawLine(x, y_max, x, y_min)
+                
+                # Draw RMS information with slightly different color for density
+                if len(chunk) > 10:  # Only show RMS for chunks with enough samples
+                    rms_color = QColor(self.waveform_color)
+                    rms_color.setAlpha(180)  # Semi-transparent
+                    painter.setPen(QPen(rms_color, 1))
+                    if y_rms_pos != y_rms_neg:
+                        painter.drawLine(x, y_rms_pos, x, y_rms_neg)
+                else:
+                    # For small chunks, just draw a single sample
+                    avg_val = float(np.mean(chunk))
+                    y_avg = int(y_center - avg_val * y_center * scale_factor)
+                    y_avg = max(0, min(height - 1, y_avg))
+                    painter.setPen(QPen(self.waveform_color, 1))
+                    painter.drawPoint(x, y_avg)
         
         # Draw loop markers with better visibility
         if self.loop_start >= 0:  # Show even at position 0
@@ -295,6 +394,56 @@ class WaveformWidget(QWidget):
             if -2 <= cursor_x <= width + 2:  # Show slightly outside visible area
                 painter.setPen(QPen(self.cursor_color, 2))
                 painter.drawLine(cursor_x, 0, cursor_x, height)
+        
+        # Draw focus icon in top-right corner
+        self._draw_focus_icon(painter, width, height)
+    
+    def _draw_focus_icon(self, painter, width, height):
+        """Draw the focus icon in the top-right corner"""
+        icon_size = 20
+        margin = 8
+        
+        # Calculate icon position (top-right corner)
+        icon_x = width - icon_size - margin
+        icon_y = margin
+        self.focus_icon_rect = QRect(icon_x, icon_y, icon_size, icon_size)
+        
+        # Set colors based on focus state and hover state
+        if self.is_focused_on_position:
+            # Active follow mode - bright colors
+            if self.focus_icon_hovered:
+                bg_color = QColor(100, 150, 255, 220)  # Bright blue
+                icon_color = QColor(255, 255, 255)
+            else:
+                bg_color = QColor(70, 120, 255, 180)   # Blue
+                icon_color = QColor(255, 255, 255)
+        else:
+            # Inactive follow mode - muted colors
+            if self.focus_icon_hovered:
+                bg_color = QColor(80, 80, 80, 200)
+                icon_color = QColor(255, 255, 255)
+            else:
+                bg_color = QColor(50, 50, 50, 150)
+                icon_color = QColor(200, 200, 200)
+        
+        # Draw background circle
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(bg_color)
+        painter.drawEllipse(self.focus_icon_rect)
+        
+        # Draw crosshair/target icon
+        painter.setPen(QPen(icon_color, 2))
+        center_x = icon_x + icon_size // 2
+        center_y = icon_y + icon_size // 2
+        
+        # Draw crosshair lines
+        painter.drawLine(center_x - 6, center_y, center_x + 6, center_y)  # Horizontal
+        painter.drawLine(center_x, center_y - 6, center_x, center_y + 6)  # Vertical
+        
+        # Draw small circle in center
+        painter.setPen(QPen(icon_color, 1))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawEllipse(center_x - 2, center_y - 2, 4, 4)
     
     def sample_to_pixel(self, sample: int) -> int:
         """Convert sample position to pixel coordinate"""
@@ -307,6 +456,12 @@ class WaveformWidget(QWidget):
     def mousePressEvent(self, event):
         """Handle mouse press for dragging loop points"""
         if event.button() == Qt.LeftButton and self.audio_data is not None:
+            # Check if clicking on focus icon first
+            if self.focus_icon_rect.contains(event.pos()):
+                if self.focus_callback:
+                    self.focus_callback()
+                return
+            
             sample_pos = self.pixel_to_sample(event.x())
             
             # Check if clicking near loop markers (allow for position 0)
@@ -407,6 +562,21 @@ class WaveformWidget(QWidget):
             else:
                 self.setCursor(Qt.ArrowCursor)
         
+        # Check if mouse is over focus icon
+        was_hovered = self.focus_icon_hovered
+        self.focus_icon_hovered = self.focus_icon_rect.contains(event.pos())
+        if was_hovered != self.focus_icon_hovered:
+            self.update()  # Redraw to show hover state
+            if self.focus_icon_hovered:
+                self.setCursor(Qt.PointingHandCursor)
+                if self.is_focused_on_position:
+                    self.setToolTip("Show full track (F)")
+                else:
+                    self.setToolTip("Toggle auto-follow cursor mode (F)")
+            elif not (self.dragging_start or self.dragging_end):
+                self.setCursor(Qt.ArrowCursor)
+                self.setToolTip("")
+        
         self._last_mouse_x = event.x()
     
     def mouseReleaseEvent(self, event):
@@ -460,11 +630,18 @@ class WaveformWidget(QWidget):
         sample_diff = mouse_sample_before - mouse_sample_after
         pixel_diff = sample_diff / self.samples_per_pixel
         
+        # Protect follow state during zoom operations
+        self._programmatic_scroll = True
         self.scroll_position += pixel_diff
         
         # Limit scroll position
         max_scroll = max(0, (self.total_samples / self.samples_per_pixel) - self.width())
         self.scroll_position = max(0, min(self.scroll_position, max_scroll))
+        
+        # Remove the programmatic scroll flag
+        delattr(self, '_programmatic_scroll')
+        
+        # Don't reset focus state when zooming - preserve it
         
         self.update()
         
@@ -479,6 +656,7 @@ class WaveformWidget(QWidget):
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts"""
         if self.audio_data is None:
+            super().keyPressEvent(event)
             return
         
         if event.key() == Qt.Key_S:
@@ -503,6 +681,9 @@ class WaveformWidget(QWidget):
             self.loop_end = 0
             self.loopPointChanged.emit(0, 0)
             self.update()
+        else:
+            # Pass unhandled keys to parent
+            super().keyPressEvent(event)
 
 class TimelineWidget(QWidget):
     """Timeline widget showing time markers"""
@@ -688,6 +869,12 @@ class LoopEditorDialog(QDialog):
         self.waveform.positionChanged.connect(self.on_position_changed)
         self.waveform.loopPointChanged.connect(self.on_loop_points_changed)
         
+        # Connect focus callback
+        self.waveform.focus_callback = self.toggle_follow_mode
+        
+        # Connect follow callback for auto-follow behavior
+        self.waveform.follow_callback = self.follow_playback_cursor
+        
         # Add horizontal scrollbar
         self.waveform_scroll = QScrollBar(Qt.Horizontal)
         self.waveform_scroll.valueChanged.connect(self.on_scroll_changed)
@@ -781,7 +968,7 @@ class LoopEditorDialog(QDialog):
         info_layout = QVBoxLayout(info_group)
         
         # Add helpful tip
-        tip_label = QLabel("Tip: Use S to set start and E to set end at current position\nHold Ctrl while dragging markers for fine precision control (can be toggled mid-drag)")
+        tip_label = QLabel("Tip: Use S to set start and E to set end at current position. Press F to toggle auto-follow cursor mode.\nHold Ctrl while dragging markers for fine precision control (can be toggled mid-drag)")
         tip_label.setStyleSheet("color: #888; font-style: italic; padding: 5px; background-color: rgba(255, 255, 255, 0.05); border-radius: 3px;")
         tip_label.setWordWrap(True)
         info_layout.addWidget(tip_label)
@@ -969,6 +1156,12 @@ class LoopEditorDialog(QDialog):
             self.toggle_loop_mode()
             event.accept()
             return
+            
+        # F: Toggle auto-follow cursor mode
+        elif event.key() == Qt.Key_F:
+            self.toggle_follow_mode()
+            event.accept()
+            return
         
         # Pass other keys to parent
         super().keyPressEvent(event)
@@ -1008,7 +1201,11 @@ class LoopEditorDialog(QDialog):
     def on_scroll_changed(self, value):
         """Handle scrollbar changes"""
         if hasattr(self.waveform, 'set_scroll_position'):
+            # Mark this as programmatic scroll to prevent follow state reset
+            self.waveform._programmatic_scroll = True
             self.waveform.set_scroll_position(value)
+            if hasattr(self.waveform, '_programmatic_scroll'):
+                delattr(self.waveform, '_programmatic_scroll')
         
     def update_scrollbar_range(self):
         """Update scrollbar range based on zoom level"""
@@ -1209,6 +1406,119 @@ class LoopEditorDialog(QDialog):
         else:
             # Stop loop timer
             self.loop_timer.stop()
+    
+    def toggle_follow_mode(self):
+        """Toggle the auto-follow mode for the playback cursor"""
+        if self.waveform.audio_data is None:
+            return
+        
+        # Simple, robust toggle - works immediately regardless of playback state
+        if self.waveform.is_focused_on_position:
+            # Currently following, turn it off
+            self.waveform.is_focused_on_position = False
+        else:
+            # Not following, turn it on and immediately center if cursor is visible
+            self.waveform.is_focused_on_position = True
+            # Center on current position to start following
+            self._center_on_current_position()
+        
+        # Force visual update to show new state
+        self.waveform.update()
+    
+    def focus_on_current_position(self):
+        """Center the view on current position (legacy method - kept for compatibility)"""
+        self._center_on_current_position()
+    
+    def _zoom_to_full_track(self):
+        """Zoom out to show the entire track"""
+        if self.waveform.audio_data is None:
+            return
+        
+        # Set zoom to show the full track
+        self.waveform.samples_per_pixel = max(1, self.waveform.total_samples / self.waveform.width())
+        self.waveform.scroll_position = 0
+        self.waveform.is_focused_on_position = False
+        
+        # Update display
+        self.waveform.update()
+        self.update_scrollbar_range()
+        self.waveform_scroll.setValue(0)
+    
+    def _center_on_current_position(self):
+        """Center the waveform view on the current playback position"""
+        if not hasattr(self.waveform, 'current_position'):
+            return
+        
+        current_sample = self.waveform.current_position
+        
+        # Calculate the scroll position to center the current position
+        # We want the current position to be in the middle of the visible area
+        visible_samples = self.waveform.width() * self.waveform.samples_per_pixel
+        center_scroll_pos = (current_sample / self.waveform.samples_per_pixel) - (self.waveform.width() / 2)
+        
+        # Ensure scroll position is within valid bounds
+        max_scroll = max(0, (self.waveform.total_samples / self.waveform.samples_per_pixel) - self.waveform.width())
+        center_scroll_pos = max(0, min(center_scroll_pos, max_scroll))
+        
+        # Set flags to prevent focus state reset during this scroll
+        self.waveform._setting_focus_scroll = True
+        self.waveform._programmatic_scroll = True
+        
+        # Update the waveform scroll position
+        self.waveform.set_scroll_position(center_scroll_pos)
+        self.waveform.is_focused_on_position = True
+        
+        # Clear the flags
+        if hasattr(self.waveform, '_setting_focus_scroll'):
+            delattr(self.waveform, '_setting_focus_scroll')
+        if hasattr(self.waveform, '_programmatic_scroll'):
+            delattr(self.waveform, '_programmatic_scroll')
+        
+        # Update the scrollbar to match
+        self.waveform_scroll.setValue(int(center_scroll_pos))
+    
+    def follow_playback_cursor(self, current_sample):
+        """Auto-follow the playback cursor when in focused mode"""
+        if not self.waveform.is_focused_on_position:
+            return
+        
+        # Calculate current cursor position in pixels
+        cursor_pixel = (current_sample / self.waveform.samples_per_pixel) - self.waveform.scroll_position
+        
+        # Check if cursor is getting close to the edges of the visible area
+        width = self.waveform.width()
+        margin = width * 0.25  # 25% margin on each side
+        
+        # If cursor is outside the comfortable viewing area, re-center
+        if cursor_pixel < margin or cursor_pixel > (width - margin):
+            # Throttle rapid re-centering but don't block the toggle functionality
+            import time
+            current_time = time.time() * 1000
+            if current_time - self.waveform._last_follow_time < self.waveform._follow_cooldown:
+                return  # Skip this scroll update but keep following enabled
+            
+            # Calculate new scroll position to center the cursor
+            center_scroll_pos = (current_sample / self.waveform.samples_per_pixel) - (width / 2)
+            
+            # Ensure scroll position is within valid bounds
+            max_scroll = max(0, (self.waveform.total_samples / self.waveform.samples_per_pixel) - width)
+            center_scroll_pos = max(0, min(center_scroll_pos, max_scroll))
+            
+            # Set flags to prevent focus state reset during this scroll
+            self.waveform._setting_focus_scroll = True
+            self.waveform._programmatic_scroll = True
+            
+            # Use smooth scrolling to the new position
+            self.waveform.smooth_scroll_to(center_scroll_pos)
+            
+            # Clear the flags
+            if hasattr(self.waveform, '_setting_focus_scroll'):
+                delattr(self.waveform, '_setting_focus_scroll')
+            if hasattr(self.waveform, '_programmatic_scroll'):
+                delattr(self.waveform, '_programmatic_scroll')
+            
+            # Update the last follow time
+            self.waveform._last_follow_time = current_time
     
     def update_sample_position(self):
         """Update position display with sample-accurate timing"""
