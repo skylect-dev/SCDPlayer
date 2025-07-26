@@ -111,11 +111,7 @@ class AudioConverter:
             return None
     
     def convert_wav_to_scd(self, wav_path: str, scd_path: str) -> bool:
-        """Convert WAV to SCD (limited implementation)"""
-        # NOTE: This is a simplified conversion that creates an SCD-like file
-        # but may not be fully compatible with all SCD requirements.
-        # Proper SCD encoding would require Square Enix's proprietary tools.
-        
+        """Convert WAV to SCD using KH PC Sound Tools MusicEncoder (renamed SingleEncoder)"""
         try:
             wav_file = Path(wav_path)
             scd_file = Path(scd_path)
@@ -124,15 +120,96 @@ class AudioConverter:
                 logging.error(f"WAV file not found: {wav_path}")
                 return False
             
-            # Read WAV data and write as pseudo-SCD
-            wav_data = wav_file.read_bytes()
-            scd_file.write_bytes(wav_data)
+            # Get KH PC Sound Tools paths
+            khpc_tools_dir = get_bundled_path('khpc_tools')
+            music_encoder_exe = Path(khpc_tools_dir) / 'SingleEncoder' / 'MusicEncoder.exe'
+            template_scd = Path(khpc_tools_dir) / 'SingleEncoder' / 'test.scd'
+            output_dir = Path(khpc_tools_dir) / 'SingleEncoder' / 'output'
             
-            return True
+            if not music_encoder_exe.exists():
+                logging.error(f"MusicEncoder not found at: {music_encoder_exe}")
+                return False
+                
+            if not template_scd.exists():
+                logging.error(f"SCD template not found at: {template_scd}")
+                return False
             
+            # Create unique filenames to avoid conflicts
+            import uuid
+            unique_id = str(uuid.uuid4())[:8]
+            
+            # Copy files to MusicEncoder directory (following the batch file pattern)
+            encoder_dir = music_encoder_exe.parent
+            encoder_template = encoder_dir / f'temp_template_{unique_id}.scd'
+            encoder_wav = encoder_dir / f'input_{unique_id}.wav'
+            encoder_output_dir = encoder_dir / 'output'
+            encoder_output_scd = encoder_output_dir / encoder_template.name
+            
+            # Ensure output directory exists
+            encoder_output_dir.mkdir(exist_ok=True)
+            
+            import shutil
+            shutil.copy2(template_scd, encoder_template)
+            shutil.copy2(wav_file, encoder_wav)
+            
+            try:
+                # Run MusicEncoder from its own directory with files in same directory
+                # Usage: MusicEncoder.exe <template.scd> <input.wav>
+                logging.info(f"Converting WAV to SCD using KH PC Sound Tools: {wav_path} -> {scd_path}")
+                result = subprocess.run(
+                    [str(music_encoder_exe), str(encoder_template), str(encoder_wav)],
+                    cwd=str(encoder_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=120,  # 2 minute timeout for conversion
+                    startupinfo=self._create_subprocess_startupinfo(),
+                    creationflags=subprocess.CREATE_NO_WINDOW
+                )
+                
+                if result.returncode != 0:
+                    logging.error(f"MusicEncoder failed with exit code {result.returncode}")
+                    logging.error(f"MusicEncoder output: {result.stdout}")
+                    logging.error(f"MusicEncoder errors: {result.stderr}")
+                    return False
+                
+                # MusicEncoder puts the result in its own output/<filename>.scd directory
+                if encoder_output_scd.exists():
+                    shutil.copy2(encoder_output_scd, scd_file)
+                    logging.info(f"SCD conversion completed successfully: {scd_path}")
+                    return True
+                else:
+                    logging.error(f"MusicEncoder did not produce expected output file: {encoder_output_scd}")
+                    return False
+                    
+            finally:
+                # Clean up temp files from encoder directory
+                encoder_template.unlink(missing_ok=True)
+                encoder_wav.unlink(missing_ok=True)
+                encoder_output_scd.unlink(missing_ok=True)
+                
+                # Clean up any other temp files in encoder directory
+                self._cleanup_encoder_temps(encoder_dir)
+            
+        except subprocess.TimeoutExpired:
+            logging.error("SCD conversion timed out")
+            return False
         except Exception as e:
             logging.error(f"Error in WAV to SCD conversion: {e}")
             return False
+    
+    def _cleanup_encoder_temps(self, encoder_dir):
+        """Clean up temporary files from encoder directory"""
+        try:
+            # Clean up any remaining temp files matching our patterns
+            temp_patterns = ['temp_template_*.scd', 'input_*.wav']
+            for pattern in temp_patterns:
+                for temp_file in encoder_dir.glob(pattern):
+                    try:
+                        temp_file.unlink(missing_ok=True)
+                    except:
+                        pass
+        except:
+            pass
     
     def cleanup_temp_files(self) -> None:
         """Clean up all temporary files"""

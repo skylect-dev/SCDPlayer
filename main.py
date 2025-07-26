@@ -29,6 +29,14 @@ def main():
     
     # Loading sequence
     update_splash("Initializing audio system...", 0.5)
+    
+    # Clean up any temporary files from previous runs
+    try:
+        from utils.khpc_cleanup import cleanup_khpc_tools
+        cleanup_khpc_tools()
+    except:
+        pass  # Don't fail if cleanup fails
+    
     update_splash("Loading interface...", 0.3)
     
     # Create main window

@@ -8,6 +8,7 @@ a = Analysis(
     binaries=[
         ('vgmstream/*', 'vgmstream'),
         ('ffmpeg/*', 'ffmpeg'),
+        ('khpc_tools/*', 'khpc_tools'),
     ],
     datas=[
         ('README.md', '.'),

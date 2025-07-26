@@ -184,24 +184,6 @@ class SCDPlayer(QMainWindow):
         player_layout.addLayout(load_layout)
         player_layout.addSpacing(15)
 
-        # Conversion controls
-        convert_layout = QVBoxLayout()
-        
-        # First row: WAV/SCD conversion
-        convert_row1 = QHBoxLayout()
-        self.convert_to_wav_btn = QPushButton('Convert to WAV')
-        self.convert_to_wav_btn.clicked.connect(self.convert_current_to_wav)
-        self.convert_to_wav_btn.setEnabled(False)
-        convert_row1.addWidget(self.convert_to_wav_btn)
-        
-        self.convert_to_scd_btn = QPushButton('Convert to SCD')
-        self.convert_to_scd_btn.clicked.connect(self.convert_current_to_scd)
-        self.convert_to_scd_btn.setEnabled(False)
-        convert_row1.addWidget(self.convert_to_scd_btn)
-        convert_layout.addLayout(convert_row1)
-        
-        player_layout.addLayout(convert_layout)
-
         # Metadata display area (after conversion buttons)
         self.metadata_label = QLabel("No file loaded")
         self.metadata_label.setWordWrap(True)
@@ -319,9 +301,27 @@ class SCDPlayer(QMainWindow):
         self.delete_selected_btn = QPushButton('Delete Selected')
         self.delete_selected_btn.clicked.connect(self.delete_selected_files)
         self.delete_selected_btn.setToolTip('Delete selected files from disk (DEL key shortcut)')
+        self.delete_selected_btn.setEnabled(False)  # Disabled initially
         library_buttons_layout.addWidget(self.delete_selected_btn)
         
         library_layout.addLayout(library_buttons_layout)
+
+        # Conversion buttons for library files
+        convert_buttons_layout = QHBoxLayout()
+        
+        self.convert_to_wav_btn = QPushButton('Convert Selected to WAV')
+        self.convert_to_wav_btn.clicked.connect(self.convert_selected_to_wav)
+        self.convert_to_wav_btn.setEnabled(False)  # Disabled initially
+        self.convert_to_wav_btn.setToolTip('Convert selected library files to WAV format')
+        convert_buttons_layout.addWidget(self.convert_to_wav_btn)
+        
+        self.convert_to_scd_btn = QPushButton('Convert Selected to SCD')
+        self.convert_to_scd_btn.clicked.connect(self.convert_selected_to_scd)
+        self.convert_to_scd_btn.setEnabled(False)  # Disabled initially
+        self.convert_to_scd_btn.setToolTip('Convert selected library files to SCD format')
+        convert_buttons_layout.addWidget(self.convert_to_scd_btn)
+        
+        library_layout.addLayout(convert_buttons_layout)
 
         # Now that self.file_list exists, initialize self.library
         self.library = AudioLibrary(self.file_list, self.kh_rando_exporter)
@@ -451,18 +451,38 @@ class SCDPlayer(QMainWindow):
         if not hasattr(self, 'file_list') or not self.file_list:
             return
             
+        # Clear current selection first
+        self.file_list.clearSelection()
+        
         # Find and select the item with matching file path
         for i in range(self.file_list.count()):
             item = self.file_list.item(i)
             if item and item.data(Qt.UserRole) == file_path:
                 self.file_list.setCurrentItem(item)
                 self.file_list.scrollToItem(item)
-                break
+                return  # Found and selected, we're done
+        
+        # File not found in library - add it temporarily for this session
+        if hasattr(self, 'library') and self.library and os.path.exists(file_path):
+            from pathlib import Path
+            self.library._add_file_to_library(Path(file_path))
+            
+            # Now try to select it again
+            for i in range(self.file_list.count()):
+                item = self.file_list.item(i)
+                if item and item.data(Qt.UserRole) == file_path:
+                    self.file_list.setCurrentItem(item)
+                    self.file_list.scrollToItem(item)
+                    break
     
     def on_library_selection_changed(self):
         """Handle library selection changes"""
         selected_items = self.file_list.selectedItems()
-        self.export_selected_btn.setEnabled(len(selected_items) > 0)
+        has_selection = len(selected_items) > 0
+        self.export_selected_btn.setEnabled(has_selection)
+        self.delete_selected_btn.setEnabled(has_selection)
+        self.convert_to_wav_btn.setEnabled(has_selection)
+        self.convert_to_scd_btn.setEnabled(has_selection)
 
     def delete_selected_files(self):
         """Delete selected files from disk with confirmation"""
@@ -520,6 +540,14 @@ class SCDPlayer(QMainWindow):
         if hasattr(self, 'library') and self.library:
             self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
 
+    def convert_selected_to_wav(self):
+        """Convert selected library files to WAV"""
+        self.conversion_manager.convert_selected_to_wav()
+
+    def convert_selected_to_scd(self):
+        """Convert selected library files to SCD"""
+        self.conversion_manager.convert_selected_to_scd()
+
     # === File Loading ===
     def load_file(self):
         """Load audio file via file dialog"""
@@ -568,8 +596,6 @@ class SCDPlayer(QMainWindow):
             wav_file = self.converter.convert_scd_to_wav(file_path)
             if wav_file:
                 self.enable_playback_controls()
-                self.convert_to_wav_btn.setEnabled(True)
-                self.convert_to_scd_btn.setEnabled(False)
                 self.player.setMedia(QMediaContent(QUrl.fromLocalFile(wav_file)))
             else:
                 self.label.setText('Failed to convert SCD file.')
@@ -578,8 +604,6 @@ class SCDPlayer(QMainWindow):
                 
         elif file_ext == '.wav':
             self.enable_playback_controls()
-            self.convert_to_wav_btn.setEnabled(False)
-            self.convert_to_scd_btn.setEnabled(True)
             media_url = QUrl.fromLocalFile(os.path.abspath(file_path))
             self.player.setMedia(QMediaContent(media_url))
             
@@ -587,8 +611,6 @@ class SCDPlayer(QMainWindow):
             wav_file = self.converter.convert_to_wav_temp(file_path)
             if wav_file:
                 self.enable_playback_controls()
-                self.convert_to_wav_btn.setEnabled(True)
-                self.convert_to_scd_btn.setEnabled(True)
                 self.player.setMedia(QMediaContent(QUrl.fromLocalFile(wav_file)))
             else:
                 self.label.setText(f'Failed to convert {file_ext.upper()} file for playback.')
@@ -599,6 +621,9 @@ class SCDPlayer(QMainWindow):
         if hasattr(self, 'auto_play_after_load') and self.auto_play_after_load:
             self.auto_play_after_load = False
             QTimer.singleShot(100, self.play_audio)
+        
+        # Update library selection to highlight the loaded file (enables export/convert buttons)
+        self.update_library_selection(file_path)
         
     def on_file_load_error(self, error_msg):
         """Handle file load error"""

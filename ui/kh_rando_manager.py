@@ -1,7 +1,7 @@
 """KH Rando management features for SCDPlayer"""
 import os
 import tempfile
-from PyQt5.QtWidgets import QMessageBox, QDialog
+from PyQt5.QtWidgets import QMessageBox, QDialog, QProgressDialog, QApplication
 from PyQt5.QtCore import Qt
 from core.kh_rando import KHRandoExportDialog
 from ui.dialogs import show_themed_message
@@ -61,10 +61,32 @@ class KHRandoManager:
         final_files = scd_files.copy()
         converted_files = []
         
-        # Convert non-SCD files to SCD
+        # Convert non-SCD files to SCD with progress indicator
         if files_to_convert:
-            for file_path in files_to_convert:
+            # Create progress dialog
+            progress_dialog = QProgressDialog("Converting files for KH Rando export...", "Cancel", 0, len(files_to_convert), self.main_window)
+            progress_dialog.setWindowTitle("Converting Files")
+            progress_dialog.setModal(True)
+            progress_dialog.setMinimumDuration(0)
+            progress_dialog.show()
+            
+            # Apply theme to progress dialog
+            try:
+                from ui.styles import apply_title_bar_theming
+                apply_title_bar_theming(progress_dialog)
+            except:
+                pass
+            
+            for i, file_path in enumerate(files_to_convert):
+                if progress_dialog.wasCanceled():
+                    break
+                    
                 try:
+                    filename = os.path.basename(file_path)
+                    progress_dialog.setLabelText(f"Converting {filename}...")
+                    progress_dialog.setValue(i)
+                    QApplication.processEvents()
+                    
                     # Create temp SCD file with original name
                     base_name = os.path.splitext(os.path.basename(file_path))[0]
                     temp_scd = os.path.join(tempfile.gettempdir(), f"{base_name}.scd")
@@ -85,6 +107,9 @@ class KHRandoManager:
                 
                 except Exception as e:
                     print(f"Failed to convert {file_path}: {e}")
+            
+            progress_dialog.setValue(len(files_to_convert))
+            progress_dialog.close()
         
         if not final_files:
             show_themed_message(self.main_window, QMessageBox.Warning, "No Valid Files", "No files could be prepared for export.")

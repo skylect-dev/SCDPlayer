@@ -6,16 +6,22 @@ from pathlib import Path
 from typing import List, Optional
 
 
-def get_bundled_path(subfolder: str, filename: str) -> str:
-    """Get the path to a bundled executable in a subfolder, 
+def get_bundled_path(subfolder: str, filename: Optional[str] = None) -> str:
+    """Get the path to a bundled executable or directory,
     handling both development and PyInstaller modes"""
     if getattr(sys, 'frozen', False):
         # Running as PyInstaller executable
         bundle_dir = Path(sys._MEIPASS)
-        return str(bundle_dir / subfolder / filename)
+        if filename:
+            return str(bundle_dir / subfolder / filename)
+        else:
+            return str(bundle_dir / subfolder)
     else:
         # Running in development mode
-        return str(Path.cwd() / subfolder / filename)
+        if filename:
+            return str(Path.cwd() / subfolder / filename)
+        else:
+            return str(Path.cwd() / subfolder)
 
 
 def create_temp_wav() -> str:
