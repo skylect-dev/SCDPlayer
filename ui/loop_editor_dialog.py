@@ -210,6 +210,7 @@ class WaveformWidget(QWidget):
         self.current_position = 0
         self.dragging_start = False
         self.dragging_end = False
+        self.dragging_cursor = False
         self.drag_offset = 0
         
         # Enable mouse tracking for better interaction
@@ -648,6 +649,7 @@ class WaveformWidget(QWidget):
             # Check if clicking near loop markers (allow for position 0)
             start_x = self.sample_to_pixel(self.loop_start)
             end_x = self.sample_to_pixel(self.loop_end)
+            cursor_x = self.sample_to_pixel(self.current_position)
             
             self.fine_control = event.modifiers() & Qt.ControlModifier
             
@@ -660,6 +662,11 @@ class WaveformWidget(QWidget):
                 self.dragging_end = True
                 self._drag_start_x = event.x()  # Store starting drag position
                 self._fine_base_end = self.loop_end  # Store initial position for fine control
+                self.setCursor(Qt.SizeHorCursor)
+            elif abs(event.x() - cursor_x) < 6:  # Check if clicking near current time cursor
+                self.dragging_cursor = True
+                self._drag_start_x = event.x()  # Store starting drag position
+                self._fine_base_cursor = self.current_position  # Store initial position for fine control
                 self.setCursor(Qt.SizeHorCursor)
             else:
                 # Set playback position
@@ -732,13 +739,43 @@ class WaveformWidget(QWidget):
             
             self.loopPointChanged.emit(self.loop_start, self.loop_end)
             self.update()
+            
+        elif self.dragging_cursor:
+            # Handle smooth Ctrl toggling during drag
+            if current_fine_control != self.fine_control:
+                self.fine_control = current_fine_control
+                # Store the current position to prevent jumping
+                self._ctrl_toggle_reference = self.current_position
+            
+            if self.fine_control:
+                # Fine control: small increments based on mouse movement
+                if hasattr(self, '_ctrl_toggle_reference') and self._ctrl_toggle_reference is not None:
+                    # Use stored reference point to prevent jumping
+                    base_pos = self._ctrl_toggle_reference
+                    self._ctrl_toggle_reference = None
+                else:
+                    base_pos = getattr(self, '_fine_base_cursor', self.current_position)
+                    if base_pos is None:
+                        base_pos = self.current_position
+                    
+                delta = (event.x() - getattr(self, '_drag_start_x', event.x())) * (self.samples_per_pixel // 20)
+                self.current_position = max(0, min(base_pos + delta, self.total_samples))
+                self._fine_base_cursor = base_pos
+            else:
+                # Normal control: direct position
+                self.current_position = max(0, min(sample_pos, self.total_samples))
+            
+            self.positionChanged.emit(self.current_position)
+            self.update()
         else:
-            # Show resize cursor near loop markers (allow for position 0)
+            # Show resize cursor near loop markers or current time cursor (allow for position 0)
             start_x = self.sample_to_pixel(self.loop_start)
             end_x = self.sample_to_pixel(self.loop_end)
+            cursor_x = self.sample_to_pixel(self.current_position)
             
             if (abs(event.x() - start_x) < 6 and self.loop_start >= 0) or \
-               (abs(event.x() - end_x) < 6 and self.loop_end > self.loop_start):
+               (abs(event.x() - end_x) < 6 and self.loop_end > self.loop_start) or \
+               abs(event.x() - cursor_x) < 6:
                 self.setCursor(Qt.SizeHorCursor)
             else:
                 self.setCursor(Qt.ArrowCursor)
@@ -754,7 +791,7 @@ class WaveformWidget(QWidget):
                     self.setToolTip("Show full track (F)")
                 else:
                     self.setToolTip("Toggle auto-follow cursor mode (F)")
-            elif not (self.dragging_start or self.dragging_end):
+            elif not (self.dragging_start or self.dragging_end or self.dragging_cursor):
                 self.setCursor(Qt.ArrowCursor)
                 self.setToolTip("")
         
@@ -765,12 +802,15 @@ class WaveformWidget(QWidget):
         if event.button() == Qt.LeftButton:
             self.dragging_start = False
             self.dragging_end = False
+            self.dragging_cursor = False
             # Clean up fine control state
             self._ctrl_toggle_reference = None
             if hasattr(self, '_fine_base_start'):
                 delattr(self, '_fine_base_start')
             if hasattr(self, '_fine_base_end'):
                 delattr(self, '_fine_base_end')
+            if hasattr(self, '_fine_base_cursor'):
+                delattr(self, '_fine_base_cursor')
             if hasattr(self, '_drag_start_x'):
                 delattr(self, '_drag_start_x')
             self.setCursor(Qt.ArrowCursor)
@@ -1026,6 +1066,16 @@ class LoopEditorDialog(QDialog):
             QSpinBox:focus {
                 border-color: #4080ff;
             }
+            QDoubleSpinBox {
+                background-color: #404040;
+                border: 1px solid #555;
+                border-radius: 3px;
+                padding: 4px;
+                color: white;
+            }
+            QDoubleSpinBox:focus {
+                border-color: #4080ff;
+            }
             QScrollBar:horizontal {
                 background-color: #404040;
                 height: 16px;
@@ -1156,7 +1206,7 @@ class LoopEditorDialog(QDialog):
         info_layout = QVBoxLayout(info_group)
         
         # Add helpful tip
-        tip_label = QLabel("Tip: Use S to set start and E to set end at current position. Press F to toggle auto-follow cursor mode.\nHold Ctrl while dragging markers for fine precision control (can be toggled mid-drag)")
+        tip_label = QLabel("Tip: Use S to set start and E to set end at current position. Press F to toggle auto-follow cursor mode.\nDrag the yellow cursor to scrub through audio. Input times in samples or seconds. Hold Ctrl while dragging markers for fine precision control (can be toggled mid-drag)")
         tip_label.setStyleSheet("color: #888; font-style: italic; padding: 5px; background-color: rgba(255, 255, 255, 0.05); border-radius: 3px;")
         tip_label.setWordWrap(True)
         info_layout.addWidget(tip_label)
@@ -1172,9 +1222,17 @@ class LoopEditorDialog(QDialog):
         start_layout.addWidget(self.start_spin)
         start_layout.addWidget(QLabel("samples"))
         
-        self.start_time_label = QLabel("(0.000s)")
-        self.start_time_label.setStyleSheet("color: #aaa; font-size: 11px;")
-        start_layout.addWidget(self.start_time_label)
+        # Add seconds input for start point
+        start_layout.addWidget(QLabel("or"))
+        self.start_time_spin = QDoubleSpinBox()
+        self.start_time_spin.setMaximum(999999.999)
+        self.start_time_spin.setDecimals(3)
+        self.start_time_spin.setSingleStep(0.001)
+        self.start_time_spin.valueChanged.connect(self.on_loop_start_time_changed)
+        self.start_time_spin.setStyleSheet("QDoubleSpinBox { padding: 4px; }")
+        start_layout.addWidget(self.start_time_spin)
+        start_layout.addWidget(QLabel("seconds"))
+        
         start_layout.addStretch()
         
         info_layout.addLayout(start_layout)
@@ -1190,9 +1248,17 @@ class LoopEditorDialog(QDialog):
         end_layout.addWidget(self.end_spin)
         end_layout.addWidget(QLabel("samples"))
         
-        self.end_time_label = QLabel("(0.000s)")
-        self.end_time_label.setStyleSheet("color: #aaa; font-size: 11px;")
-        end_layout.addWidget(self.end_time_label)
+        # Add seconds input for end point
+        end_layout.addWidget(QLabel("or"))
+        self.end_time_spin = QDoubleSpinBox()
+        self.end_time_spin.setMaximum(999999.999)
+        self.end_time_spin.setDecimals(3)
+        self.end_time_spin.setSingleStep(0.001)
+        self.end_time_spin.valueChanged.connect(self.on_loop_end_time_changed)
+        self.end_time_spin.setStyleSheet("QDoubleSpinBox { padding: 4px; }")
+        end_layout.addWidget(self.end_time_spin)
+        end_layout.addWidget(QLabel("seconds"))
+        
         end_layout.addStretch()
         
         info_layout.addLayout(end_layout)
@@ -1566,7 +1632,7 @@ class LoopEditorDialog(QDialog):
         if value < end:
             self.waveform.set_loop_points(value, end)
             self.update_duration_label(value, end)
-            self.update_time_labels()
+            self.update_time_spinboxes()
     
     def on_loop_end_changed(self, value: int):
         """Handle loop end change from spin box"""
@@ -1574,32 +1640,83 @@ class LoopEditorDialog(QDialog):
         if value > start:
             self.waveform.set_loop_points(start, value)
             self.update_duration_label(start, value)
-            self.update_time_labels()
+            self.update_time_spinboxes()
     
-    def update_time_labels(self):
-        """Update time labels for loop points"""
+    def on_loop_start_time_changed(self, time_seconds: float):
+        """Handle loop start time change from seconds spin box"""
         file_info = self.loop_manager.get_file_info()
         sample_rate = file_info.get('sample_rate', 44100)
         
         if sample_rate > 0:
-            start_time = f"({self.start_spin.value() / sample_rate:.3f}s)"
-            end_time = f"({self.end_spin.value() / sample_rate:.3f}s)"
-            self.start_time_label.setText(start_time)
-            self.end_time_label.setText(end_time)
+            sample_value = int(time_seconds * sample_rate)
+            end = self.end_spin.value()
+            if sample_value < end:
+                self.start_spin.blockSignals(True)
+                self.start_spin.setValue(sample_value)
+                self.start_spin.blockSignals(False)
+                self.waveform.set_loop_points(sample_value, end)
+                self.update_duration_label(sample_value, end)
+    
+    def on_loop_end_time_changed(self, time_seconds: float):
+        """Handle loop end time change from seconds spin box"""
+        file_info = self.loop_manager.get_file_info()
+        sample_rate = file_info.get('sample_rate', 44100)
+        
+        if sample_rate > 0:
+            sample_value = int(time_seconds * sample_rate)
+            start = self.start_spin.value()
+            if sample_value > start:
+                self.end_spin.blockSignals(True)
+                self.end_spin.setValue(sample_value)
+                self.end_spin.blockSignals(False)
+                self.waveform.set_loop_points(start, sample_value)
+                self.update_duration_label(start, sample_value)
+    
+    def update_time_spinboxes(self):
+        """Update time spinboxes for loop points"""
+        file_info = self.loop_manager.get_file_info()
+        sample_rate = file_info.get('sample_rate', 44100)
+        
+        if sample_rate > 0:
+            self.start_time_spin.blockSignals(True)
+            self.end_time_spin.blockSignals(True)
+            
+            start_time = self.start_spin.value() / sample_rate
+            end_time = self.end_spin.value() / sample_rate
+            
+            self.start_time_spin.setValue(start_time)
+            self.end_time_spin.setValue(end_time)
+            
+            self.start_time_spin.blockSignals(False)
+            self.end_time_spin.blockSignals(False)
+    
+    def update_time_labels(self):
+        """Update time spinboxes for loop points (backward compatibility)"""
+        self.update_time_spinboxes()
     
     def update_loop_info(self, start: int, end: int):
         """Update loop information displays"""
         self.start_spin.blockSignals(True)
         self.end_spin.blockSignals(True)
+        self.start_time_spin.blockSignals(True)
+        self.end_time_spin.blockSignals(True)
         
         self.start_spin.setValue(start)
         self.end_spin.setValue(end)
         
+        # Update time spinboxes
+        file_info = self.loop_manager.get_file_info()
+        sample_rate = file_info.get('sample_rate', 44100)
+        if sample_rate > 0:
+            self.start_time_spin.setValue(start / sample_rate)
+            self.end_time_spin.setValue(end / sample_rate)
+        
         self.start_spin.blockSignals(False)
         self.end_spin.blockSignals(False)
+        self.start_time_spin.blockSignals(False)
+        self.end_time_spin.blockSignals(False)
         
         self.update_duration_label(start, end)
-        self.update_time_labels()
     
     def update_duration_label(self, start: int, end: int):
         """Update duration label"""

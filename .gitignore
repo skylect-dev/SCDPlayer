@@ -59,3 +59,6 @@ temp_*
 
 # Copilot
 .github/copilot-instructions.md
+
+# VSCode
+.vscode
