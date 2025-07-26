@@ -18,6 +18,7 @@ from ui.dialogs import show_themed_message, show_themed_file_dialog, apply_title
 from ui.conversion_manager import ConversionManager
 from ui.kh_rando_manager import KHRandoManager
 from ui.help_dialog import HelpDialog
+from ui.loop_editor import LoopPointEditor
 from core.converter import AudioConverter
 from core.threading import FileLoadThread
 from core.library import AudioLibrary
@@ -329,6 +330,19 @@ class SCDPlayer(QMainWindow):
         
         library_layout.addLayout(convert_buttons_layout)
 
+        # Loop point editing buttons
+        loop_buttons_layout = QHBoxLayout()
+        
+        self.edit_loop_points_btn = QPushButton('Edit Loop Points (L)')
+        self.edit_loop_points_btn.clicked.connect(self.edit_loop_points)
+        self.edit_loop_points_btn.setEnabled(False)  # Disabled initially
+        self.edit_loop_points_btn.setToolTip('Edit loop points for selected audio file (L key)')
+        loop_buttons_layout.addWidget(self.edit_loop_points_btn)
+        
+        loop_buttons_layout.addStretch()  # Add some spacing
+        
+        library_layout.addLayout(loop_buttons_layout)
+
         # Now that self.file_list exists, initialize self.library
         self.library = AudioLibrary(self.file_list, self.kh_rando_exporter)
         
@@ -369,6 +383,18 @@ class SCDPlayer(QMainWindow):
         # Ctrl+L shortcut for opening file location
         open_location_shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
         open_location_shortcut.activated.connect(self.open_file_location)
+        
+        # L key shortcut for opening loop editor
+        loop_editor_shortcut = QShortcut(QKeySequence("L"), self)
+        loop_editor_shortcut.activated.connect(self.edit_loop_points)
+        
+        # Update button tooltips to show hotkeys
+        self._update_button_tooltips_with_hotkeys()
+    
+    def _update_button_tooltips_with_hotkeys(self):
+        """Update button tooltips to include hotkey information"""
+        # This ensures tooltips show hotkey information
+        pass  # Already handled in button creation
 
     # === Library Management ===
     def add_library_folder(self):
@@ -498,6 +524,7 @@ class SCDPlayer(QMainWindow):
         self.convert_to_wav_btn.setEnabled(has_selection)
         self.convert_to_scd_btn.setEnabled(has_selection)
         self.open_file_location_btn.setEnabled(can_open_location)
+        self.edit_loop_points_btn.setEnabled(single_selection)
 
     def delete_selected_files(self):
         """Delete selected files from disk with confirmation"""
@@ -612,6 +639,33 @@ class SCDPlayer(QMainWindow):
     def convert_selected_to_scd(self):
         """Convert selected library files to SCD"""
         self.conversion_manager.convert_selected_to_scd()
+
+    def edit_loop_points(self):
+        """Open loop point editor for selected file"""
+        selected_items = self.file_list.selectedItems()
+        if len(selected_items) != 1:
+            show_themed_message(self, QMessageBox.Information, "Selection Required", 
+                              "Please select exactly one file to edit loop points.")
+            return
+        
+        file_path = selected_items[0].data(Qt.UserRole)
+        if not file_path or not os.path.exists(file_path):
+            show_themed_message(self, QMessageBox.Warning, "File Not Found", 
+                              "The selected file no longer exists on disk.")
+            return
+        
+        # Stop any currently playing audio in main window
+        self.stop_audio()
+        
+        try:
+            loop_editor = LoopPointEditor(self, file_path)
+            if loop_editor.exec_() == QDialog.Accepted:
+                # File was saved with loop points - optionally refresh library
+                if hasattr(self, 'library') and self.library:
+                    self.rescan_library()
+        except Exception as e:
+            show_themed_message(self, QMessageBox.Critical, "Loop Editor Error",
+                              f"Failed to open loop point editor:\n{str(e)}")
 
     # === File Loading ===
     def load_file(self):

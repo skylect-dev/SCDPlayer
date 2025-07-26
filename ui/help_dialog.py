@@ -61,6 +61,7 @@ class HelpDialog(QDialog):
             ("Getting Started", "getting-started"),
             ("Setting Up Library", "library-setup"),
             ("Playing Audio", "playing-audio"),
+            ("Loop Point Editor", "loop-point-editor"),
             ("KH Randomizer Setup", "kh-rando-setup"),
             ("File Status Colors", "file-status"),
             ("Export Options", "export-options"),
@@ -174,6 +175,35 @@ class HelpDialog(QDialog):
                     <li><strong>Seek Bar:</strong> Click or drag to jump to specific positions</li>
                     <li><strong>Time Display:</strong> Shows current position and total duration</li>
                     <li><strong>Metadata Display:</strong> Shows file information, format details, and audio tags</li>
+                </ul>
+            </div>
+            
+            <h2 id="loop-point-editor">Loop Point Editor</h2>
+            <div class="section">
+                <h3>Creating Perfect Audio Loops</h3>
+                <ul>
+                    <li><strong>Access:</strong> Select a single file from library and click "Edit Loop Points"</li>
+                    <li><strong>Supported Formats:</strong> Works with WAV, MP3, SCD, OGG, FLAC (auto-converts as needed)</li>
+                    <li><strong>Visual Editing:</strong> Interactive waveform display with draggable loop markers</li>
+                    <li><strong>Sample Precision:</strong> Set loop points with sample-accurate positioning</li>
+                    <li><strong>Auto-Detection:</strong> Intelligent algorithm suggests potential loop points</li>
+                    <li><strong>Preview Mode:</strong> Green highlighted region shows exactly what will loop</li>
+                </ul>
+                
+                <h3>Setting Loop Points</h3>
+                <ul>
+                    <li><strong>Visual Method:</strong> Click and drag green START/END markers on waveform</li>
+                    <li><strong>Numeric Method:</strong> Enter exact sample numbers in input fields</li>
+                    <li><strong>Auto-Detect:</strong> Use "Auto-Detect Loop" button for AI-assisted detection</li>
+                    <li><strong>Fine-Tuning:</strong> Use time display to verify loop timing in seconds</li>
+                </ul>
+                
+                <h3>Export Options</h3>
+                <ul>
+                    <li><strong>WAV with Metadata:</strong> Saves loop points as LoopStart/LoopEnd tags</li>
+                    <li><strong>Trim After Loop:</strong> Option to remove audio after loop end point</li>
+                    <li><strong>Community Compatible:</strong> Creates files matching KH Randomizer workflow</li>
+                    <li><strong>Professional Quality:</strong> Maintains original audio fidelity</li>
                 </ul>
             </div>
             

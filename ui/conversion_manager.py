@@ -70,10 +70,21 @@ class ConversionWorker(QThread):
                 output_path = os.path.splitext(file_path)[0] + '.wav'
                 
             if file_ext == '.scd':
+                # For batch conversion, don't warn individually but track files with loop points
                 result = self.converter.convert_scd_to_wav(file_path, out_path=output_path)
                 return result is not None
             else:
                 return self.converter.convert_with_ffmpeg(file_path, output_path, 'wav')
+        except Exception:
+            return False
+    
+    def _check_scd_has_loop_points(self, scd_path: str) -> bool:
+        """Check if an SCD file has loop points using LoopMetadataReader"""
+        try:
+            from ui.metadata_reader import LoopMetadataReader
+            reader = LoopMetadataReader()
+            metadata = reader.read_metadata(scd_path)
+            return metadata.get('has_loop', False)
         except Exception:
             return False
     
@@ -148,6 +159,30 @@ class ConversionManager:
         if not files_to_convert:
             show_themed_message(self.main_window, QMessageBox.Warning, 'No Valid Files', 'No valid files found in selection.')
             return
+        
+        # Check for SCD files with loop points and warn user
+        scd_files_with_loops = []
+        for file_path in files_to_convert:
+            if file_path.lower().endswith('.scd') and self._check_scd_has_loop_points(file_path):
+                scd_files_with_loops.append(os.path.basename(file_path))
+        
+        if scd_files_with_loops:
+            file_list = '\n'.join([f"• {name}" for name in scd_files_with_loops[:10]])  # Show first 10
+            if len(scd_files_with_loops) > 10:
+                file_list += f"\n... and {len(scd_files_with_loops) - 10} more"
+            
+            reply = show_themed_message(
+                self.main_window, QMessageBox.Warning, 'Loop Points Will Be Lost',
+                f'The following SCD files contain loop points which will be lost during WAV conversion:\n\n'
+                f'{file_list}\n\n'
+                f'To preserve loop points, use the Loop Editor to save them to the SCD files first, '
+                f'or convert to SCD format instead.\n\n'
+                f'Continue with WAV conversion anyway?',
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
             
         # Get output directory
         output_dir = show_themed_file_dialog(
@@ -270,6 +305,20 @@ class ConversionManager:
         
         if save_path:
             if file_ext == '.scd':
+                # Check if SCD has loop points and warn user they will be lost
+                if self._check_scd_has_loop_points(self.main_window.current_file):
+                    reply = show_themed_message(
+                        self.main_window, QMessageBox.Warning, 'Loop Points Will Be Lost',
+                        'This SCD file contains loop points which will be lost during WAV conversion.\n\n'
+                        'To preserve loop points, use the Loop Editor to save them to the SCD file first, '
+                        'or convert to another SCD file instead.\n\n'
+                        'Continue with WAV conversion anyway?',
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.No
+                    )
+                    if reply != QMessageBox.Yes:
+                        return
+                
                 wav = self.converter.convert_scd_to_wav(self.main_window.current_file, out_path=save_path)
                 if wav:
                     show_themed_message(self.main_window, QMessageBox.Information, 'Conversion Complete', f'WAV saved to: {save_path}')

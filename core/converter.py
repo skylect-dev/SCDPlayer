@@ -1,5 +1,6 @@
 """Audio conversion functionality for SCDPlayer"""
 import logging
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -120,6 +121,12 @@ class AudioConverter:
                 logging.error(f"WAV file not found: {wav_path}")
                 return False
             
+            # Debug: Check if input WAV has metadata
+            self._debug_check_wav_metadata(wav_path, "Input WAV")
+            
+            # Check if input WAV has existing loop metadata and preserve it
+            enhanced_wav_path = self._ensure_wav_has_loop_metadata(wav_path)
+            
             # Get KH PC Sound Tools paths
             khpc_tools_dir = get_bundled_path('khpc_tools')
             music_encoder_exe = Path(khpc_tools_dir) / 'SingleEncoder' / 'MusicEncoder.exe'
@@ -150,7 +157,10 @@ class AudioConverter:
             
             import shutil
             shutil.copy2(template_scd, encoder_template)
-            shutil.copy2(wav_file, encoder_wav)
+            shutil.copy2(enhanced_wav_path if enhanced_wav_path else wav_file, encoder_wav)
+            
+            # Debug: Check if copied WAV still has metadata
+            self._debug_check_wav_metadata(str(encoder_wav), "Copied WAV in encoder directory")
             
             try:
                 # Run MusicEncoder from its own directory with files in same directory
@@ -166,6 +176,9 @@ class AudioConverter:
                     creationflags=subprocess.CREATE_NO_WINDOW
                 )
                 
+                print(f"Debug: MusicEncoder stdout: {result.stdout}")
+                print(f"Debug: MusicEncoder stderr: {result.stderr}")
+                
                 if result.returncode != 0:
                     logging.error(f"MusicEncoder failed with exit code {result.returncode}")
                     logging.error(f"MusicEncoder output: {result.stdout}")
@@ -174,6 +187,19 @@ class AudioConverter:
                 
                 # MusicEncoder puts the result in its own output/<filename>.scd directory
                 if encoder_output_scd.exists():
+                    # Debug: Check if we can convert the output SCD back to WAV and see if metadata survived
+                    temp_test_wav = encoder_dir / f'test_metadata_{unique_id}.wav'
+                    test_result = subprocess.run(
+                        [get_bundled_path('vgmstream', 'vgmstream-cli.exe'), '-o', str(temp_test_wav), str(encoder_output_scd)],
+                        capture_output=True,
+                        startupinfo=self._create_subprocess_startupinfo(),
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                    
+                    if test_result.returncode == 0 and temp_test_wav.exists():
+                        self._debug_check_wav_metadata(str(temp_test_wav), "WAV converted back from MusicEncoder output SCD")
+                        temp_test_wav.unlink(missing_ok=True)
+                    
                     shutil.copy2(encoder_output_scd, scd_file)
                     logging.info(f"SCD conversion completed successfully: {scd_path}")
                     return True
@@ -210,6 +236,151 @@ class AudioConverter:
                         pass
         except:
             pass
+    
+    def _debug_check_wav_metadata(self, wav_path: str, description: str):
+        """Debug method to check if WAV file contains ID3v2 metadata"""
+        try:
+            import struct
+            with open(wav_path, 'rb') as f:
+                # Read RIFF header
+                riff_header = f.read(12)
+                if len(riff_header) < 12 or riff_header[:4] != b'RIFF' or riff_header[8:12] != b'WAVE':
+                    print(f"Debug: {description} - Not a valid WAV file")
+                    return
+                
+                found_id3 = False
+                found_list = False
+                found_smpl = False
+                
+                # Parse chunks
+                while True:
+                    chunk_header = f.read(8)
+                    if len(chunk_header) < 8:
+                        break
+                    
+                    chunk_name = chunk_header[:4]
+                    chunk_size = struct.unpack('<I', chunk_header[4:])[0]
+                    
+                    if chunk_name == b'id3 ':
+                        found_id3 = True
+                        # Quick check for LoopStart/LoopEnd in ID3 data
+                        id3_data = f.read(min(chunk_size, 1024))  # Read first part
+                        if b'LoopStart' in id3_data and b'LoopEnd' in id3_data:
+                            print(f"Debug: {description} - HAS ID3v2 with LoopStart/LoopEnd!")
+                        else:
+                            print(f"Debug: {description} - Has ID3v2 but no loop tags")
+                        f.read(max(0, chunk_size - 1024))  # Skip rest
+                    elif chunk_name == b'LIST':
+                        found_list = True
+                        f.read(chunk_size)
+                    elif chunk_name == b'smpl':
+                        found_smpl = True
+                        f.read(chunk_size)
+                    else:
+                        f.read(chunk_size)
+                    
+                    if chunk_size % 2:
+                        f.read(1)  # Skip padding
+                
+                if not (found_id3 or found_list or found_smpl):
+                    print(f"Debug: {description} - NO metadata chunks found")
+                else:
+                    chunks = []
+                    if found_id3: chunks.append("ID3v2")
+                    if found_list: chunks.append("LIST")
+                    if found_smpl: chunks.append("smpl")
+                    print(f"Debug: {description} - Found metadata chunks: {', '.join(chunks)}")
+                    
+        except Exception as e:
+            print(f"Debug: {description} - Error checking metadata: {e}")
+    
+    def _ensure_wav_has_loop_metadata(self, wav_path: str) -> Optional[str]:
+        """Check if WAV has loop metadata, and if not, try to extract from original SCD source"""
+        try:
+            # First check if WAV already has loop metadata
+            import struct
+            has_loop_metadata = False
+            
+            with open(wav_path, 'rb') as f:
+                # Skip RIFF header
+                f.read(12)
+                
+                # Check for existing loop metadata
+                while True:
+                    chunk_header = f.read(8)
+                    if len(chunk_header) < 8:
+                        break
+                    
+                    chunk_name = chunk_header[:4]
+                    chunk_size = struct.unpack('<I', chunk_header[4:])[0]
+                    
+                    if chunk_name == b'id3 ':
+                        # Check if it contains loop data
+                        pos = f.tell()
+                        id3_data = f.read(min(chunk_size, 1024))
+                        if b'LoopStart' in id3_data and b'LoopEnd' in id3_data:
+                            has_loop_metadata = True
+                        f.seek(pos + chunk_size)
+                    else:
+                        f.read(chunk_size)
+                    
+                    if chunk_size % 2:
+                        f.read(1)  # Skip padding
+            
+            if has_loop_metadata:
+                print(f"Debug: WAV already has loop metadata: {wav_path}")
+                return None  # Use original WAV
+            
+            # Try to find original SCD file to extract loop metadata
+            # Look for matching SCD files in common locations
+            wav_base = os.path.splitext(os.path.basename(wav_path))[0]
+            search_dirs = [
+                os.path.dirname(wav_path),
+                os.path.join(os.path.dirname(wav_path), '..'),
+                '.'
+            ]
+            
+            original_scd = None
+            for search_dir in search_dirs:
+                potential_scd = os.path.join(search_dir, f"{wav_base}.scd")
+                if os.path.exists(potential_scd):
+                    original_scd = potential_scd
+                    break
+            
+            if not original_scd:
+                print(f"Debug: No matching SCD found for loop metadata extraction: {wav_base}")
+                return None
+            
+            # Extract loop metadata from original SCD
+            from ui.metadata_reader import LoopMetadataReader
+            reader = LoopMetadataReader()
+            metadata = reader.read_metadata(original_scd)
+            
+            if not metadata.get('has_loop', False):
+                print(f"Debug: Original SCD has no loop metadata: {original_scd}")
+                return None
+            
+            # Create enhanced WAV with loop metadata
+            from core.loop_manager import LoopPointManager
+            loop_manager = LoopPointManager()
+            loop_manager.sample_rate = metadata['sample_rate']
+            loop_manager.total_samples = metadata['total_samples']
+            loop_manager.set_loop_points(metadata['loop_start'], metadata['loop_end'])
+            
+            # Create temporary enhanced WAV
+            import tempfile
+            enhanced_wav = os.path.join(tempfile.gettempdir(), f"enhanced_{os.path.basename(wav_path)}")
+            
+            if loop_manager.write_wav_with_loop_points(wav_path, enhanced_wav):
+                print(f"Debug: Created enhanced WAV with loop metadata: {enhanced_wav}")
+                return enhanced_wav
+            else:
+                print(f"Debug: Failed to create enhanced WAV with loop metadata")
+                return None
+                
+        except Exception as e:
+            print(f"Debug: Error ensuring WAV has loop metadata: {e}")
+            return None
     
     def cleanup_temp_files(self) -> None:
         """Clean up all temporary files"""
