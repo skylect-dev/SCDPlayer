@@ -304,6 +304,12 @@ class SCDPlayer(QMainWindow):
         self.delete_selected_btn.setEnabled(False)  # Disabled initially
         library_buttons_layout.addWidget(self.delete_selected_btn)
         
+        self.open_file_location_btn = QPushButton('Open File Location')
+        self.open_file_location_btn.clicked.connect(self.open_file_location)
+        self.open_file_location_btn.setToolTip('Open the folder containing the selected file or currently playing file in File Explorer (Ctrl+L)')
+        self.open_file_location_btn.setEnabled(False)  # Disabled initially
+        library_buttons_layout.addWidget(self.open_file_location_btn)
+        
         library_layout.addLayout(library_buttons_layout)
 
         # Conversion buttons for library files
@@ -359,6 +365,10 @@ class SCDPlayer(QMainWindow):
         # Delete key shortcut for deleting selected files
         delete_shortcut = QShortcut(QKeySequence.Delete, self)
         delete_shortcut.activated.connect(self.delete_selected_files)
+        
+        # Ctrl+L shortcut for opening file location
+        open_location_shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
+        open_location_shortcut.activated.connect(self.open_file_location)
 
     # === Library Management ===
     def add_library_folder(self):
@@ -425,7 +435,8 @@ class SCDPlayer(QMainWindow):
                 self, QMessageBox.Warning,
                 "Invalid KH Rando Folder",
                 "The selected folder does not appear to be a valid KH Rando music folder.\n\n" +
-                "Expected subfolders: atlantica, battle, boss, cutscene, field, title, wild"
+                "Expected subfolders (case-insensitive): atlantica, battle, boss, cutscene, field, title, wild\n\n" +
+                "At least 4 of these folders must be present."
             )
 
     def rescan_library(self):
@@ -479,10 +490,14 @@ class SCDPlayer(QMainWindow):
         """Handle library selection changes"""
         selected_items = self.file_list.selectedItems()
         has_selection = len(selected_items) > 0
+        single_selection = len(selected_items) == 1
+        # Enable open location button if single selection OR if there's a currently playing file and no multi-selection
+        can_open_location = single_selection or (len(selected_items) == 0 and self.current_file is not None)
         self.export_selected_btn.setEnabled(has_selection)
         self.delete_selected_btn.setEnabled(has_selection)
         self.convert_to_wav_btn.setEnabled(has_selection)
         self.convert_to_scd_btn.setEnabled(has_selection)
+        self.open_file_location_btn.setEnabled(can_open_location)
 
     def delete_selected_files(self):
         """Delete selected files from disk with confirmation"""
@@ -540,6 +555,56 @@ class SCDPlayer(QMainWindow):
         if hasattr(self, 'library') and self.library:
             self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
 
+    def open_file_location(self):
+        """Open the folder containing the selected file or currently playing file in File Explorer"""
+        selected_items = self.file_list.selectedItems()
+        
+        # Determine which file to open location for
+        file_path = None
+        source_description = ""
+        
+        if len(selected_items) == 1:
+            # Use selected file from library
+            file_path = selected_items[0].data(Qt.UserRole)
+            source_description = "selected file"
+        elif len(selected_items) == 0 and self.current_file:
+            # Use currently playing file if no selection
+            file_path = self.current_file
+            source_description = "currently playing file"
+        elif len(selected_items) > 1:
+            show_themed_message(self, QMessageBox.Information, "Multiple Selection", 
+                              "Please select exactly one file to open its location, or use no selection to open the currently playing file's location.")
+            return
+        else:
+            show_themed_message(self, QMessageBox.Information, "No File Available", 
+                              "Please select a file from the library or load a file to play first.")
+            return
+        
+        if not file_path or not os.path.exists(file_path):
+            show_themed_message(self, QMessageBox.Warning, "File Not Found", 
+                              f"The {source_description} no longer exists on disk.")
+            return
+        
+        try:
+            import subprocess
+            import platform
+            
+            folder_path = os.path.dirname(file_path)
+            
+            if platform.system() == "Windows":
+                # On Windows, use explorer to select the file - don't check return code as explorer can return non-zero even on success
+                normalized_path = os.path.normpath(file_path)
+                subprocess.run(f'explorer /select,"{normalized_path}"', shell=True)
+            elif platform.system() == "Darwin":  # macOS
+                subprocess.run(["open", "-R", file_path], check=True)
+            else:  # Linux and others
+                # Try common file managers
+                subprocess.run(["xdg-open", folder_path], check=True)
+                
+        except Exception as e:
+            show_themed_message(self, QMessageBox.Warning, "Cannot Open Location", 
+                              f"Failed to open file location:\n{str(e)}")
+
     def convert_selected_to_wav(self):
         """Convert selected library files to WAV"""
         self.conversion_manager.convert_selected_to_wav()
@@ -578,6 +643,10 @@ class SCDPlayer(QMainWindow):
         
         # Update library selection to highlight current track
         self.update_library_selection(file_path)
+        
+        # Update button states now that we have a current file
+        self.on_library_selection_changed()
+        
         file_ext = os.path.splitext(file_path)[1].lower()
         filename = os.path.basename(file_path)
         

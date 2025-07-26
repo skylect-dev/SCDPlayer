@@ -168,10 +168,12 @@ class HelpDialog(QDialog):
                 <h3>Basic Playback</h3>
                 <ul>
                     <li><strong>Load File:</strong> Use "Load File" button or double-click library items</li>
-                    <li><strong>Playback Controls:</strong> Play, Pause, Stop, Previous/Next track</li>
+                    <li><strong>Play/Pause:</strong> Combined play/pause button (shows play when stopped, pause when playing)</li>
+                    <li><strong>Previous/Next:</strong> Navigate between tracks in library</li>
                     <li><strong>Auto-Advance:</strong> Automatically plays next track in library when current ends</li>
                     <li><strong>Seek Bar:</strong> Click or drag to jump to specific positions</li>
                     <li><strong>Time Display:</strong> Shows current position and total duration</li>
+                    <li><strong>Metadata Display:</strong> Shows file information, format details, and audio tags</li>
                 </ul>
             </div>
             
@@ -180,9 +182,11 @@ class HelpDialog(QDialog):
                 <h3>Setting Up KH Rando</h3>
                 <ul>
                     <li><strong>Select Folder:</strong> Click "Select KH Rando Folder" to choose your randomizer music directory</li>
-                    <li><strong>Valid Structure:</strong> Must contain subfolders: atlantica, battle, boss, cutscene, field, title, wild</li>
+                    <li><strong>Valid Structure:</strong> Must contain at least 4 of these subfolders (case-insensitive): atlantica, battle, boss, cutscene, field, title, wild</li>
+                    <li><strong>Folder Case:</strong> Accepts mixed case folder names (e.g., "Atlantica", "BATTLE", "Boss")</li>
                     <li><strong>Auto-Detection:</strong> Application attempts to find common KH Rando locations automatically</li>
                     <li><strong>Status Indicators:</strong> Files show color coding based on KH Rando status</li>
+                    <li><strong>Progress Tracking:</strong> Shows conversion progress when exporting multiple files</li>
                 </ul>
             </div>
             
@@ -203,6 +207,8 @@ class HelpDialog(QDialog):
                     <li><strong>Export Missing:</strong> Bulk export all files not currently in KH Rando</li>
                     <li><strong>Auto-Convert:</strong> Non-SCD files automatically converted during export</li>
                     <li><strong>Category Assignment:</strong> Assign files to atlantica, battle, boss, cutscene, field, title, or wild</li>
+                    <li><strong>Progress Tracking:</strong> Visual progress bar shows conversion and export status</li>
+                    <li><strong>Background Processing:</strong> Exports run in background without freezing UI</li>
                 </ul>
             </div>
             
@@ -212,8 +218,10 @@ class HelpDialog(QDialog):
                 <ul>
                     <li><strong>To WAV:</strong> Convert SCD, MP3, OGG, FLAC files to WAV format</li>
                     <li><strong>To SCD:</strong> Convert WAV files to pseudo-SCD format for KH compatibility</li>
+                    <li><strong>Batch Conversion:</strong> Convert multiple selected files with progress tracking</li>
                     <li><strong>Automatic:</strong> Conversions happen automatically during KH Rando export</li>
                     <li><strong>Temporary Files:</strong> Conversion files cleaned up automatically</li>
+                    <li><strong>Background Processing:</strong> Conversions run in background threads</li>
                 </ul>
             </div>
             
@@ -221,20 +229,24 @@ class HelpDialog(QDialog):
             <div class="section">
                 <h3>Advanced Features</h3>
                 <ul>
-                    <li><strong>Fix Duplicates:</strong> Remove duplicate files from KH Rando folder</li>
-                    <li><strong>Delete Selected:</strong> Permanently delete files from disk</li>
+                    <li><strong>Delete Selected:</strong> Permanently delete files from disk (DEL key shortcut)</li>
+                    <li><strong>Open File Location:</strong> Open the folder containing selected or currently playing file (Ctrl+L)</li>
+                    <li><strong>Convert Selected:</strong> Convert multiple files to WAV or SCD format with progress tracking</li>
                     <li><strong>Cross-Format Detection:</strong> Detects song.mp3 and song.scd as duplicates</li>
                     <li><strong>Root Folder Scanning:</strong> Finds misplaced files in main KH Rando directory</li>
                     <li><strong>Rescan:</strong> Manually refresh library after moving files</li>
+                    <li><strong>Multi-Selection:</strong> Select multiple files for batch operations</li>
                 </ul>
             </div>
             
             <h2 id="keyboard-shortcuts">Keyboard Shortcuts</h2>
             <div class="section">
                 <ul>
-                    <li><span class="shortcut">DEL</span> - Delete selected files from library</li>
+                    <li><span class="shortcut">DEL</span> - Delete selected files from library (permanent deletion)</li>
+                    <li><span class="shortcut">Ctrl+L</span> - Open file location in File Explorer (selected or currently playing file)</li>
                     <li><span class="shortcut">F1</span> - Show this help guide</li>
                     <li><span class="shortcut">Double-Click</span> - Load and play file from library</li>
+                    <li><span class="shortcut">Space</span> - Play/pause current track (when controls are focused)</li>
                 </ul>
             </div>
             
@@ -281,6 +293,9 @@ class HelpDialog(QDialog):
                     <li><strong>Slow Loading:</strong> Reduce library size or disable subdirectory scanning</li>
                     <li><strong>Conversion Errors:</strong> Ensure source files are not corrupted or in use</li>
                     <li><strong>KH Rando Not Detected:</strong> Manually browse to select the correct music folder</li>
+                    <li><strong>Case Sensitivity Issues:</strong> KH Rando validation now accepts mixed case folder names</li>
+                    <li><strong>File Location Won't Open:</strong> Check file exists and you have permission to access the folder</li>
+                    <li><strong>Progress Bars Stuck:</strong> Close and restart application if background tasks freeze</li>
                 </ul>
             </div>
             

@@ -31,14 +31,14 @@ class KHRandoExporter:
         if not os.path.exists(path):
             return False
             
-        required_folders = set(self.MUSIC_CATEGORIES.keys())
+        required_folders = set(folder.lower() for folder in self.MUSIC_CATEGORIES.keys())
         existing_folders = set()
         
         try:
             for item in os.listdir(path):
                 item_path = os.path.join(path, item)
-                if os.path.isdir(item_path) and item in required_folders:
-                    existing_folders.add(item)
+                if os.path.isdir(item_path) and item.lower() in required_folders:
+                    existing_folders.add(item.lower())
         except (OSError, PermissionError):
             return False
             
@@ -51,7 +51,8 @@ class KHRandoExporter:
         
         # Scan category folders
         for category in self.MUSIC_CATEGORIES.keys():
-            category_path = os.path.join(kh_rando_path, category)
+            actual_folder_name = self.find_actual_folder_name(kh_rando_path, category)
+            category_path = os.path.join(kh_rando_path, actual_folder_name)
             files = set()
             
             if os.path.exists(category_path):
@@ -80,6 +81,22 @@ class KHRandoExporter:
         existing_files['root'] = root_files
         
         return existing_files
+    
+    def find_actual_folder_name(self, kh_rando_path: str, category: str) -> str:
+        """Find the actual folder name for a category (case-insensitive)"""
+        if not os.path.exists(kh_rando_path):
+            return category
+            
+        try:
+            for item in os.listdir(kh_rando_path):
+                item_path = os.path.join(kh_rando_path, item)
+                if os.path.isdir(item_path) and item.lower() == category.lower():
+                    return item
+        except (OSError, PermissionError):
+            pass
+            
+        # Return the standard name if not found
+        return category
     
     def is_file_in_kh_rando(self, filename: str) -> List[str]:
         """Check which KH Rando categories contain this file (comparing base names without extensions)"""
@@ -133,7 +150,9 @@ class KHRandoExporter:
             # Only SCD files are supported by KH Rando
             return False
             
-        category_path = os.path.join(kh_rando_path, category)
+        # Find the actual folder name (case-insensitive)
+        actual_folder_name = self.find_actual_folder_name(kh_rando_path, category)
+        category_path = os.path.join(kh_rando_path, actual_folder_name)
         
         # Create category folder if it doesn't exist
         try:
@@ -400,7 +419,8 @@ class KHRandoExportDialog(QDialog):
                 self, 
                 "Invalid Folder", 
                 "The selected folder does not appear to be a valid KH Rando music folder.\n\n"
-                "Expected subfolders: atlantica, battle, boss, cutscene, field, title, wild"
+                "Expected subfolders (case-insensitive): atlantica, battle, boss, cutscene, field, title, wild\n\n"
+                "At least 4 of these folders must be present."
             )
 
     def update_existing_file_indicators(self):
