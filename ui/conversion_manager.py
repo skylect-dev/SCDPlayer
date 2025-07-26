@@ -109,7 +109,9 @@ class ConversionWorker(QThread):
                 source_file = temp_wav
             
             # Convert WAV to SCD
-            success = self.converter.convert_wav_to_scd(source_file, output_path)
+            # If original file was SCD, use it as template to preserve codec/compression
+            original_scd_template = file_path if file_ext == '.scd' else None
+            success = self.converter.convert_wav_to_scd(source_file, output_path, original_scd_template)
             
             # Cleanup temp file
             if temp_wav:
@@ -148,7 +150,7 @@ class ConversionManager:
         if not files_to_convert:
             show_themed_message(self.main_window, QMessageBox.Warning, 'No Valid Files', 'No valid files found in selection.')
             return
-            
+        
         # Get output directory
         output_dir = show_themed_file_dialog(
             self.main_window, "directory", 'Select Output Directory for WAV Files'
@@ -241,6 +243,14 @@ class ConversionManager:
         
         if success:
             show_themed_message(self.main_window, QMessageBox.Information, 'Conversion Complete', message)
+            
+            # Refresh library to show new converted files
+            if hasattr(self.main_window, 'library') and self.main_window.library:
+                self.main_window.library.scan_folders(
+                    self.main_window.config.library_folders, 
+                    self.main_window.config.scan_subdirs, 
+                    self.main_window.config.kh_rando_folder
+                )
         else:
             show_themed_message(self.main_window, QMessageBox.Warning, 'Conversion Failed', message)
         
@@ -273,12 +283,26 @@ class ConversionManager:
                 wav = self.converter.convert_scd_to_wav(self.main_window.current_file, out_path=save_path)
                 if wav:
                     show_themed_message(self.main_window, QMessageBox.Information, 'Conversion Complete', f'WAV saved to: {save_path}')
+                    # Refresh library to show new converted file
+                    if hasattr(self.main_window, 'library') and self.main_window.library:
+                        self.main_window.library.scan_folders(
+                            self.main_window.config.library_folders, 
+                            self.main_window.config.scan_subdirs, 
+                            self.main_window.config.kh_rando_folder
+                        )
                 else:
                     show_themed_message(self.main_window, QMessageBox.Warning, 'Conversion Failed', 'Could not convert SCD to WAV.')
             else:
                 success = self.converter.convert_with_ffmpeg(self.main_window.current_file, save_path, 'wav')
                 if success:
                     show_themed_message(self.main_window, QMessageBox.Information, 'Conversion Complete', f'WAV saved to: {save_path}')
+                    # Refresh library to show new converted file
+                    if hasattr(self.main_window, 'library') and self.main_window.library:
+                        self.main_window.library.scan_folders(
+                            self.main_window.config.library_folders, 
+                            self.main_window.config.scan_subdirs, 
+                            self.main_window.config.kh_rando_folder
+                        )
                 else:
                     show_themed_message(self.main_window, QMessageBox.Warning, 'Conversion Failed', f'Could not convert {file_ext} to WAV.')
 
@@ -329,7 +353,9 @@ class ConversionManager:
                     return
                 source_file = temp_wav
             
-            success = self.converter.convert_wav_to_scd(source_file, save_path)
+            # Convert WAV to SCD using original file as template if it's SCD
+            original_scd_template = self.main_window.current_file if file_ext == '.scd' else None
+            success = self.converter.convert_wav_to_scd(source_file, save_path, original_scd_template)
             
             # Cleanup temp file
             if temp_wav:
@@ -340,5 +366,12 @@ class ConversionManager:
                     
             if success:
                 show_themed_message(self.main_window, QMessageBox.Information, 'Conversion Complete', f'SCD saved to: {save_path}')
+                # Refresh library to show new converted file
+                if hasattr(self.main_window, 'library') and self.main_window.library:
+                    self.main_window.library.scan_folders(
+                        self.main_window.config.library_folders, 
+                        self.main_window.config.scan_subdirs, 
+                        self.main_window.config.kh_rando_folder
+                    )
             else:
                 show_themed_message(self.main_window, QMessageBox.Warning, 'Conversion Failed', 'Could not complete SCD conversion.')

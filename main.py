@@ -5,6 +5,7 @@ plus standard audio formats (WAV, MP3, OGG, FLAC).
 """
 import sys
 import time
+import logging
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt
 
@@ -14,6 +15,16 @@ from ui.widgets import SplashScreen
 
 def main():
     """Main application entry point"""
+    # Configure logging for debugging
+    logging.basicConfig(
+        level=logging.INFO,  # Changed from DEBUG to INFO for cleaner output
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler('scdplayer_debug.log')
+        ]
+    )
+    
     app = QApplication(sys.argv)
     
     # Show splash screen

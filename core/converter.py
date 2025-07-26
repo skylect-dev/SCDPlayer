@@ -36,8 +36,8 @@ class AudioConverter:
         self.temp_files.append(wav_path)
         return wav_path
     
-    def convert_scd_to_wav(self, scd_path: str, out_path: Optional[str] = None) -> Optional[str]:
-        """Convert SCD to WAV using vgmstream"""
+    def convert_scd_to_wav(self, scd_path: str, out_path: Optional[str] = None, preserve_loop_points: bool = True) -> Optional[str]:
+        """Convert SCD to WAV using vgmstream and preserve loop points"""
         vgmstream_path = get_bundled_path('vgmstream', 'vgmstream-cli.exe')
         vgmstream_file = Path(vgmstream_path)
         
@@ -55,6 +55,30 @@ class AudioConverter:
                 startupinfo=self._create_subprocess_startupinfo(),
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
+            
+            # Auto-apply loop points if requested
+            if preserve_loop_points and Path(wav_path).exists():
+                try:
+                    from ui.metadata_reader import LoopMetadataReader
+                    from core.loop_manager import HybridLoopManager
+                    
+                    # Read loop points from original SCD
+                    reader = LoopMetadataReader()
+                    metadata = reader.read_metadata(scd_path)
+                    
+                    if metadata.get('loop_start', 0) > 0 or metadata.get('loop_end', 0) > 0:
+                        # Apply loop points to WAV
+                        loop_manager = HybridLoopManager()
+                        if loop_manager._write_wav_loop_metadata(wav_path, metadata['loop_start'], metadata['loop_end']):
+                            logging.info(f"Applied loop points to WAV: {metadata['loop_start']} -> {metadata['loop_end']}")
+                        else:
+                            logging.debug("Could not write loop metadata to WAV")
+                    else:
+                        logging.debug("No loop points found in SCD")
+                        
+                except Exception as e:
+                    logging.debug(f"Could not preserve loop points: {e}")
+            
             return wav_path
             
         except subprocess.CalledProcessError as e:
@@ -110,8 +134,17 @@ class AudioConverter:
             logging.error(f"Error in temp WAV conversion: {e}")
             return None
     
-    def convert_wav_to_scd(self, wav_path: str, scd_path: str) -> bool:
-        """Convert WAV to SCD using KH PC Sound Tools MusicEncoder (renamed SingleEncoder)"""
+    def convert_wav_to_scd(self, wav_path: str, scd_path: str, original_scd_path: str = None) -> bool:
+        """
+        Convert WAV to SCD using KH PC Sound Tools MusicEncoder
+        
+        Args:
+            wav_path: Path to input WAV file
+            scd_path: Path to output SCD file
+            original_scd_path: Optional path to original SCD to use as template (preserves codec/settings)
+        
+        Note: MusicEncoder requires all files to be in the same directory as the executable
+        """
         try:
             wav_file = Path(wav_path)
             scd_file = Path(scd_path)
@@ -123,42 +156,78 @@ class AudioConverter:
             # Get KH PC Sound Tools paths
             khpc_tools_dir = get_bundled_path('khpc_tools')
             music_encoder_exe = Path(khpc_tools_dir) / 'SingleEncoder' / 'MusicEncoder.exe'
-            template_scd = Path(khpc_tools_dir) / 'SingleEncoder' / 'test.scd'
-            output_dir = Path(khpc_tools_dir) / 'SingleEncoder' / 'output'
+            encoder_dir = music_encoder_exe.parent
+            output_dir = encoder_dir / 'output'
             
             if not music_encoder_exe.exists():
                 logging.error(f"MusicEncoder not found at: {music_encoder_exe}")
                 return False
-                
-            if not template_scd.exists():
-                logging.error(f"SCD template not found at: {template_scd}")
-                return False
             
-            # Create unique filenames to avoid conflicts
+            # Determine template SCD to use
+            if original_scd_path and Path(original_scd_path).exists():
+                # Use original SCD as template to preserve codec and compression settings
+                template_scd = Path(original_scd_path)
+                logging.info(f"Using original SCD as template: {template_scd.name}")
+                
+                # Analyze original for comparison
+                try:
+                    # Import check - SCDCodecDetector may not be available
+                    from core.loop_manager import SCDCodecDetector
+                    detector = SCDCodecDetector()
+                    original_info = detector.detect_codec_from_scd(str(template_scd))
+                    if "error" not in original_info:
+                        logging.info(f"Template codec: {original_info['codec_name']} (0x{original_info['codec_id']:02X})")
+                        logging.info(f"Template sample rate: {original_info['sample_rate']:,} Hz")
+                        logging.info(f"Template channels: {original_info['channels']}")
+                except ImportError:
+                    # SCDCodecDetector not available - skip analysis
+                    pass
+                except Exception as e:
+                    logging.debug(f"Could not analyze template SCD: {e}")
+                    
+            else:
+                # Fallback to default template
+                template_scd = encoder_dir / 'test.scd'
+                if not template_scd.exists():
+                    logging.error(f"SCD template not found at: {template_scd}")
+                    return False
+                logging.info("Using default SCD template")
+                logging.warning("Using default template - output may not match original codec/compression")
+            
+            # Create unique filenames to avoid conflicts (required for MusicEncoder)
             import uuid
             unique_id = str(uuid.uuid4())[:8]
             
-            # Copy files to MusicEncoder directory (following the batch file pattern)
-            encoder_dir = music_encoder_exe.parent
-            encoder_template = encoder_dir / f'temp_template_{unique_id}.scd'
+            # CRITICAL: MusicEncoder requires files to be in its own directory
+            # Following exact pattern from mass_convert.bat
+            encoder_template = encoder_dir / f'template_{unique_id}.scd'
             encoder_wav = encoder_dir / f'input_{unique_id}.wav'
-            encoder_output_dir = encoder_dir / 'output'
-            encoder_output_scd = encoder_output_dir / encoder_template.name
+            encoder_output_scd = output_dir / encoder_template.name
             
             # Ensure output directory exists
-            encoder_output_dir.mkdir(exist_ok=True)
+            output_dir.mkdir(exist_ok=True)
             
+            # Copy files to MusicEncoder directory (following mass_convert.bat pattern)
             import shutil
             shutil.copy2(template_scd, encoder_template)
             shutil.copy2(wav_file, encoder_wav)
             
+            # Log file sizes for debugging
+            template_size = encoder_template.stat().st_size
+            wav_size = encoder_wav.stat().st_size
+            logging.info(f"Template SCD size: {template_size:,} bytes")
+            logging.info(f"Input WAV size: {wav_size:,} bytes")
+            
             try:
                 # Run MusicEncoder from its own directory with files in same directory
                 # Usage: MusicEncoder.exe <template.scd> <input.wav>
+                # This follows the exact pattern from mass_convert.bat
                 logging.info(f"Converting WAV to SCD using KH PC Sound Tools: {wav_path} -> {scd_path}")
+                logging.info(f"MusicEncoder command: {music_encoder_exe.name} {encoder_template.name} {encoder_wav.name}")
+                
                 result = subprocess.run(
-                    [str(music_encoder_exe), str(encoder_template), str(encoder_wav)],
-                    cwd=str(encoder_dir),
+                    [str(music_encoder_exe), str(encoder_template.name), str(encoder_wav.name)],
+                    cwd=str(encoder_dir),  # CRITICAL: Run from MusicEncoder directory
                     capture_output=True,
                     text=True,
                     timeout=120,  # 2 minute timeout for conversion
@@ -172,13 +241,62 @@ class AudioConverter:
                     logging.error(f"MusicEncoder errors: {result.stderr}")
                     return False
                 
-                # MusicEncoder puts the result in its own output/<filename>.scd directory
+                # MusicEncoder puts the result in output/<template_name>.scd
                 if encoder_output_scd.exists():
+                    output_size = encoder_output_scd.stat().st_size
+                    logging.info(f"Output SCD size: {output_size:,} bytes")
+                    
+                    # Compare sizes and analyze output
+                    if original_scd_path and Path(original_scd_path).exists():
+                        original_size = Path(original_scd_path).stat().st_size
+                        size_ratio = output_size / original_size
+                        logging.info(f"Size comparison: Original={original_size:,}, New={output_size:,} (ratio: {size_ratio:.2f}x)")
+                        
+                        if size_ratio > 2.0:
+                            logging.warning(f"🚨 Output file is {size_ratio:.1f}x larger than original!")
+                            logging.warning("This suggests MusicEncoder changed the audio duration or codec.")
+                            logging.warning("Consider using direct loop point editing instead of WAV round-trip.")
+                        elif size_ratio > 1.5:
+                            logging.warning(f"⚠️  Output file is {size_ratio:.1f}x larger than original - codec mismatch?")
+                    
+                    # Analyze output file to check for issues
+                    try:
+                        # Import check - SCDCodecDetector may not be available
+                        from core.loop_manager import SCDCodecDetector
+                        from ui.metadata_reader import LoopMetadataReader
+                        
+                        detector = SCDCodecDetector()
+                        output_info = detector.detect_codec_from_scd(str(encoder_output_scd))
+                        if "error" not in output_info:
+                            logging.info(f"Output codec: {output_info['codec_name']} (0x{output_info['codec_id']:02X})")
+                            
+                            # Check duration
+                            reader = LoopMetadataReader()
+                            metadata = reader.read_metadata(str(encoder_output_scd))
+                            if metadata['duration'] > 0:
+                                logging.info(f"Output duration: {metadata['duration']:.2f} seconds")
+                                
+                                # Compare with original if available
+                                if original_scd_path and Path(original_scd_path).exists():
+                                    orig_metadata = reader.read_metadata(original_scd_path)
+                                    if orig_metadata['duration'] > 0:
+                                        duration_ratio = metadata['duration'] / orig_metadata['duration']
+                                        if duration_ratio > 1.1:  # More than 10% longer
+                                            logging.error(f"🚨 DURATION MISMATCH: Output is {duration_ratio:.2f}x longer than original!")
+                                            logging.error(f"Original: {orig_metadata['duration']:.2f}s, Output: {metadata['duration']:.2f}s")
+                                            logging.error("MusicEncoder may have introduced audio artifacts or padding.")
+                    except ImportError:
+                        # SCDCodecDetector not available - skip analysis
+                        pass
+                    except Exception as e:
+                        logging.debug(f"Could not analyze output file: {e}")
+                    
                     shutil.copy2(encoder_output_scd, scd_file)
-                    logging.info(f"SCD conversion completed successfully: {scd_path}")
+                    logging.info(f"SCD conversion completed: {scd_path}")
                     return True
                 else:
                     logging.error(f"MusicEncoder did not produce expected output file: {encoder_output_scd}")
+                    logging.error(f"Expected output directory contents: {list(output_dir.iterdir()) if output_dir.exists() else 'Directory does not exist'}")
                     return False
                     
             finally:

@@ -18,6 +18,8 @@ from ui.dialogs import show_themed_message, show_themed_file_dialog, apply_title
 from ui.conversion_manager import ConversionManager
 from ui.kh_rando_manager import KHRandoManager
 from ui.help_dialog import HelpDialog
+from ui.loop_editor_dialog import LoopEditorDialog
+from core.loop_manager import HybridLoopManager
 from core.converter import AudioConverter
 from core.threading import FileLoadThread
 from core.library import AudioLibrary
@@ -54,6 +56,7 @@ class SCDPlayer(QMainWindow):
         # Initialize managers after UI is created
         self.conversion_manager = ConversionManager(self)
         self.kh_rando_manager = KHRandoManager(self)
+        self.loop_manager = HybridLoopManager()
         self.auto_updater = AutoUpdater(self)
         
         # Setup keyboard shortcuts
@@ -271,6 +274,12 @@ class SCDPlayer(QMainWindow):
         self.select_kh_rando_btn.clicked.connect(self.select_kh_rando_folder)
         kh_rando_layout.addWidget(self.select_kh_rando_btn)
         
+        self.open_kh_rando_btn = QPushButton('Open Folder')
+        self.open_kh_rando_btn.clicked.connect(self.open_kh_rando_folder)
+        self.open_kh_rando_btn.setEnabled(False)  # Disabled until folder is set
+        self.open_kh_rando_btn.setToolTip('Open the KH Rando folder in file explorer')
+        kh_rando_layout.addWidget(self.open_kh_rando_btn)
+        
         header_layout.addLayout(kh_rando_layout)
 
         library_header.setLayout(header_layout)
@@ -326,6 +335,12 @@ class SCDPlayer(QMainWindow):
         self.convert_to_scd_btn.setEnabled(False)  # Disabled initially
         self.convert_to_scd_btn.setToolTip('Convert selected library files to SCD format')
         convert_buttons_layout.addWidget(self.convert_to_scd_btn)
+        
+        self.open_loop_editor_btn = QPushButton('Open Loop Editor')
+        self.open_loop_editor_btn.clicked.connect(self.open_loop_editor)
+        self.open_loop_editor_btn.setEnabled(False)  # Disabled initially
+        self.open_loop_editor_btn.setToolTip('Edit loop points for selected SCD or WAV file with professional waveform editor')
+        convert_buttons_layout.addWidget(self.open_loop_editor_btn)
         
         library_layout.addLayout(convert_buttons_layout)
 
@@ -424,6 +439,9 @@ class SCDPlayer(QMainWindow):
             self.kh_rando_path_label.setText(f"✓ {folder_name}")
             self.kh_rando_path_label.setStyleSheet("color: green;")
             
+            # Enable the open folder button
+            self.open_kh_rando_btn.setEnabled(True)
+            
             # Do NOT add KH Rando folder to library folders - it's separate
             # KH Rando folder is for export destination only, not for scanning
             
@@ -437,6 +455,26 @@ class SCDPlayer(QMainWindow):
                 "The selected folder does not appear to be a valid KH Rando music folder.\n\n" +
                 "Expected subfolders (case-insensitive): atlantica, battle, boss, cutscene, field, title, wild\n\n" +
                 "At least 4 of these folders must be present."
+            )
+
+    def open_kh_rando_folder(self):
+        """Open the KH Rando folder in file explorer"""
+        if not self.config.kh_rando_folder or not os.path.exists(self.config.kh_rando_folder):
+            show_themed_message(
+                self, QMessageBox.Warning,
+                "No KH Rando Folder",
+                "Please select a valid KH Rando folder first."
+            )
+            return
+        
+        try:
+            # Open folder in Windows Explorer
+            os.startfile(self.config.kh_rando_folder)
+        except Exception as e:
+            show_themed_message(
+                self, QMessageBox.Warning,
+                "Error Opening Folder",
+                f"Could not open the KH Rando folder:\n{str(e)}"
             )
 
     def rescan_library(self):
@@ -493,11 +531,22 @@ class SCDPlayer(QMainWindow):
         single_selection = len(selected_items) == 1
         # Enable open location button if single selection OR if there's a currently playing file and no multi-selection
         can_open_location = single_selection or (len(selected_items) == 0 and self.current_file is not None)
+        
+        # Check if single selection is an SCD or WAV file for loop editor
+        single_supported_selection = False
+        if single_selection:
+            file_path = selected_items[0].data(Qt.UserRole)
+            if file_path:
+                ext = file_path.lower()
+                if ext.endswith('.scd') or ext.endswith('.wav'):
+                    single_supported_selection = True
+        
         self.export_selected_btn.setEnabled(has_selection)
         self.delete_selected_btn.setEnabled(has_selection)
         self.convert_to_wav_btn.setEnabled(has_selection)
         self.convert_to_scd_btn.setEnabled(has_selection)
         self.open_file_location_btn.setEnabled(can_open_location)
+        self.open_loop_editor_btn.setEnabled(single_supported_selection)
 
     def delete_selected_files(self):
         """Delete selected files from disk with confirmation"""
@@ -612,6 +661,47 @@ class SCDPlayer(QMainWindow):
     def convert_selected_to_scd(self):
         """Convert selected library files to SCD"""
         self.conversion_manager.convert_selected_to_scd()
+
+    def open_loop_editor(self):
+        """Open the loop editor for the selected SCD or WAV file"""
+        selected_items = self.file_list.selectedItems()
+        if not selected_items or len(selected_items) != 1:
+            show_themed_message(self, QMessageBox.Information, "Invalid Selection", 
+                               "Please select exactly one SCD or WAV file to edit loop points.")
+            return
+        
+        file_path = selected_items[0].data(Qt.UserRole)
+        if not file_path:
+            show_themed_message(self, QMessageBox.Information, "Invalid File", 
+                               "Unable to get file path.")
+            return
+        
+        ext = file_path.lower()
+        if not (ext.endswith('.scd') or ext.endswith('.wav')):
+            show_themed_message(self, QMessageBox.Information, "Invalid File Type", 
+                               "Loop editor supports SCD and WAV files only.")
+            return
+        
+        try:
+            # Load the file into the loop manager
+            if ext.endswith('.wav'):
+                # For WAV files, use them directly
+                success = self.loop_manager.load_wav_file(file_path)
+            else:
+                # For SCD files, use the existing conversion workflow
+                success = self.loop_manager.load_file_for_editing(file_path)
+            
+            if not success:
+                show_themed_message(self, QMessageBox.Critical, "Load Error", 
+                                   "Failed to load audio file for editing.")
+                return
+            
+            # Create and show the loop editor dialog
+            loop_editor = LoopEditorDialog(self.loop_manager, self)
+            loop_editor.exec_()
+        except Exception as e:
+            show_themed_message(self, QMessageBox.Critical, "Loop Editor Error", 
+                               f"Failed to open loop editor:\n{str(e)}")
 
     # === File Loading ===
     def load_file(self):

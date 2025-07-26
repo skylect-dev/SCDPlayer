@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v5.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v5.0": {
+      "MusicEncoder/1.0.0": {
+        "runtime": {
+          "MusicEncoder.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "MusicEncoder/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

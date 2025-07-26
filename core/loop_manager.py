@@ -1,167 +1,72 @@
 """
-Loop point management for SCD files - Clean codec-aware implementation
-Based on vgmstream sqex_scd.c source analysis
+Hybrid SCD Loop Point Manager
+Combines the best of direct SCD editing with WAV metadata workflow
 
-Key insights from vgmstream source:
-- SCD header format: SEDB + SSCF signature
-- Stream header at meta_offset contains:
-  - stream_size (0x00), channels (0x04), sample_rate (0x08), codec (0x0c)
-  - loop_start (0x10), loop_end (0x14) - BUT only for non-OGG codecs!
-- Codec 0x06 (OGG Vorbis): "loop values are in bytes, let init_vgmstream_ogg_vorbis find loop comments instead"
-- Other codecs store loop points in SCD header at meta_offset + 0x10/0x14
+Workflow:
+1. For SCD editing: SCD → Temp WAV (with loop metadata) → Edit → WAV → SCD
+2. For new audio: Any format → WAV → Edit → WAV → SCD
+3. Uses Audacity-compatible WAV metadata format (ID3v2.3 TXXX frames)
+4. MusicEncoder preserves WAV m                if frame_id == b'TXXX':
+                    frame_size = struct.unpack('>I', id3_data[pos+4:pos+8])[0]
+                    frame_data = id3_data[pos+10:pos+10+frame_size]
+                    
+                    logging.debug(f"Found TXXX frame, size {frame_size}: {frame_data}")
+                    
+                    if b'LoopStart' in frame_data:
+                        parts = frame_data.split(b'\x00')
+                        if len(parts) >= 3:
+                            try:
+                                loop_start = int(parts[2].decode('utf-8'))
+                                logging.debug(f"Found LoopStart: {loop_start}")
+                            except Exception as e:
+                                logging.debug(f"Error parsing LoopStart: {e}")
+                    elif b'LoopEnd' in frame_data:
+                        parts = frame_data.split(b'\x00')
+                        if len(parts) >= 3:
+                            try:
+                                loop_end = int(parts[2].decode('utf-8'))
+                                logging.debug(f"Found LoopEnd: {loop_end}")
+                            except Exception as e:
+                                logging.debug(f"Error parsing LoopEnd: {e}")
+                    
+                    pos += 10 + frame_sizecomments in SCD
 """
-import logging
-import struct
-from typing import Optional, Tuple, Dict, Any
-from pathlib import Path
 
+import struct
+import logging
+import os
+import tempfile
+import subprocess
+import shutil
+from pathlib import Path
+from typing import Optional, Dict, Any, Tuple
 
 class LoopPoint:
-    """Represents a loop point with sample-accurate positioning"""
-    
-    def __init__(self, start_sample: int = 0, end_sample: int = 0):
+    """Represents a loop point with start and end samples"""
+    def __init__(self, start_sample: int, end_sample: int):
         self.start_sample = start_sample
         self.end_sample = end_sample
     
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Loop({self.start_sample} -> {self.end_sample})"
     
-    def is_valid(self, total_samples: int = 0) -> bool:
-        """Check if loop points are valid"""
-        return (self.start_sample >= 0 and 
-                self.end_sample > self.start_sample and
-                (total_samples == 0 or self.end_sample <= total_samples))
+    def __repr__(self) -> str:
+        return self.__str__()
+    
+    def duration_samples(self) -> int:
+        """Get loop duration in samples"""
+        return self.end_sample - self.start_sample
+    
+    def to_seconds(self, sample_rate: int) -> Tuple[float, float]:
+        """Convert to seconds at given sample rate"""
+        return (self.start_sample / sample_rate, self.end_sample / sample_rate)
 
-
-class SCDCodecDetector:
+class HybridLoopManager:
     """
-    SCD codec detection based on vgmstream sqex_scd.c source
+    Hybrid loop point manager using WAV metadata for editing
     
-    Detects codec type and determines loop storage method:
-    - Codec 0x00/0x01: PCM - header loops (byte offsets)
-    - Codec 0x03: PS-ADPCM - header loops 
-    - Codec 0x06: OGG Vorbis - OGG comment loops (IGNORE header values!)
-    - Codec 0x07: MPEG - header loops (byte offsets)
-    - Codec 0x0A/0x15: DSP ADPCM - header loops
-    - Codec 0x0B: XMA2 - header loops
-    - Codec 0x0C/0x17: MS ADPCM - header loops
-    - Codec 0x0E: ATRAC3 - header loops
-    - Codec 0x16: ATRAC9 - extradata loops
-    """
-    
-    CODEC_NAMES = {
-        0x00: "PCM_BE",
-        0x01: "PCM_LE", 
-        0x03: "PS_ADPCM",
-        0x06: "OGG_VORBIS",
-        0x07: "MPEG",
-        0x0A: "DSP_ADPCM",
-        0x0B: "XMA2",
-        0x0C: "MS_ADPCM",
-        0x0E: "ATRAC3",
-        0x15: "DSP_ADPCM_V2",
-        0x16: "ATRAC9",
-        0x17: "MS_ADPCM_V2"
-    }
-    
-    def detect_codec_from_scd(self, scd_path: str) -> Dict[str, Any]:
-        """
-        Parse SCD file to detect codec and metadata locations
-        Based on vgmstream sqex_scd.c structure
-        """
-        try:
-            with open(scd_path, 'rb') as f:
-                # Check SCD signature
-                signature = f.read(8)
-                if signature[:4] != b'SEDB' or signature[4:8] != b'SSCF':
-                    return {"error": "Not a valid SCD file", "codec_id": -1}
-                
-                # Check endianness (offset 0x0c)
-                f.seek(0x0c)
-                big_endian = f.read(1)[0] == 0x01
-                read_32 = self._read_32be if big_endian else self._read_32le
-                read_16 = self._read_16be if big_endian else self._read_16le
-                
-                # Get version and tables offset
-                f.seek(0x08)
-                version = read_32(f.read(4))
-                
-                f.seek(0x0e)
-                tables_offset = read_16(f.read(2))
-                
-                # Find meta_offset from table3 (headers table)
-                f.seek(tables_offset + 0x04)
-                headers_entries = read_16(f.read(2))
-                
-                f.seek(tables_offset + 0x0c)
-                headers_offset = read_32(f.read(4))
-                
-                if headers_entries == 0:
-                    return {"error": "No audio streams found", "codec_id": -1}
-                
-                # Get first stream's meta_offset
-                f.seek(headers_offset)
-                meta_offset = read_32(f.read(4))
-                
-                # Read stream header at meta_offset
-                f.seek(meta_offset)
-                stream_size = read_32(f.read(4))
-                channels = read_32(f.read(4))
-                sample_rate = read_32(f.read(4))
-                codec = read_32(f.read(4))
-                loop_start = read_32(f.read(4))  # offset 0x10
-                loop_end = read_32(f.read(4))    # offset 0x14
-                
-                return {
-                    "codec_id": codec,
-                    "codec_name": self.CODEC_NAMES.get(codec, f"UNKNOWN_0x{codec:02X}"),
-                    "big_endian": big_endian,
-                    "version": version,
-                    "meta_offset": meta_offset,
-                    "stream_size": stream_size,
-                    "channels": channels,
-                    "sample_rate": sample_rate,
-                    "header_loop_start": loop_start,
-                    "header_loop_end": loop_end,
-                    "loop_storage": self._get_loop_storage_method(codec),
-                    "supports_header_save": codec != 0x06,  # All except OGG Vorbis
-                    "supports_comment_save": codec == 0x06   # Only OGG Vorbis
-                }
-                
-        except Exception as e:
-            logging.error(f"Error detecting SCD codec: {e}")
-            return {"error": str(e), "codec_id": -1}
-    
-    def _get_loop_storage_method(self, codec_id: int) -> str:
-        """Determine how loop points are stored for this codec"""
-        if codec_id == 0x06:  # OGG Vorbis
-            return "ogg_comments"
-        elif codec_id == 0x16:  # ATRAC9
-            return "extradata"
-        else:
-            return "scd_header"
-    
-    def _read_32le(self, data: bytes) -> int:
-        return struct.unpack('<I', data)[0]
-    
-    def _read_32be(self, data: bytes) -> int:
-        return struct.unpack('>I', data)[0]
-    
-    def _read_16le(self, data: bytes) -> int:
-        return struct.unpack('<H', data)[0]
-    
-    def _read_16be(self, data: bytes) -> int:
-        return struct.unpack('>H', data)[0]
-
-
-class LoopPointManager:
-    """
-    Manages loop points for SCD files - Phase 1 Implementation with codec awareness
-    
-    This implementation:
-    - Reads loop points via vgmstream (reliable for all codecs)
-    - Detects SCD codec type using vgmstream source analysis
-    - Prepares for codec-specific saving in future phases
+    This approach avoids the complexities of direct SCD binary editing
+    by using WAV files as the editing medium, then converting back to SCD.
     """
     
     def __init__(self):
@@ -169,173 +74,560 @@ class LoopPointManager:
         self.sample_rate: int = 44100
         self.total_samples: int = 0
         self.current_file_path: Optional[str] = None
-        self.codec_detector = SCDCodecDetector()
-        self.codec_info: Dict[str, Any] = {}
+        self.temp_wav_path: Optional[str] = None
+        self.original_scd_path: Optional[str] = None
         
-    def set_file_context(self, file_path: str, sample_rate: int, total_samples: int):
-        """Set the current file context for loop operations"""
-        self.current_file_path = file_path
-        self.sample_rate = sample_rate
-        self.total_samples = total_samples
+    def load_file_for_editing(self, file_path: str) -> bool:
+        """
+        Load a file for loop editing
         
-        # Detect codec info for SCD files
-        if file_path.lower().endswith('.scd'):
-            self.codec_info = self.codec_detector.detect_codec_from_scd(file_path)
-            if "error" not in self.codec_info:
-                logging.info(f"Detected SCD codec: {self.codec_info['codec_name']} (0x{self.codec_info['codec_id']:02X})")
-                logging.info(f"Loop storage method: {self.codec_info['loop_storage']}")
-            else:
-                logging.warning(f"Could not detect SCD codec: {self.codec_info['error']}")
-        else:
-            self.codec_info = {}
-        
-        logging.info(f"Loop context set: {Path(file_path).name} ({sample_rate}Hz, {total_samples} samples)")
-        
-    def set_loop_points(self, start_sample: int, end_sample: int) -> bool:
-        """Set loop points for UI display and editing"""
-        if start_sample < 0 or end_sample <= start_sample or end_sample > self.total_samples:
-            logging.warning(f"Invalid loop points: {start_sample} -> {end_sample} (total: {self.total_samples})")
-            return False
-            
-        self.current_loop = LoopPoint(start_sample, end_sample)
-        logging.info(f"Loop points set: {self.current_loop}")
-        return True
-    
-    def clear_loop_points(self):
-        """Clear current loop points"""
-        self.current_loop = None
-        logging.info("Loop points cleared")
-    
-    def get_loop_times(self) -> Tuple[float, float]:
-        """Get loop points as time in seconds"""
-        if not self.current_loop or self.sample_rate == 0:
-            return (0.0, 0.0)
-            
-        start_time = self.current_loop.start_sample / self.sample_rate
-        end_time = self.current_loop.end_sample / self.sample_rate
-        return (start_time, end_time)
-    
-    def get_loop_samples(self) -> Tuple[int, int]:
-        """Get loop points as sample positions"""
-        if not self.current_loop:
-            return (0, 0)
-        return (self.current_loop.start_sample, self.current_loop.end_sample)
-    
-    def has_loop_points(self) -> bool:
-        """Check if current file has loop points"""
-        return self.current_loop is not None and self.current_loop.is_valid(self.total_samples)
-    
-    def read_loop_metadata_from_scd(self, scd_filepath: str) -> bool:
-        """Read loop metadata from SCD file using vgmstream (works for all codec types)"""
+        For SCD files: Creates temp WAV with preserved loop metadata
+        For WAV files: Uses directly
+        For other formats: Converts to WAV first
+        """
         try:
-            # Import here to avoid circular imports
+            file_path = Path(file_path).resolve()
+            self.current_file_path = str(file_path)
+            
+            if file_path.suffix.lower() == '.scd':
+                return self._load_scd_for_editing(str(file_path))
+            elif file_path.suffix.lower() == '.wav':
+                return self._load_wav_for_editing(str(file_path))
+            else:
+                return self._load_other_format_for_editing(str(file_path))
+                
+        except Exception as e:
+            logging.error(f"Failed to load file for editing: {e}")
+            return False
+    
+    def load_wav_file(self, wav_path: str) -> bool:
+        """
+        Load a WAV file directly for loop editing
+        
+        Args:
+            wav_path: Path to the WAV file
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        return self._load_wav_for_editing(wav_path)
+    
+    def _load_scd_for_editing(self, scd_path: str) -> bool:
+        """Load SCD file by creating temp WAV with preserved loop metadata"""
+        try:
+            self.original_scd_path = scd_path
+            
+            # Create temp WAV from SCD
+            self.temp_wav_path = self._create_temp_wav_from_scd(scd_path)
+            if not self.temp_wav_path:
+                return False
+            
+            # Read WAV properties and loop metadata
+            return self._analyze_wav_file(self.temp_wav_path)
+            
+        except Exception as e:
+            logging.error(f"Failed to load SCD for editing: {e}")
+            return False
+    
+    def _load_wav_for_editing(self, wav_path: str) -> bool:
+        """Load WAV file directly for editing"""
+        try:
+            self.temp_wav_path = wav_path
+            self.original_scd_path = None
+            
+            return self._analyze_wav_file(wav_path)
+            
+        except Exception as e:
+            logging.error(f"Failed to load WAV for editing: {e}")
+            return False
+    
+    def _load_other_format_for_editing(self, file_path: str) -> bool:
+        """Convert other audio formats to WAV for editing"""
+        try:
+            # Create temp WAV file
+            temp_fd, temp_wav_path = tempfile.mkstemp(suffix='.wav', prefix='audio_edit_')
+            os.close(temp_fd)
+            
+            # Convert using ffmpeg
+            ffmpeg_path = Path(__file__).parent.parent / "ffmpeg" / "bin" / "ffmpeg.exe"
+            
+            result = subprocess.run([
+                str(ffmpeg_path),
+                '-i', file_path,
+                '-acodec', 'pcm_s16le',
+                '-ar', '48000',  # Standard sample rate for game audio
+                '-y',  # Overwrite output
+                temp_wav_path
+            ], capture_output=True, text=True)
+            
+            if result.returncode != 0 or not Path(temp_wav_path).exists():
+                logging.error(f"Failed to convert audio file: {result.stderr}")
+                return False
+            
+            self.temp_wav_path = temp_wav_path
+            self.original_scd_path = None
+            
+            return self._analyze_wav_file(temp_wav_path)
+            
+        except Exception as e:
+            logging.error(f"Failed to convert audio file: {e}")
+            return False
+    
+    def _create_temp_wav_from_scd(self, scd_path: str) -> Optional[str]:
+        """Create temporary WAV file from SCD with preserved loop metadata"""
+        try:
+            # Create temp file
+            temp_fd, temp_wav_path = tempfile.mkstemp(suffix='.wav', prefix='scd_edit_')
+            os.close(temp_fd)
+            
+            # Extract audio using vgmstream
+            vgmstream_path = Path(__file__).parent.parent / "vgmstream" / "vgmstream-cli.exe"
+            
+            result = subprocess.run([
+                str(vgmstream_path),
+                '-o', temp_wav_path,
+                scd_path
+            ], capture_output=True, text=True)
+            
+            if result.returncode != 0 or not Path(temp_wav_path).exists():
+                logging.error(f"Failed to extract WAV from SCD: {result.stderr}")
+                return None
+            
+            # Read original loop points from SCD using vgmstream metadata
+            loop_start, loop_end = self._read_scd_loop_points(scd_path)
+            
+            # Write loop metadata to the temp WAV
+            if loop_start != 0 or loop_end != 0:
+                self._write_wav_loop_metadata(temp_wav_path, loop_start, loop_end)
+                logging.info(f"Preserved loop points {loop_start}->{loop_end} in temp WAV")
+            
+            return temp_wav_path
+            
+        except Exception as e:
+            logging.error(f"Error creating temp WAV from SCD: {e}")
+            return None
+    
+    def _read_scd_loop_points(self, scd_path: str) -> Tuple[int, int]:
+        """Read loop points from SCD using vgmstream"""
+        try:
             from ui.metadata_reader import LoopMetadataReader
             
             reader = LoopMetadataReader()
-            metadata = reader.read_metadata(scd_filepath)
+            metadata = reader.read_metadata(scd_path)
             
             if metadata.get('has_loop', False):
-                start_sample = metadata.get('loop_start', 0)
-                end_sample = metadata.get('loop_end', 0)
-                
-                # Update file context (this will also detect codec)
-                self.set_file_context(
-                    scd_filepath,
-                    metadata.get('sample_rate', 44100),
-                    metadata.get('total_samples', 0)
-                )
-                
-                # Set loop points
-                self.current_loop = LoopPoint(start_sample, end_sample)
-                
-                logging.info(f"Read loop metadata from SCD via vgmstream: {self.current_loop}")
-                return True
+                return (metadata.get('loop_start', 0), metadata.get('loop_end', 0))
             else:
-                logging.info(f"No loop metadata found in SCD file: {scd_filepath}")
-                self.clear_loop_points()
-                return False
+                return (0, 0)
                 
         except Exception as e:
-            logging.error(f"Error reading loop metadata from SCD: {e}")
-            self.clear_loop_points()
+            logging.error(f"Error reading SCD loop points: {e}")
+            return (0, 0)
+    
+    def _analyze_wav_file(self, wav_path: str) -> bool:
+        """Analyze WAV file properties and read loop metadata"""
+        try:
+            # Read WAV properties using ffprobe
+            ffprobe_path = Path(__file__).parent.parent / "ffmpeg" / "bin" / "ffprobe.exe"
+            
+            result = subprocess.run([
+                str(ffprobe_path),
+                '-v', 'quiet',
+                '-print_format', 'json',
+                '-show_format',
+                '-show_streams',
+                wav_path
+            ], capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                logging.error(f"Failed to analyze WAV file: {result.stderr}")
+                return False
+            
+            import json
+            info = json.loads(result.stdout)
+            
+            # Extract audio properties
+            stream = info['streams'][0]
+            self.sample_rate = int(stream['sample_rate'])
+            duration = float(stream['duration'])
+            self.total_samples = int(duration * self.sample_rate)
+            
+            # Read loop metadata from WAV
+            loop_start, loop_end = self._read_wav_loop_metadata(wav_path)
+            
+            if loop_start != 0 or loop_end != 0:
+                self.current_loop = LoopPoint(loop_start, loop_end)
+                logging.info(f"Loaded with loop points: {self.current_loop}")
+            else:
+                self.current_loop = None
+                logging.info("No loop points found")
+            
+            logging.info(f"Loaded: {Path(wav_path).name} ({self.sample_rate}Hz, {self.total_samples} samples)")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error analyzing WAV file: {e}")
             return False
     
-    def get_codec_info(self) -> Dict[str, Any]:
-        """Get codec information for current file"""
-        if not self.current_file_path:
-            return {"codec": "unknown", "supports_save": False}
+    def _write_wav_loop_metadata(self, wav_filepath: str, loop_start: int, loop_end: int) -> bool:
+        """Write loop metadata to WAV file in Audacity-compatible format"""
+        try:
+            # Read the existing WAV file
+            with open(wav_filepath, 'rb') as f:
+                wav_data = f.read()
+            
+            # Check if it's a valid WAV file
+            if not wav_data.startswith(b'RIFF') or wav_data[8:12] != b'WAVE':
+                logging.error(f"Not a valid WAV file: {wav_filepath}")
+                return False
+            
+            # Remove existing ID3 chunk if present
+            id3_pos = wav_data.find(b'id3 ')
+            if id3_pos != -1:
+                chunk_size = struct.unpack('<I', wav_data[id3_pos+4:id3_pos+8])[0]
+                wav_data = wav_data[:id3_pos] + wav_data[id3_pos+8+chunk_size:]
+                logging.debug("Removed existing ID3 metadata from WAV")
+            
+            # Create ID3v2.3 metadata with TXXX frames
+            def create_txxx_frame(key: str, value: str) -> bytes:
+                text_data = b'\x00' + key.encode('utf-8') + b'\x00' + value.encode('utf-8')
+                frame_size = len(text_data)
+                frame_header = b'TXXX' + struct.pack('>I', frame_size) + b'\x00\x00'
+                return frame_header + text_data
+            
+            # Create TXXX frames for loop points
+            loop_start_frame = create_txxx_frame('LoopStart', str(loop_start))
+            loop_end_frame = create_txxx_frame('LoopEnd', str(loop_end))
+            
+            # Create ID3v2.3 header
+            id3_content = loop_start_frame + loop_end_frame
+            id3_size = len(id3_content)
+            id3_header = b'ID3\x03\x00\x00' + struct.pack('>I', id3_size)
+            
+            # Create id3 chunk for WAV file
+            id3_chunk_data = id3_header + id3_content
+            id3_chunk_size = len(id3_chunk_data)
+            
+            # Add padding if odd size (WAV chunks must be word-aligned)
+            if id3_chunk_size % 2:
+                id3_chunk_data += b'\x00'
+                id3_chunk_size += 1
+            
+            # Create the id3 chunk header
+            id3_chunk = b'id3 ' + struct.pack('<I', id3_chunk_size) + id3_chunk_data
+            
+            # Append the id3 chunk to the end of the WAV file
+            new_wav_data = wav_data + id3_chunk
+            
+            # Update the RIFF chunk size in the header
+            new_file_size = len(new_wav_data) - 8
+            new_wav_data = new_wav_data[:4] + struct.pack('<I', new_file_size) + new_wav_data[8:]
+            
+            # Create backup and write new file
+            backup_path = wav_filepath + '.backup'
+            if Path(backup_path).exists():
+                Path(backup_path).unlink()
+            
+            shutil.move(wav_filepath, backup_path)
+            
+            with open(wav_filepath, 'wb') as f:
+                f.write(new_wav_data)
+            
+            logging.debug(f"Wrote loop metadata to WAV: {loop_start} -> {loop_end}")
+            
+            # Remove backup on success
+            try:
+                Path(backup_path).unlink()
+            except:
+                pass
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error writing WAV loop metadata: {e}")
+            return False
+    
+    def _read_wav_loop_metadata(self, wav_filepath: str) -> Tuple[int, int]:
+        """Read loop metadata from WAV file"""
+        try:
+            with open(wav_filepath, 'rb') as f:
+                data = f.read()
+            
+            logging.debug(f"Reading loop metadata from: {wav_filepath}")
+            
+            # Find ID3 chunk
+            id3_pos = data.find(b'id3 ')
+            if id3_pos == -1:
+                logging.debug("No id3 chunk found in WAV file")
+                return (0, 0)
+            
+            chunk_size = struct.unpack('<I', data[id3_pos+4:id3_pos+8])[0]
+            id3_data = data[id3_pos+8:id3_pos+8+chunk_size]
+            
+            logging.debug(f"Found id3 chunk at position {id3_pos}, size {chunk_size}")
+            
+            if not id3_data.startswith(b'ID3'):
+                logging.debug("ID3 chunk doesn't start with ID3 header")
+                return (0, 0)
+            
+            loop_start = 0
+            loop_end = 0
+            
+            # Parse TXXX frames
+            pos = 10  # Skip ID3 header
+            while pos < len(id3_data) - 10:
+                frame_id = id3_data[pos:pos+4]
+                if frame_id == b'TXXX':
+                    frame_size = struct.unpack('>I', id3_data[pos+4:pos+8])[0]
+                    frame_data = id3_data[pos+10:pos+10+frame_size]
+                    
+                    if b'LoopStart' in frame_data:
+                        parts = frame_data.split(b'\x00')
+                        if len(parts) >= 3:
+                            loop_start = int(parts[2].decode('utf-8'))
+                    elif b'LoopEnd' in frame_data:
+                        parts = frame_data.split(b'\x00')
+                        if len(parts) >= 3:
+                            loop_end = int(parts[2].decode('utf-8'))
+                    
+                    pos += 10 + frame_size
+                else:
+                    break
+            
+            logging.info(f"Read loop metadata: {loop_start} -> {loop_end}")
+            return (loop_start, loop_end)
+            
+        except Exception as e:
+            logging.debug(f"Error reading WAV loop metadata: {e}")
+            return (0, 0)
+    
+    def set_loop_points(self, start_sample: int, end_sample: int) -> bool:
+        """Set loop points in the current file"""
+        try:
+            if not self.temp_wav_path:
+                logging.error("No file loaded for editing")
+                return False
+            
+            if start_sample < 0 or end_sample <= start_sample:
+                logging.error("Invalid loop points")
+                return False
+            
+            if end_sample > self.total_samples:
+                logging.warning(f"End sample {end_sample} exceeds total samples {self.total_samples}")
+                end_sample = self.total_samples
+            
+            # Update internal state
+            self.current_loop = LoopPoint(start_sample, end_sample)
+            
+            # Write to WAV metadata
+            success = self._write_wav_loop_metadata(self.temp_wav_path, start_sample, end_sample)
+            
+            if success:
+                logging.info(f"Loop points set: {self.current_loop}")
+            else:
+                logging.error("Failed to write loop points to WAV")
+            
+            return success
+            
+        except Exception as e:
+            logging.error(f"Error setting loop points: {e}")
+            return False
+    
+    def get_loop_points(self) -> Tuple[int, int]:
+        """Get current loop points as (start, end) sample numbers"""
+        if self.current_loop:
+            return (self.current_loop.start_sample, self.current_loop.end_sample)
+        return (0, 0)
+    
+    def has_loop_points(self) -> bool:
+        """Check if loop points are currently set"""
+        return self.current_loop is not None
+    
+    def clear_loop_points(self) -> bool:
+        """Clear current loop points"""
+        try:
+            if not self.temp_wav_path:
+                return False
+            
+            self.current_loop = None
+            
+            # Remove loop metadata from WAV
+            success = self._write_wav_loop_metadata(self.temp_wav_path, 0, 0)
+            
+            if success:
+                logging.info("Loop points cleared")
+            
+            return success
+            
+        except Exception as e:
+            logging.error(f"Error clearing loop points: {e}")
+            return False
+    
+    def save_changes(self, output_path: Optional[str] = None) -> bool:
+        """
+        Save changes back to original format
         
-        if self.codec_info and "error" not in self.codec_info:
-            return {
-                "codec_id": self.codec_info.get("codec_id", -1),
-                "codec_name": self.codec_info.get("codec_name", "unknown"),
-                "loop_storage": self.codec_info.get("loop_storage", "unknown"),
-                "supports_header_save": self.codec_info.get("supports_header_save", False),
-                "supports_comment_save": self.codec_info.get("supports_comment_save", False),
-                "file_path": self.current_file_path,
-                "sample_rate": self.sample_rate,
-                "total_samples": self.total_samples
-            }
-        
+        For SCD files: Converts WAV back to SCD
+        For WAV files: Saves directly (if output_path specified)
+        """
+        try:
+            if not self.temp_wav_path:
+                logging.error("No file loaded for saving")
+                return False
+            
+            if self.original_scd_path:
+                # Save as SCD
+                scd_output = output_path or self.original_scd_path
+                return self._convert_wav_to_scd(self.temp_wav_path, scd_output)
+            else:
+                # Save as WAV
+                if output_path:
+                    shutil.copy2(self.temp_wav_path, output_path)
+                    logging.info(f"Saved WAV to: {output_path}")
+                    return True
+                else:
+                    logging.info("WAV changes saved in place")
+                    return True
+            
+        except Exception as e:
+            logging.error(f"Error saving changes: {e}")
+            return False
+    
+    def _convert_wav_to_scd(self, wav_path: str, scd_output_path: str) -> bool:
+        """Convert WAV file to SCD using MusicEncoder"""
+        try:
+            # Paths
+            encoder_dir = Path(__file__).parent.parent / "khpc_tools" / "SingleEncoder"
+            encoder_exe = encoder_dir / "MusicEncoder.exe"
+            template_scd = encoder_dir / "test.scd"
+            
+            if not encoder_exe.exists() or not template_scd.exists():
+                logging.error("MusicEncoder or template SCD not found")
+                return False
+            
+            # Copy WAV to encoder directory
+            wav_name = f"temp_convert_{os.getpid()}.wav"
+            scd_name = f"temp_convert_{os.getpid()}.scd"
+            temp_wav_path = encoder_dir / wav_name
+            temp_scd_path = encoder_dir / scd_name
+            
+            # Copy files
+            shutil.copy2(wav_path, temp_wav_path)
+            shutil.copy2(template_scd, temp_scd_path)
+            
+            # Run MusicEncoder
+            result = subprocess.run([
+                str(encoder_exe),
+                scd_name,
+                wav_name
+            ], cwd=encoder_dir, capture_output=True, text=True)
+            
+            # Move result from output directory
+            output_path = encoder_dir / "output" / scd_name
+            if output_path.exists():
+                shutil.move(str(output_path), scd_output_path)
+                logging.info(f"Successfully converted WAV to SCD: {scd_output_path}")
+                success = True
+            else:
+                logging.error("MusicEncoder did not produce output file")
+                success = False
+            
+            # Cleanup temp files
+            try:
+                temp_wav_path.unlink(missing_ok=True)
+                temp_scd_path.unlink(missing_ok=True)
+            except:
+                pass
+            
+            return success
+            
+        except Exception as e:
+            logging.error(f"Error converting WAV to SCD: {e}")
+            return False
+    
+    def get_file_info(self) -> Dict[str, Any]:
+        """Get information about the currently loaded file"""
         return {
-            "codec": "unknown",
-            "supports_save": False,
-            "file_path": self.current_file_path,
+            "original_path": self.current_file_path,
+            "temp_wav_path": self.temp_wav_path,
+            "is_scd_editing": self.original_scd_path is not None,
             "sample_rate": self.sample_rate,
-            "total_samples": self.total_samples
+            "total_samples": self.total_samples,
+            "duration_seconds": self.total_samples / self.sample_rate if self.sample_rate > 0 else 0,
+            "has_loop": self.has_loop_points(),
+            "loop_info": {
+                "start_sample": self.current_loop.start_sample if self.current_loop else 0,
+                "end_sample": self.current_loop.end_sample if self.current_loop else 0,
+                "start_seconds": self.current_loop.start_sample / self.sample_rate if self.current_loop and self.sample_rate > 0 else 0,
+                "end_seconds": self.current_loop.end_sample / self.sample_rate if self.current_loop and self.sample_rate > 0 else 0,
+                "duration_samples": self.current_loop.duration_samples() if self.current_loop else 0,
+                "duration_seconds": self.current_loop.duration_samples() / self.sample_rate if self.current_loop and self.sample_rate > 0 else 0
+            }
         }
     
-    def can_save_loop_points(self) -> bool:
-        """Check if we can save loop points for the current file"""
-        codec_info = self.get_codec_info()
-        return (codec_info.get("supports_header_save", False) or 
-                codec_info.get("supports_comment_save", False))
+    def get_wav_path(self) -> Optional[str]:
+        """Get the path to the WAV file being edited"""
+        return self.temp_wav_path
     
-    def save_loop_points_to_scd(self, scd_filepath: str) -> bool:
+    def cleanup(self):
+        """Clean up temporary files"""
+        try:
+            if self.temp_wav_path and self.original_scd_path:  # Only delete temp files we created
+                temp_path = Path(self.temp_wav_path)
+                if temp_path.exists() and temp_path.name.startswith(('scd_edit_', 'audio_edit_')):
+                    temp_path.unlink()
+                    logging.debug(f"Cleaned up temp file: {self.temp_wav_path}")
+        except Exception as e:
+            logging.debug(f"Error during cleanup: {e}")
+        
+        # Reset state
+        self.current_loop = None
+        self.current_file_path = None
+        self.temp_wav_path = None
+        self.original_scd_path = None
+    
+    def save_loop_points(self) -> bool:
         """
-        Save loop points to SCD file - codec-aware implementation
+        Save current loop points to the original file
         
-        Phase 1: Framework ready, but saving not implemented
-        Phase 2: Will add header-based saving for PCM/ADPCM/MPEG/etc
-        Phase 3: Will add OGG comment-based saving for Vorbis
+        Workflow:
+        - For SCD: WAV (with ID3 tags) → SCD via MusicEncoder
+        - For WAV: Update ID3 tags in place
+        
+        Returns:
+            bool: True if successful, False otherwise
         """
-        if not self.current_loop:
-            logging.error("No loop points to save")
+        try:
+            if not self.current_loop:
+                logging.info("No loop points to save")
+                return True
+            
+            # First, inject ID3 tags into the temp WAV
+            success = self._write_wav_loop_metadata(
+                self.temp_wav_path, 
+                self.current_loop.start_sample, 
+                self.current_loop.end_sample
+            )
+            
+            if not success:
+                logging.error("Failed to write loop metadata to WAV")
+                return False
+            
+            logging.info(f"Saved loop metadata: {self.current_loop.start_sample} -> {self.current_loop.end_sample}")
+            
+            # If original was SCD, convert back to SCD
+            if self.original_scd_path:
+                logging.info(f"Converting back to SCD: {self.original_scd_path}")
+                return self._convert_wav_to_scd(self.temp_wav_path, self.original_scd_path)
+            else:
+                # If original was WAV, we're done (metadata already written)
+                logging.info("Loop metadata saved to WAV file")
+                return True
+                
+        except Exception as e:
+            logging.error(f"Error saving loop points: {e}")
             return False
-        
-        codec_info = self.get_codec_info()
-        if "codec_id" not in codec_info or codec_info["codec_id"] == -1:
-            logging.error("Cannot save - unknown codec")
-            return False
-        
-        codec_id = codec_info["codec_id"]
-        loop_storage = codec_info.get("loop_storage", "unknown")
-        
-        logging.info(f"Ready to save loop points for codec 0x{codec_id:02X} ({codec_info.get('codec_name', 'unknown')})")
-        logging.info(f"Loop storage method: {loop_storage}")
-        logging.info(f"Loop points: {self.current_loop}")
-        
-        # Phase 1: Just log what we would do
-        if loop_storage == "scd_header":
-            logging.info("Phase 2+: Would save to SCD header at meta_offset + 0x10/0x14")
-            # TODO Phase 2: Implement header-based saving
-        elif loop_storage == "ogg_comments":
-            logging.info("Phase 3+: Would save to OGG comment tags (LOOPSTART/LOOPEND)")
-            # TODO Phase 3: Implement OGG comment saving
-        else:
-            logging.warning(f"Unsupported loop storage method: {loop_storage}")
-            return False
-        
-        logging.warning("Loop point saving not yet implemented - this is Phase 1 (foundation only)")
-        return False
-
-
-# Phase 2+ classes (placeholders)
-class HeaderBasedLoopSaver:
-    """Phase 2: Save loop points to SCD header for PCM, ADPCM, MPEG, etc."""
-    pass
-
-
-class OGGCommentLoopSaver:
-    """Phase 3: Save loop points to OGG comment tags for Vorbis codec."""
-    pass
+    
+    def __del__(self):
+        """Cleanup on object destruction"""
+        self.cleanup()
