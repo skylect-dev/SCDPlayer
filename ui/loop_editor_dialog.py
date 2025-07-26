@@ -18,6 +18,168 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
+from core.audio_analysis import AudioAnalyzer, VolumeAdjustment
+
+
+class CustomVolumeDialog(QDialog):
+    """Dialog for custom volume adjustment settings"""
+    
+    def __init__(self, current_levels, parent=None):
+        super().__init__(parent)
+        self.current_levels = current_levels
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """Setup the custom volume dialog UI"""
+        self.setWindowTitle("Custom Volume Adjustment")
+        self.setModal(True)
+        self.resize(400, 300)
+        
+        layout = QVBoxLayout(self)
+        
+        # Current levels display
+        current_group = QGroupBox("Current Audio Levels")
+        current_layout = QVBoxLayout(current_group)
+        
+        current_info = QLabel(f"""Current Peak: {self.current_levels.peak_db:.1f} dB
+Current RMS: {self.current_levels.rms_db:.1f} dB
+Dynamic Range: {self.current_levels.dynamic_range_db:.1f} dB
+
+Note: Peak around -3 to -2dB is good for in-game audio
+Most game audio is around -0.2dB peak level""")
+        current_info.setStyleSheet("font-family: monospace; color: #ddd; padding: 8px;")
+        current_layout.addWidget(current_info)
+        
+        layout.addWidget(current_group)
+        
+        # Method selection
+        method_group = QGroupBox("Normalization Method")
+        method_layout = QVBoxLayout(method_group)
+        
+        self.method_peak = QRadioButton("Peak Normalization")
+        self.method_peak.setChecked(True)  # Default to peak
+        self.method_rms = QRadioButton("RMS Normalization") 
+        
+        method_layout.addWidget(self.method_peak)
+        method_layout.addWidget(self.method_rms)
+        
+        layout.addWidget(method_group)
+        
+        # Target level input
+        target_group = QGroupBox("Target Level")
+        target_layout = QVBoxLayout(target_group)
+        
+        target_layout.addWidget(QLabel("Target dB level:"))
+        
+        input_layout = QHBoxLayout()
+        self.target_spin = QDoubleSpinBox()
+        self.target_spin.setRange(-60.0, 0.0)
+        self.target_spin.setValue(-3.0)  # Updated for better in-game audio
+        self.target_spin.setSuffix(" dB")
+        self.target_spin.setDecimals(1)
+        self.target_spin.setSingleStep(0.1)
+        
+        input_layout.addWidget(self.target_spin)
+        
+        # Preset buttons
+        preset_layout = QHBoxLayout()
+        
+        game_preset = QPushButton("Game (-3dB)")
+        game_preset.clicked.connect(lambda: self.target_spin.setValue(-3.0))
+        game_preset.setToolTip("Good level for in-game audio")
+        game_preset.setStyleSheet("QPushButton { background-color: #2a5a2a; }")
+        
+        typical_preset = QPushButton("Typical (-0.2dB)")  
+        typical_preset.clicked.connect(lambda: self.target_spin.setValue(-0.2))
+        typical_preset.setToolTip("Typical game audio peak level")
+        typical_preset.setStyleSheet("QPushButton { background-color: #5a5a2a; }")
+        
+        max_preset = QPushButton("Max (-0.1dB)")
+        max_preset.clicked.connect(lambda: self.target_spin.setValue(-0.1))
+        max_preset.setToolTip("Maximum level with minimal headroom")
+        max_preset.setStyleSheet("QPushButton { background-color: #5a2a2a; }")
+        
+        preset_layout.addWidget(game_preset)
+        preset_layout.addWidget(typical_preset)
+        preset_layout.addWidget(max_preset)
+        
+        target_layout.addLayout(input_layout)
+        target_layout.addLayout(preset_layout)
+        
+        layout.addWidget(target_group)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        self.ok_btn = QPushButton("Apply")
+        self.ok_btn.clicked.connect(self.accept)
+        self.ok_btn.setDefault(True)
+        
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.reject)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(self.ok_btn)
+        button_layout.addWidget(self.cancel_btn)
+        
+        layout.addLayout(button_layout)
+        
+        # Connect method change to update recommended values
+        self.method_peak.toggled.connect(self.update_recommended_value)
+        self.method_rms.toggled.connect(self.update_recommended_value)
+        
+        # Style the dialog
+        self.setStyleSheet("""
+            QDialog { background-color: #2b2b2b; color: white; }
+            QGroupBox { 
+                font-weight: bold; 
+                border: 1px solid #444; 
+                border-radius: 4px; 
+                margin-top: 6px; 
+                padding-top: 6px; 
+            }
+            QGroupBox::title { 
+                subcontrol-origin: margin; 
+                left: 8px; 
+                padding: 0 4px 0 4px; 
+                color: #ddd; 
+                background-color: #2b2b2b; 
+            }
+            QPushButton { 
+                background-color: #404040; 
+                border: 1px solid #666; 
+                border-radius: 4px; 
+                padding: 6px 12px; 
+                color: white; 
+            }
+            QPushButton:hover { background-color: #505050; }
+            QPushButton:pressed { background-color: #303030; }
+            QDoubleSpinBox { 
+                background-color: #404040; 
+                border: 1px solid #555; 
+                border-radius: 3px; 
+                padding: 4px; 
+                color: white; 
+            }
+        """)
+    
+    def update_recommended_value(self):
+        """Update recommended value based on selected method"""
+        if self.method_peak.isChecked():
+            # For peak normalization, suggest -3dB for gaming
+            if self.target_spin.value() == -12.0:  # If it was RMS default
+                self.target_spin.setValue(-3.0)
+        else:  # RMS normalization
+            # For RMS normalization, suggest -12dB
+            if self.target_spin.value() in [-3.0, -0.2, -0.1]:  # If it was peak default
+                self.target_spin.setValue(-12.0)
+    
+    def get_settings(self):
+        """Get the selected settings"""
+        return {
+            'method': 'peak' if self.method_peak.isChecked() else 'rms',
+            'target_db': self.target_spin.value()
+        }
 
 class WaveformWidget(QWidget):
     """High-performance waveform display widget"""
@@ -256,6 +418,25 @@ class WaveformWidget(QWidget):
             'page_step': page_step,
             'current_scroll': self.scroll_position
         }
+    
+    def update_waveform(self):
+        """Force update of waveform display after audio data changes"""
+        if self.audio_data is not None:
+            self.total_samples = len(self.audio_data)
+            
+            # Recalculate samples per pixel if needed
+            if self.width() > 0:
+                # Try to maintain current zoom level if reasonable
+                if self.samples_per_pixel <= 0 or not self._initial_zoom_set:
+                    self.samples_per_pixel = max(1, self.total_samples / self.width())
+                    self._initial_zoom_set = True
+                
+                # Ensure scroll position is still valid
+                visible_samples = self.width() * self.samples_per_pixel
+                max_scroll = max(0, self.total_samples - visible_samples) // self.samples_per_pixel
+                self.scroll_position = min(self.scroll_position, max_scroll)
+        
+        self.update()  # Trigger a repaint
     
     def paintEvent(self, event):
         """Paint the waveform"""
@@ -770,6 +951,13 @@ class LoopEditorDialog(QDialog):
         self.loop_manager = loop_manager
         self.parent_window = parent
         
+        # Initialize audio analyzer
+        self.audio_analyzer = AudioAnalyzer()
+        
+        # Track if volume has been adjusted
+        self._volume_adjusted = False
+        self._original_audio_data = None  # Keep copy of original for comparison
+        
         # Pause main window audio if playing
         if hasattr(parent, 'player') and parent.player.state() == parent.player.PlayingState:
             parent.player.pause()
@@ -799,8 +987,8 @@ class LoopEditorDialog(QDialog):
     def setup_ui(self):
         """Setup the user interface"""
         self.setWindowTitle("Loop Editor - Professional Audio Loop Point Editor")
-        self.setMinimumSize(800, 500)
-        self.resize(1200, 600)
+        self.setMinimumSize(800, 650)
+        self.resize(1200, 750)
         
         # Apply professional dark theme styling
         self.setStyleSheet("""
@@ -1020,6 +1208,132 @@ class LoopEditorDialog(QDialog):
         
         controls_layout.addWidget(info_group)
         
+        # Audio Analysis Panel
+        self.analysis_group = QGroupBox("Audio Analysis")
+        self.analysis_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        analysis_layout = QVBoxLayout(self.analysis_group)
+        
+        # Analysis display area - make it expand with window
+        self.analysis_text = QTextEdit()
+        self.analysis_text.setMinimumHeight(150)
+        self.analysis_text.setReadOnly(True)
+        self.analysis_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.analysis_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #2a2a2a;
+                border: 1px solid #666;
+                border-radius: 4px;
+                padding: 8px;
+                font-family: 'Consolas', 'Monaco', monospace;
+                font-size: 11px;
+                color: #ddd;
+            }
+        """)
+        analysis_layout.addWidget(self.analysis_text)
+        
+        # Analysis button
+        analyze_btn = QPushButton("Analyze Audio Levels")
+        analyze_btn.clicked.connect(self.analyze_audio)
+        analyze_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4a4a4a;
+                border: 1px solid #666;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-weight: bold;
+                color: white;
+            }
+            QPushButton:hover { background-color: #5a5a5a; }
+            QPushButton:pressed { background-color: #3a3a3a; }
+        """)
+        analysis_layout.addWidget(analyze_btn)
+        
+        # Volume adjustment buttons
+        volume_btn_layout = QHBoxLayout()
+        
+        self.auto_volume_btn = QPushButton("Auto Volume")
+        self.auto_volume_btn.clicked.connect(self.auto_volume_adjustment)
+        self.auto_volume_btn.setToolTip("Intelligent auto-leveling based on audio characteristics")
+        
+        self.normalize_peak_btn = QPushButton("Normalize Peak")
+        self.normalize_peak_btn.clicked.connect(self.normalize_peak)
+        self.normalize_peak_btn.setToolTip("Normalize to -1dB peak level")
+        
+        self.normalize_rms_btn = QPushButton("Normalize RMS") 
+        self.normalize_rms_btn.clicked.connect(self.normalize_rms)
+        self.normalize_rms_btn.setToolTip("Normalize to -12dB RMS level")
+        
+        self.custom_volume_btn = QPushButton("Custom Volume")
+        self.custom_volume_btn.clicked.connect(self.custom_volume_adjustment)
+        self.custom_volume_btn.setToolTip("Set custom target levels for peak or RMS normalization")
+        
+        self.reset_volume_btn = QPushButton("Reset Volume")
+        self.reset_volume_btn.clicked.connect(self.reset_volume_adjustment)
+        self.reset_volume_btn.setToolTip("Reset audio to original volume levels")
+        self.reset_volume_btn.setEnabled(False)  # Only enabled after volume adjustment
+        
+        # Style the volume buttons
+        volume_btn_style = """
+            QPushButton {
+                background-color: #2a5a2a;
+                border: 1px solid #4a8a4a;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-size: 10px;
+                font-weight: bold;
+                color: white;
+            }
+            QPushButton:hover { background-color: #3a6a3a; }
+            QPushButton:pressed { background-color: #1a4a1a; }
+            QPushButton:disabled { 
+                background-color: #333;
+                border-color: #555;
+                color: #888;
+            }
+        """
+        
+        reset_btn_style = """
+            QPushButton {
+                background-color: #5a2a2a;
+                border: 1px solid #8a4a4a;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-size: 10px;
+                font-weight: bold;
+                color: white;
+            }
+            QPushButton:hover { background-color: #6a3a3a; }
+            QPushButton:pressed { background-color: #4a1a1a; }
+            QPushButton:disabled { 
+                background-color: #333;
+                border-color: #555;
+                color: #888;
+            }
+        """
+        
+        self.auto_volume_btn.setStyleSheet(volume_btn_style)
+        self.normalize_peak_btn.setStyleSheet(volume_btn_style)
+        self.normalize_rms_btn.setStyleSheet(volume_btn_style)
+        self.custom_volume_btn.setStyleSheet(volume_btn_style)
+        self.reset_volume_btn.setStyleSheet(reset_btn_style)
+        
+        volume_btn_layout.addWidget(self.auto_volume_btn)
+        volume_btn_layout.addWidget(self.normalize_peak_btn)
+        volume_btn_layout.addWidget(self.normalize_rms_btn)
+        volume_btn_layout.addWidget(self.custom_volume_btn)
+        volume_btn_layout.addWidget(self.reset_volume_btn)
+        
+        analysis_layout.addLayout(volume_btn_layout)
+        
+        # Initially disable volume buttons until audio is loaded
+        self.auto_volume_btn.setEnabled(False)
+        self.normalize_peak_btn.setEnabled(False)
+        self.normalize_rms_btn.setEnabled(False)
+        self.custom_volume_btn.setEnabled(False)
+        self.reset_volume_btn.setEnabled(False)
+        
+        controls_layout.addWidget(self.analysis_group, 1)  # Give analysis group more space with stretch factor
+        
         # Action buttons with professional styling
         button_group = QGroupBox("Actions")
         button_layout = QVBoxLayout(button_group)
@@ -1177,6 +1491,11 @@ class LoopEditorDialog(QDialog):
             QMessageBox.warning(self, "Error", "Failed to load audio data")
             return
         
+        # Store original audio data for volume change detection
+        if self.waveform.audio_data is not None:
+            self._original_audio_data = self.waveform.audio_data.copy()
+            self._volume_adjusted = False
+        
         # Set timeline info
         file_info = self.loop_manager.get_file_info()
         self.timeline.set_audio_info(file_info['sample_rate'], file_info['total_samples'])
@@ -1194,6 +1513,13 @@ class LoopEditorDialog(QDialog):
         
         self.waveform.set_loop_points(start, end)
         self.update_loop_info(start, end)
+        
+        # Automatically analyze audio levels when file loads
+        self.analysis_text.setText("Analyzing audio levels...")
+        QTimer.singleShot(100, self.analyze_audio)  # Delay slightly to let UI update
+        
+        # Update volume button states  
+        self._update_volume_buttons_state()
         
         # Initialize scrollbar
         self.update_scrollbar_range()
@@ -1292,8 +1618,210 @@ class LoopEditorDialog(QDialog):
         self.waveform.set_loop_points(0, track_end)
         self.update_loop_info(0, track_end)
     
+    def _save_volume_adjusted_audio(self) -> bool:
+        """Save volume-adjusted audio data back to the temp WAV file"""
+        if not self._volume_adjusted or self.waveform.audio_data is None:
+            return True  # No volume adjustment to save
+        
+        try:
+            import wave
+            import struct
+            import time
+            import tempfile
+            import shutil
+            import os
+            
+            wav_path = self.loop_manager.get_wav_path()
+            if not wav_path:
+                logging.error("No WAV path available for saving volume adjustments")
+                return False
+            
+            # Stop media player to release file handle
+            was_playing = self.media_player.state() == QMediaPlayer.PlayingState
+            self.media_player.stop()
+            
+            # Clear media to fully release file handle
+            self.media_player.setMedia(QMediaContent())
+            
+            # Give more time for the file to be released (Windows can be slow)
+            import time
+            time.sleep(0.3)  # Increased from 0.1 to 0.3 seconds
+            
+            # Check if file is accessible before attempting to write
+            try:
+                # Try to open the file in append mode to test accessibility
+                with open(wav_path, 'ab') as test_file:
+                    pass  # Just test if we can open it
+            except PermissionError:
+                logging.warning("File still locked, waiting longer...")
+                time.sleep(0.5)  # Wait even longer
+                try:
+                    with open(wav_path, 'ab') as test_file:
+                        pass
+                except PermissionError:
+                    QMessageBox.critical(None, "File Access Error",
+                                       f"Cannot access audio file for volume changes.\n\n"
+                                       f"The file may be locked by another process.\n"
+                                       f"Try closing and reopening the Loop Editor.")
+                    return False
+            
+            # Read original WAV file info first
+            try:
+                with wave.open(wav_path, 'rb') as original_wav:
+                    channels = original_wav.getnchannels()
+                    sample_width = original_wav.getsampwidth()
+                    sample_rate = original_wav.getframerate()
+            except Exception as e:
+                logging.error(f"Error reading original WAV file info: {e}")
+                return False
+            
+            # Convert adjusted audio data back to the original format
+            adjusted_data = self.waveform.audio_data
+            
+            # Scale back to original bit depth
+            if sample_width == 1:  # 8-bit
+                # Convert from float32 [-1,1] to uint8 [0,255]
+                audio_int = ((adjusted_data + 1.0) * 127.5).clip(0, 255).astype(np.uint8)
+            elif sample_width == 2:  # 16-bit
+                # Convert from float32 [-1,1] to int16 [-32768,32767]
+                audio_int = (adjusted_data * 32767).clip(-32768, 32767).astype(np.int16)
+            elif sample_width == 4:  # 32-bit
+                # Convert from float32 [-1,1] to int32
+                audio_int = (adjusted_data * 2147483647).clip(-2147483648, 2147483647).astype(np.int32)
+            else:
+                logging.error(f"Unsupported sample width: {sample_width}")
+                return False
+            
+            # Handle stereo conversion if original was stereo
+            if channels == 2:
+                # Duplicate mono to stereo (interleave)
+                stereo_data = np.empty(len(audio_int) * 2, dtype=audio_int.dtype)
+                stereo_data[0::2] = audio_int  # Left channel
+                stereo_data[1::2] = audio_int  # Right channel (duplicate)
+                audio_int = stereo_data
+            
+            # Write new WAV file with proper error handling and retry
+            # Use temporary file approach to avoid file locking issues
+            import tempfile
+            import shutil
+            
+            temp_wav_path = None
+            try:
+                # Create temporary file in the same directory
+                temp_dir = os.path.dirname(wav_path)
+                temp_fd, temp_wav_path = tempfile.mkstemp(suffix='.wav', dir=temp_dir)
+                os.close(temp_fd)  # Close the file descriptor
+                
+                # Write to temporary file first
+                with wave.open(temp_wav_path, 'wb') as wav_file:
+                    wav_file.setnchannels(channels)
+                    wav_file.setsampwidth(sample_width)
+                    wav_file.setframerate(sample_rate)
+                    wav_file.writeframes(audio_int.tobytes())
+                
+                # Now try to replace the original file
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        shutil.move(temp_wav_path, wav_path)
+                        break  # Success
+                    except PermissionError as e:
+                        if attempt < max_retries - 1:
+                            logging.warning(f"Permission denied replacing file on attempt {attempt + 1}, retrying...")
+                            time.sleep(0.3)
+                            continue
+                        else:
+                            logging.error(f"Permission denied replacing WAV file after {max_retries} attempts: {e}")
+                            QMessageBox.critical(None, "File Access Error", 
+                                               f"Cannot save volume changes: File is in use or write-protected.\n\n"
+                                               f"Please ensure the file is not open in another application.\n"
+                                               f"You may need to restart the application if the file remains locked.")
+                            return False
+                            
+            except Exception as e:
+                logging.error(f"Error writing WAV file: {e}")
+                return False
+            finally:
+                # Clean up temporary file if it still exists
+                if temp_wav_path and os.path.exists(temp_wav_path):
+                    try:
+                        os.remove(temp_wav_path)
+                    except:
+                        pass  # Ignore cleanup errors
+            
+            logging.info(f"Saved volume-adjusted audio to {wav_path}")
+            
+            # Reload media if it was playing
+            if was_playing and wav_path:
+                url = QUrl.fromLocalFile(wav_path)
+                self.media_player.setMedia(QMediaContent(url))
+                
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error saving volume-adjusted audio: {e}")
+            return False
+    
+    def _reload_media_after_volume_change(self):
+        """Force reload media player after volume changes are saved"""
+        try:
+            wav_path = self.loop_manager.get_wav_path()
+            if not wav_path:
+                return
+            
+            # Clear current media to force reload
+            self.media_player.setMedia(QMediaContent())
+            
+            # Wait a moment for the clear to take effect
+            QTimer.singleShot(50, lambda: self._set_fresh_media(wav_path))
+            
+        except Exception as e:
+            logging.error(f"Error reloading media after volume change: {e}")
+    
+    def _set_fresh_media(self, wav_path: str):
+        """Set fresh media content after a brief delay"""
+        try:
+            url = QUrl.fromLocalFile(wav_path)
+            self.media_player.setMedia(QMediaContent(url))
+            logging.info("Media player reloaded with volume-adjusted audio")
+        except Exception as e:
+            logging.error(f"Error setting fresh media: {e}")
+    
+    def _force_media_refresh(self):
+        """Force media player to reload for immediate volume change preview"""
+        try:
+            # Clear the media player cache by setting empty content then reloading
+            self.media_player.stop()
+            self.media_player.setMedia(QMediaContent())
+            
+            # Small delay then reload
+            QTimer.singleShot(100, self._reload_current_media)
+            
+        except Exception as e:
+            logging.error(f"Error forcing media refresh: {e}")
+    
+    def _reload_current_media(self):
+        """Reload the current media file"""
+        try:
+            wav_path = self.loop_manager.get_wav_path()
+            if wav_path:
+                url = QUrl.fromLocalFile(wav_path)
+                self.media_player.setMedia(QMediaContent(url))
+                logging.info("Forced media refresh after volume adjustment")
+        except Exception as e:
+            logging.error(f"Error reloading current media: {e}")
+    
+    def _write_volume_to_wav_immediately(self) -> bool:
+        """Write volume-adjusted audio to WAV file immediately for playback"""
+        try:
+            # Use the same logic as _save_volume_adjusted_audio but streamlined
+            return self._save_volume_adjusted_audio()
+        except Exception as e:
+            logging.error(f"Error writing volume to WAV immediately: {e}")
+            return False
+    
     def save_changes(self):
-        """Save loop points and close"""
+        """Save loop points and volume changes, then close"""
         start = self.start_spin.value()
         end = self.end_spin.value()
         
@@ -1303,7 +1831,13 @@ class LoopEditorDialog(QDialog):
             QMessageBox.warning(self, "Invalid Loop", "Loop end must be greater than loop start")
             return
         
-        # Save to loop manager
+        # First, save volume-adjusted audio data if it was modified
+        if self._save_volume_adjusted_audio():
+            logging.info("Volume-adjusted audio data saved to temp WAV file")
+            # Force media player to reload the updated file
+            self._reload_media_after_volume_change()
+        
+        # Save loop points to loop manager
         if end > start and end > 0:
             logging.debug(f"Saving loop points: {start} -> {end}")
             success = self.loop_manager.set_loop_points(start, end)
@@ -1355,11 +1889,16 @@ class LoopEditorDialog(QDialog):
             QMessageBox.warning(self, "Error", "No audio file available for playback")
             return
         
-        # Only set media content if it's different or not set
+        # Only set media content if it's different or not set, or if volume was adjusted
         current_media = self.media_player.media()
         new_url = QUrl.fromLocalFile(wav_path)
-        if current_media.isNull() or current_media.canonicalUrl() != new_url:
+        if (current_media.isNull() or 
+            current_media.canonicalUrl() != new_url or 
+            self._volume_adjusted):
             self.media_player.setMedia(QMediaContent(new_url))
+            # Reset volume adjusted flag after media is reloaded for playback
+            if self._volume_adjusted:
+                logging.info("Reloaded media with volume adjustments for playback")
         
         # If loop mode is on and we're outside the loop, start from loop beginning
         if self.is_loop_testing:
@@ -1596,6 +2135,264 @@ class LoopEditorDialog(QDialog):
         minutes = int(seconds // 60)
         seconds = int(seconds % 60)
         return f"{minutes}:{seconds:02d}"
+    
+    def analyze_audio(self):
+        """Analyze the current audio file for level information"""
+        if self.waveform.audio_data is None or len(self.waveform.audio_data) == 0:
+            self.analysis_text.setText("No audio data available for analysis")
+            return
+        
+        try:
+            # Initialize audio analyzer
+            analyzer = AudioAnalyzer()
+            
+            # Analyze the audio
+            levels = analyzer.analyze_audio_levels(
+                self.waveform.audio_data, 
+                self.waveform.sample_rate
+            )
+            
+            # Get gain recommendations
+            recommendations = analyzer.get_gain_recommendation(levels)
+            
+            # Format the results
+            analysis_text = "=== AUDIO LEVEL ANALYSIS ===\n\n"
+            
+            # Display level information
+            level_dict = levels.to_dict()
+            for key, value in level_dict.items():
+                analysis_text += f"{key:<15}: {value}\n"
+            
+            analysis_text += "\n=== RECOMMENDATIONS ===\n"
+            
+            if recommendations['recommendations']:
+                for rec in recommendations['recommendations']:
+                    icon = "⚠️" if rec['type'] == 'warning' else "❌" if rec['type'] == 'error' else "ℹ️"
+                    analysis_text += f"\n{icon} {rec['message']}\n"
+                    analysis_text += f"   → {rec['suggestion']}\n"
+            else:
+                analysis_text += "\n✅ Audio levels look good!"
+            
+            # Add file information
+            file_info = self.loop_manager.get_file_info()
+            duration_seconds = file_info.get('total_samples', 0) / file_info.get('sample_rate', 44100)
+            
+            analysis_text += f"\n=== FILE INFO ===\n"
+            analysis_text += f"Sample Rate    : {file_info.get('sample_rate', 0)} Hz\n"
+            analysis_text += f"Duration       : {self.format_time(duration_seconds)}\n"
+            analysis_text += f"Total Samples  : {file_info.get('total_samples', 0):,}\n"
+            
+            # Display the results
+            self.analysis_text.setText(analysis_text)
+            
+            logging.info(f"Audio analysis completed - Peak: {levels.peak_db:.1f}dB, RMS: {levels.rms_db:.1f}dB")
+            
+            # Enable volume adjustment buttons after analysis
+            self.auto_volume_btn.setEnabled(True)
+            self.normalize_peak_btn.setEnabled(True)
+            self.normalize_rms_btn.setEnabled(True)
+            self.custom_volume_btn.setEnabled(True)
+            # Reset button only enabled if volume was adjusted
+            self.reset_volume_btn.setEnabled(self._volume_adjusted)
+            
+        except Exception as e:
+            logging.error(f"Error during audio analysis: {e}")
+            self.analysis_text.setText(f"Error analyzing audio: {str(e)}")
+    
+    def auto_volume_adjustment(self):
+        """Apply automatic volume adjustment using intelligent algorithm"""
+        self._apply_volume_adjustment("auto")
+    
+    def normalize_peak(self):
+        """Normalize audio to -1dB peak level"""
+        self._apply_volume_adjustment("peak")
+    
+    def normalize_rms(self):
+        """Normalize audio to -12dB RMS level"""
+        self._apply_volume_adjustment("rms")
+    
+    def custom_volume_adjustment(self):
+        """Open custom volume adjustment dialog"""
+        self._apply_volume_adjustment("custom")
+    
+    def reset_volume_adjustment(self):
+        """Reset audio to original volume levels"""
+        if not self._volume_adjusted or self._original_audio_data is None:
+            return
+        
+        reply = QMessageBox.question(
+            self,
+            "Reset Volume",
+            "Reset audio to original volume levels?\n\nThis will undo all volume adjustments.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Restore original audio data
+            self.waveform.audio_data = self._original_audio_data.copy()
+            self._volume_adjusted = False
+            
+            # Reset window title
+            self.setWindowTitle("Loop Editor - Professional Audio Loop Point Editor")
+            
+            # Disable reset button
+            self.reset_volume_btn.setEnabled(False)
+            
+            # Update waveform display
+            self.waveform.update_waveform()
+            self.waveform.update()
+            
+            # Re-analyze audio to show original levels
+            QTimer.singleShot(100, self.analyze_audio)
+            
+            logging.info("Volume reset to original levels")
+    
+    def reset_volume_adjustment(self):
+        """Reset audio to original volume levels"""
+        if self._original_audio_data is None:
+            QMessageBox.information(self, "No Changes", "No original audio data to restore")
+            return
+        
+        reply = QMessageBox.question(
+            self, 
+            "Reset Volume", 
+            "This will reset the audio to its original volume levels.\n\nContinue?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Restore original audio data
+            self.waveform.audio_data = self._original_audio_data.copy()
+            self._volume_adjusted = False
+            
+            # Reset window title
+            self.setWindowTitle("Loop Editor - Professional Audio Loop Point Editor")
+            
+            # Update waveform display
+            self.waveform.update_waveform()
+            self.waveform.update()
+            
+            # Disable reset button
+            self.reset_volume_btn.setEnabled(False)
+            
+            # Re-analyze audio
+            QTimer.singleShot(100, self.analyze_audio)
+            
+            QMessageBox.information(self, "Volume Reset", "Audio volume has been reset to original levels.")
+    
+    def _apply_volume_adjustment(self, method: str):
+        """Apply volume adjustment using the specified method"""
+        if self.waveform.audio_data is None or len(self.waveform.audio_data) == 0:
+            QMessageBox.warning(self, "No Audio", "No audio data available for volume adjustment")
+            return
+        
+        try:
+            # Initialize audio analyzer
+            analyzer = AudioAnalyzer()
+            
+            # Analyze current audio before adjustment
+            original_levels = analyzer.analyze_audio_levels(
+                self.waveform.audio_data, 
+                self.waveform.sample_rate
+            )
+            
+            # Apply the appropriate normalization
+            if method == "auto":
+                adjustment = analyzer.auto_level_adjustment(self.waveform.audio_data)
+            elif method == "peak":
+                adjustment = analyzer.normalize_peak(self.waveform.audio_data, target_db=-1.0)
+            elif method == "rms":
+                adjustment = analyzer.normalize_rms(self.waveform.audio_data, target_db=-12.0)
+            elif method == "custom":
+                # Open custom volume dialog
+                dialog = CustomVolumeDialog(original_levels, self)
+                if dialog.exec_() != QDialog.Accepted:
+                    return  # User cancelled
+                
+                settings = dialog.get_settings()
+                if settings['method'] == 'peak':
+                    adjustment = analyzer.normalize_peak(self.waveform.audio_data, target_db=settings['target_db'])
+                else:  # RMS
+                    adjustment = analyzer.normalize_rms(self.waveform.audio_data, target_db=settings['target_db'])
+            else:
+                raise ValueError(f"Unknown volume adjustment method: {method}")
+            
+            # Ask user for confirmation
+            adjustment_info = adjustment.to_dict()
+            
+            message = f"Volume Adjustment Preview:\n\n"
+            for key, value in adjustment_info.items():
+                message += f"{key}: {value}\n"
+            
+            message += f"\nThis will modify the audio in memory only.\n"
+            message += f"To save changes, you must export/save the file.\n\n"
+            message += f"Continue with volume adjustment?"
+            
+            reply = QMessageBox.question(
+                self, 
+                "Confirm Volume Adjustment", 
+                message,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply == QMessageBox.Yes:
+                # Apply the adjustment
+                self.waveform.audio_data = adjustment.adjusted_audio.copy()
+                
+                # Mark that volume has been adjusted
+                self._volume_adjusted = True
+                
+                # Update window title to show volume was adjusted
+                self.setWindowTitle("Loop Editor - Professional Audio Loop Point Editor (Volume Adjusted*)")
+                
+                # Enable reset button
+                self.reset_volume_btn.setEnabled(True)
+                
+                # Immediately write volume changes to WAV file for playback
+                if self._write_volume_to_wav_immediately():
+                    logging.info("Volume changes written to WAV file for immediate playback")
+                
+                # Update the waveform display
+                self.waveform.update_waveform()
+                self.waveform.update()
+                
+                # Force media player to recognize volume changes for immediate playback
+                self._force_media_refresh()
+                
+                # Run analysis again to show new levels
+                QTimer.singleShot(100, self.analyze_audio)
+                
+                # Show success message
+                success_msg = f"Volume adjustment applied successfully!\n\n"
+                success_msg += f"Method: {adjustment.normalization_type}\n"
+                success_msg += f"Gain Applied: {adjustment.gain_applied_db:+.1f} dB\n"
+                if adjustment.clipping_prevented:
+                    success_msg += f"Note: Gain was reduced to prevent clipping."
+                
+                QMessageBox.information(self, "Volume Adjusted", success_msg)
+                
+                logging.info(f"Volume adjustment applied: {adjustment.normalization_type}, "
+                           f"Gain: {adjustment.gain_applied_db:+.1f}dB")
+            
+        except Exception as e:
+            logging.error(f"Error during volume adjustment: {e}")
+            QMessageBox.critical(self, "Volume Adjustment Error", 
+                               f"Failed to adjust volume: {str(e)}")
+    
+    def _update_volume_buttons_state(self):
+        """Update the enabled state of volume adjustment buttons"""
+        has_audio = (self.waveform.audio_data is not None and 
+                    len(self.waveform.audio_data) > 0)
+        
+        self.auto_volume_btn.setEnabled(has_audio)
+        self.normalize_peak_btn.setEnabled(has_audio)
+        self.normalize_rms_btn.setEnabled(has_audio)
+        self.custom_volume_btn.setEnabled(has_audio)
+        # Reset button only enabled if volume was adjusted
+        self.reset_volume_btn.setEnabled(has_audio and self._volume_adjusted)
 
 # Test function
 if __name__ == "__main__":
