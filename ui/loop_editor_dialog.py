@@ -72,6 +72,23 @@ class WaveformWidget(QWidget):
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
         
+        # Track if initial zoom has been calculated
+        self._initial_zoom_set = False
+        
+    def showEvent(self, event):
+        """Handle show event to set proper initial zoom"""
+        super().showEvent(event)
+        
+        # Set proper initial zoom when widget is first shown and properly sized
+        if not self._initial_zoom_set and self.audio_data is not None and self.width() > 0:
+            self.samples_per_pixel = max(1, self.total_samples // self.width())
+            self._initial_zoom_set = True
+            self.update()
+            
+            # Update scroll info if callback exists
+            if self.scrollChanged:
+                self.scrollChanged(self.scroll_position, self.zoom_factor, self.samples_per_pixel)
+        
     def load_audio_data(self, wav_path: str) -> bool:
         """Load audio data from WAV file"""
         try:
@@ -112,8 +129,13 @@ class WaveformWidget(QWidget):
                 self.sample_rate = sample_rate
                 self.total_samples = len(audio_array)
                 
-                # Calculate initial samples per pixel
-                self.samples_per_pixel = max(1, self.total_samples // self.width())
+                # Calculate initial samples per pixel only if widget is properly sized
+                if self.width() > 0:
+                    self.samples_per_pixel = max(1, self.total_samples // self.width())
+                    self._initial_zoom_set = True
+                else:
+                    # Will be calculated in showEvent when widget is properly sized
+                    self._initial_zoom_set = False
                 
                 self.update()
                 logging.info(f"Loaded audio: {frames} samples, {sample_rate}Hz, {channels}ch")
