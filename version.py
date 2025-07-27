@@ -1,5 +1,5 @@
 # SCDPlayer Version Information
-__version__ = "3.0.0 - 'Light Drive'"
+__version__ = "3.0.1 - 'Light Drive'"
 __author__ = "skylect-dev"
 __description__ = "A standalone Windows GUI application for playing SCD music files from games like Kingdom Hearts and Final Fantasy XIV with KH Randomizer integration"
 __url__ = "https://github.com/skylect-dev/SCDPlayer"
