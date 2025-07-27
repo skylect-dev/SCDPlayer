@@ -77,6 +77,17 @@ class HybridLoopManager:
         self.temp_wav_path: Optional[str] = None
         self.original_scd_path: Optional[str] = None
         
+    def _create_subprocess_startupinfo(self):
+        """Create startup info to hide console windows in built exe"""
+        try:
+            import subprocess
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            return startupinfo
+        except:
+            return None
+        
     def load_file_for_editing(self, file_path: str) -> bool:
         """
         Load a file for loop editing
@@ -158,7 +169,9 @@ class HybridLoopManager:
                 '-ar', '48000',  # Standard sample rate for game audio
                 '-y',  # Overwrite output
                 temp_wav_path
-            ], capture_output=True, text=True)
+            ], capture_output=True, text=True, 
+               startupinfo=self._create_subprocess_startupinfo(),
+               creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             
             if result.returncode != 0 or not Path(temp_wav_path).exists():
                 logging.error(f"Failed to convert audio file: {result.stderr}")
@@ -187,7 +200,9 @@ class HybridLoopManager:
                 str(vgmstream_path),
                 '-o', temp_wav_path,
                 scd_path
-            ], capture_output=True, text=True)
+            ], capture_output=True, text=True,
+               startupinfo=self._create_subprocess_startupinfo(),
+               creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             
             if result.returncode != 0 or not Path(temp_wav_path).exists():
                 logging.error(f"Failed to extract WAV from SCD: {result.stderr}")
@@ -237,7 +252,9 @@ class HybridLoopManager:
                 '-show_format',
                 '-show_streams',
                 wav_path
-            ], capture_output=True, text=True)
+            ], capture_output=True, text=True,
+               startupinfo=self._create_subprocess_startupinfo(),
+               creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             
             if result.returncode != 0:
                 logging.error(f"Failed to analyze WAV file: {result.stderr}")
@@ -520,7 +537,9 @@ class HybridLoopManager:
                 str(encoder_exe),
                 scd_name,
                 wav_name
-            ], cwd=encoder_dir, capture_output=True, text=True)
+            ], cwd=encoder_dir, capture_output=True, text=True,
+               startupinfo=self._create_subprocess_startupinfo(),
+               creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             
             # Move result from output directory
             output_path = encoder_dir / "output" / scd_name

@@ -21,6 +21,25 @@ from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from core.audio_analysis import AudioAnalyzer, VolumeAdjustment
 
 
+class SaveWorker(QThread):
+    """Worker thread for saving SCD files to prevent UI blocking"""
+    
+    finished = pyqtSignal(bool)  # True if successful, False if failed
+    error = pyqtSignal(str)      # Error message
+    
+    def __init__(self, loop_manager):
+        super().__init__()
+        self.loop_manager = loop_manager
+    
+    def run(self):
+        """Run the save operation in background thread"""
+        try:
+            success = self.loop_manager.save_loop_points()
+            self.finished.emit(success)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class CustomVolumeDialog(QDialog):
     """Dialog for custom volume adjustment settings"""
     
@@ -222,12 +241,12 @@ class WaveformWidget(QWidget):
         self.fine_control = False
         
         # Colors
-        self.waveform_color = QColor(0, 150, 255)
-        self.background_color = QColor(25, 25, 25)
+        self.waveform_color = QColor(255, 255, 255)
+        self.background_color = QColor(20, 20, 20)
         self.loop_start_color = QColor(0, 255, 0)
         self.loop_end_color = QColor(255, 0, 0)
-        self.loop_region_color = QColor(255, 255, 0, 30)
-        self.cursor_color = QColor(255, 255, 255)
+        self.loop_region_color = QColor(55, 100, 0, 5)
+        self.cursor_color = QColor(0, 50, 255)
         
         # Mouse tracking
         self.setMouseTracking(True)
@@ -998,6 +1017,11 @@ class LoopEditorDialog(QDialog):
         self._volume_adjusted = False
         self._original_audio_data = None  # Keep copy of original for comparison
         
+        # Temporary file management for volume adjustments
+        self._temp_wav_path = None  # Path to temporary volume-adjusted WAV file
+        self._original_wav_path = None  # Original WAV file path
+        self._temp_file_created = False  # Track if we created a temp file
+        
         # Pause main window audio if playing
         if hasattr(parent, 'player') and parent.player.state() == parent.player.PlayingState:
             parent.player.pause()
@@ -1206,7 +1230,16 @@ class LoopEditorDialog(QDialog):
         info_layout = QVBoxLayout(info_group)
         
         # Add helpful tip
-        tip_label = QLabel("Tip: Use S to set start and E to set end at current position. Press F to toggle auto-follow cursor mode.\nDrag the yellow cursor to scrub through audio. Input times in samples or seconds. Hold Ctrl while dragging markers for fine precision control (can be toggled mid-drag)")
+        tip_label = QLabel(
+            "Hotkeys:\n"
+            "S: Set loop start at cursor\n"
+            "E: Set loop end at cursor\n"
+            "C: Clear loop points\n"
+            "F: Toggle auto-follow cursor\n"
+            "L: Toggle loop playback\n"
+            "Space: Play/Pause\n"
+            "Ctrl+drag: Fine marker control"
+        )
         tip_label.setStyleSheet("color: #888; font-style: italic; padding: 5px; background-color: rgba(255, 255, 255, 0.05); border-radius: 3px;")
         tip_label.setWordWrap(True)
         info_layout.addWidget(tip_label)
@@ -1484,6 +1517,9 @@ class LoopEditorDialog(QDialog):
         self.media_player.stop()
         self.position_timer.stop()
         self.loop_timer.stop()
+        
+        # Clean up temporary files to release all file handles
+        self._cleanup_temp_files()
         
         # Resume main window audio if it was playing
         if self.main_was_playing and hasattr(self.parent_window, 'player'):
@@ -1920,22 +1956,153 @@ class LoopEditorDialog(QDialog):
     def _reload_current_media(self):
         """Reload the current media file"""
         try:
-            wav_path = self.loop_manager.get_wav_path()
+            # Use temporary file if volume was adjusted, otherwise use original
+            wav_path = self._get_playback_wav_path()
             if wav_path:
                 url = QUrl.fromLocalFile(wav_path)
                 self.media_player.setMedia(QMediaContent(url))
-                logging.info("Forced media refresh after volume adjustment")
+                logging.info(f"Forced media refresh after volume adjustment: {wav_path}")
         except Exception as e:
             logging.error(f"Error reloading current media: {e}")
     
     def _write_volume_to_wav_immediately(self) -> bool:
-        """Write volume-adjusted audio to WAV file immediately for playback"""
+        """Write volume-adjusted audio to temporary file for immediate playback"""
         try:
-            # Use the same logic as _save_volume_adjusted_audio but streamlined
-            return self._save_volume_adjusted_audio()
+            # Use the new temporary file approach instead of writing to original
+            return self._write_volume_to_temp_file()
         except Exception as e:
-            logging.error(f"Error writing volume to WAV immediately: {e}")
+            logging.error(f"Error writing volume to temp file immediately: {e}")
             return False
+    
+    def _create_temp_wav_file(self) -> str:
+        """Create a temporary WAV file for volume adjustments"""
+        try:
+            import tempfile
+            import shutil
+            
+            # Get original WAV path
+            original_path = self.loop_manager.get_wav_path()
+            if not original_path:
+                raise ValueError("No original WAV path available")
+            
+            # Store original path if not already stored
+            if not self._original_wav_path:
+                self._original_wav_path = original_path
+            
+            # Create temporary file in system temp directory instead of project root
+            temp_fd, temp_path = tempfile.mkstemp(suffix='_volume_temp.wav', prefix='scdplayer_')
+            os.close(temp_fd)  # Close the file descriptor
+            
+            # Copy original file to temporary location
+            shutil.copy2(original_path, temp_path)
+            
+            self._temp_wav_path = temp_path
+            self._temp_file_created = True
+            
+            logging.info(f"Created temporary WAV file: {temp_path}")
+            return temp_path
+            
+        except Exception as e:
+            logging.error(f"Error creating temporary WAV file: {e}")
+            return None
+    
+    def _write_volume_to_temp_file(self) -> bool:
+        """Write volume-adjusted audio to temporary file for playback"""
+        if not self._volume_adjusted or self.waveform.audio_data is None:
+            return True  # Nothing to write
+        
+        try:
+            # Create temp file if it doesn't exist
+            if not self._temp_wav_path or not os.path.exists(self._temp_wav_path):
+                temp_path = self._create_temp_wav_file()
+                if not temp_path:
+                    return False
+                self._temp_wav_path = temp_path
+            
+            # Stop media player to release any handles on temp file
+            was_playing = self.media_player.state() == QMediaPlayer.PlayingState
+            self.media_player.stop()
+            self.media_player.setMedia(QMediaContent())
+            
+            # Small delay to ensure file handle release
+            import time
+            time.sleep(0.1)
+            
+            # Read original WAV file info
+            original_path = self._original_wav_path or self.loop_manager.get_wav_path()
+            with wave.open(original_path, 'rb') as original_wav:
+                channels = original_wav.getnchannels()
+                sample_width = original_wav.getsampwidth()
+                sample_rate = original_wav.getframerate()
+            
+            # Convert adjusted audio data back to the original format
+            adjusted_data = self.waveform.audio_data
+            
+            # Scale back to original bit depth
+            if sample_width == 1:  # 8-bit
+                audio_int = ((adjusted_data + 1.0) * 127.5).clip(0, 255).astype(np.uint8)
+            elif sample_width == 2:  # 16-bit
+                audio_int = (adjusted_data * 32767).clip(-32768, 32767).astype(np.int16)
+            elif sample_width == 4:  # 32-bit
+                audio_int = (adjusted_data * 2147483647).clip(-2147483648, 2147483647).astype(np.int32)
+            else:
+                logging.error(f"Unsupported sample width: {sample_width}")
+                return False
+            
+            # Handle stereo conversion if original was stereo
+            if channels == 2:
+                stereo_data = np.empty(len(audio_int) * 2, dtype=audio_int.dtype)
+                stereo_data[0::2] = audio_int  # Left channel
+                stereo_data[1::2] = audio_int  # Right channel (duplicate)
+                audio_int = stereo_data
+            
+            # Write to temporary file
+            with wave.open(self._temp_wav_path, 'wb') as wav_file:
+                wav_file.setnchannels(channels)
+                wav_file.setsampwidth(sample_width)
+                wav_file.setframerate(sample_rate)
+                wav_file.writeframes(audio_int.tobytes())
+            
+            logging.info(f"Volume-adjusted audio written to temp file: {self._temp_wav_path}")
+            
+            # Reload media player with temp file if it was playing
+            if was_playing:
+                url = QUrl.fromLocalFile(self._temp_wav_path)
+                self.media_player.setMedia(QMediaContent(url))
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error writing volume to temp file: {e}")
+            return False
+    
+    def _get_playback_wav_path(self) -> str:
+        """Get the WAV path to use for playback (temp file if volume adjusted, original otherwise)"""
+        if self._volume_adjusted and self._temp_wav_path and os.path.exists(self._temp_wav_path):
+            return self._temp_wav_path
+        return self.loop_manager.get_wav_path()
+    
+    def _cleanup_temp_files(self):
+        """Clean up temporary files"""
+        try:
+            if self._temp_wav_path and os.path.exists(self._temp_wav_path):
+                # Stop media player first
+                self.media_player.stop()
+                self.media_player.setMedia(QMediaContent())
+                
+                # Small delay to ensure file handle release
+                import time
+                time.sleep(0.1)
+                
+                # Remove temp file
+                os.remove(self._temp_wav_path)
+                logging.info(f"Cleaned up temporary file: {self._temp_wav_path}")
+                
+            self._temp_wav_path = None
+            self._temp_file_created = False
+            
+        except Exception as e:
+            logging.error(f"Error cleaning up temp files: {e}")
     
     def save_changes(self):
         """Save loop points and volume changes, then close"""
@@ -1949,18 +2116,44 @@ class LoopEditorDialog(QDialog):
             return
         
         # First, save volume-adjusted audio data if it was modified
-        if self._save_volume_adjusted_audio():
-            logging.info("Volume-adjusted audio data saved to temp WAV file")
-            # Force media player to reload the updated file
-            self._reload_media_after_volume_change()
+        if self._volume_adjusted and self._temp_wav_path and os.path.exists(self._temp_wav_path):
+            # Copy temporary file back to original location
+            try:
+                import shutil
+                original_path = self._original_wav_path or self.loop_manager.get_wav_path()
+                
+                # Stop media player to release file handles
+                self.media_player.stop()
+                self.media_player.setMedia(QMediaContent())
+                
+                # Small delay to ensure file handle release
+                import time
+                time.sleep(0.2)
+                
+                # Copy temp file to original location
+                shutil.copy2(self._temp_wav_path, original_path)
+                logging.info(f"Volume-adjusted audio saved to original file: {original_path}")
+                
+            except Exception as e:
+                logging.error(f"Error saving volume changes to original file: {e}")
+                QMessageBox.warning(self, "Save Warning", 
+                                  f"Could not save volume changes to original file.\n"
+                                  f"Loop points will be saved, but volume changes may not persist.\n\n"
+                                  f"Error: {str(e)}")
         
         # Save loop points to loop manager
         if end > start and end > 0:
             logging.debug(f"Saving loop points: {start} -> {end}")
             success = self.loop_manager.set_loop_points(start, end)
             if success:
-                # Save the actual loop data to file
-                success = self.loop_manager.save_loop_points()
+                # Check if this is an SCD file that will need conversion
+                if hasattr(self.loop_manager, 'original_scd_path') and self.loop_manager.original_scd_path:
+                    # Show progress dialog for SCD conversion
+                    self._save_with_progress()
+                    return
+                else:
+                    # Save the actual loop data to file (WAV - quick operation)
+                    success = self.loop_manager.save_loop_points()
         else:
             logging.debug(f"Clearing loop points (start={start}, end={end})")
             success = self.loop_manager.clear_loop_points()
@@ -1973,6 +2166,81 @@ class LoopEditorDialog(QDialog):
             self.accept()
         else:
             QMessageBox.warning(self, "Error", "Failed to save loop points")
+    
+    def _save_with_progress(self):
+        """Save SCD file with progress dialog"""
+        # Create progress dialog
+        progress = QProgressDialog("Saving SCD", "Cancel", 0, 0, self)
+        progress.setWindowTitle("Saving Audio File")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)  # Show immediately
+        progress.setCancelButton(None)  # No cancel button - operation must complete
+        progress.setRange(0, 0)  # Indeterminate progress
+        progress.show()
+        
+        # Process events to show the dialog
+        QApplication.processEvents()
+        
+        try:
+            # Create a worker thread for the save operation
+            worker = SaveWorker(self.loop_manager)
+            worker.finished.connect(self._on_save_finished)
+            worker.error.connect(self._on_save_error)
+            
+            # Keep reference to prevent garbage collection
+            self._save_worker = worker
+            self._progress_dialog = progress
+            
+            # Start the worker
+            worker.start()
+            
+        except Exception as e:
+            progress.close()
+            logging.error(f"Error starting save operation: {e}")
+            QMessageBox.critical(self, "Save Error", f"Failed to start save operation: {str(e)}")
+    
+    def _on_save_finished(self, success):
+        """Handle save operation completion"""
+        try:
+            if hasattr(self, '_progress_dialog'):
+                self._progress_dialog.close()
+            
+            if success:
+                logging.info("SCD save operation completed successfully")
+                # Stop playback and all timers before closing
+                self.media_player.stop()
+                self.position_timer.stop()
+                self.loop_timer.stop()
+                self.accept()
+            else:
+                QMessageBox.warning(self, "Error", "Failed to save loop points to SCD file")
+                
+        except Exception as e:
+            logging.error(f"Error handling save completion: {e}")
+        finally:
+            # Clean up worker reference
+            if hasattr(self, '_save_worker'):
+                delattr(self, '_save_worker')
+            if hasattr(self, '_progress_dialog'):
+                delattr(self, '_progress_dialog')
+    
+    def _on_save_error(self, error_msg):
+        """Handle save operation error"""
+        try:
+            if hasattr(self, '_progress_dialog'):
+                self._progress_dialog.close()
+            
+            logging.error(f"Save operation failed: {error_msg}")
+            QMessageBox.critical(self, "Save Error", f"Failed to save SCD file:\n{error_msg}")
+            
+        except Exception as e:
+            logging.error(f"Error handling save error: {e}")
+        finally:
+            # Clean up worker reference
+            if hasattr(self, '_save_worker'):
+                delattr(self, '_save_worker')
+            if hasattr(self, '_progress_dialog'):
+                delattr(self, '_progress_dialog')
     
     def cancel_dialog(self):
         """Cancel dialog and stop playback"""
@@ -2001,21 +2269,19 @@ class LoopEditorDialog(QDialog):
     
     def start_playback(self):
         """Start playback"""
-        wav_path = self.loop_manager.get_wav_path()
+        # Use temporary file if volume was adjusted, otherwise use original
+        wav_path = self._get_playback_wav_path()
         if not wav_path or not os.path.exists(wav_path):
             QMessageBox.warning(self, "Error", "No audio file available for playback")
             return
         
-        # Only set media content if it's different or not set, or if volume was adjusted
+        # Only set media content if it's different or not set
         current_media = self.media_player.media()
         new_url = QUrl.fromLocalFile(wav_path)
         if (current_media.isNull() or 
-            current_media.canonicalUrl() != new_url or 
-            self._volume_adjusted):
+            current_media.canonicalUrl() != new_url):
             self.media_player.setMedia(QMediaContent(new_url))
-            # Reset volume adjusted flag after media is reloaded for playback
-            if self._volume_adjusted:
-                logging.info("Reloaded media with volume adjustments for playback")
+            logging.info(f"Loaded media for playback: {wav_path}")
         
         # If loop mode is on and we're outside the loop, start from loop beginning
         if self.is_loop_testing:
