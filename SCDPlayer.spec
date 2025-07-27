@@ -27,6 +27,15 @@ a = Analysis(
         'tempfile',
         'shutil',
         'subprocess',
+        # Audio processing dependencies
+        'numpy',
+        'soundfile',
+        'mutagen',
+        # PyQt5 related
+        'PyQt5.QtCore',
+        'PyQt5.QtWidgets',
+        'PyQt5.QtGui',
+        'PyQt5.QtMultimedia',
     ],
     hookspath=[],
     hooksconfig={},
