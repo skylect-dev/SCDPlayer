@@ -72,7 +72,7 @@ git clone https://github.com/skylect-dev/SCDPlayer.git
 cd SCDPlayer
 
 # Install Python dependencies
-pip install PyQt5 pyinstaller
+pip install -r requirements.txt
 
 # Set up vgmstream and ffmpeg folders (see above)
 
