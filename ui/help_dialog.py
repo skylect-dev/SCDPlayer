@@ -61,6 +61,9 @@ class HelpDialog(QDialog):
             ("Getting Started", "getting-started"),
             ("Setting Up Library", "library-setup"),
             ("Playing Audio", "playing-audio"),
+            ("Loop Editor", "loop-editor"),
+            ("Audio Analysis", "audio-analysis"),
+            ("Volume Controls", "volume-controls"),
             ("KH Randomizer Setup", "kh-rando-setup"),
             ("File Status Colors", "file-status"),
             ("Export Options", "export-options"),
@@ -177,6 +180,101 @@ class HelpDialog(QDialog):
                 </ul>
             </div>
             
+            <h2 id="loop-editor">Loop Editor</h2>
+            <div class="section">
+                <h3>Professional Audio Loop Point Editor</h3>
+                <p>Access via the "Edit Loop Points" button when a file is loaded. The Loop Editor provides professional-grade audio editing capabilities.</p>
+                
+                <h3>Core Features</h3>
+                <ul>
+                    <li><strong>Waveform Visualization:</strong> High-resolution waveform display with zoom controls</li>
+                    <li><strong>Sample-Accurate Editing:</strong> Set loop points with sample precision</li>
+                    <li><strong>Visual Loop Points:</strong> Drag-and-drop loop markers with real-time preview</li>
+                    <li><strong>Timeline Navigation:</strong> Time and sample-based markers for precise positioning</li>
+                    <li><strong>Zoom Controls:</strong> Mouse wheel zoom, focus on cursor, full track view</li>
+                    <li><strong>Real-time Playback:</strong> Preview loops and volume changes instantly</li>
+                </ul>
+                
+                <h3>Loop Point Controls</h3>
+                <ul>
+                    <li><strong>Set Loop Points:</strong> Click and drag the start and end loop markers on the waveform</li>
+                    <li><strong>Precise Input:</strong> Enter exact sample values in the input fields</li>
+                    <li><strong>Test Loops:</strong> Use the play button to preview loops with seamless looping</li>
+                    <li><strong>Auto-Save:</strong> Loop points are automatically saved to audio files</li>
+                    <li><strong>SCD Compatibility:</strong> Proper loop metadata for Kingdom Hearts randomizer</li>
+                </ul>
+                
+                <h3>Navigation & Controls</h3>
+                <ul>
+                    <li><strong>Mouse Wheel:</strong> Zoom in/out on waveform</li>
+                    <li><strong>F Key:</strong> Toggle follow cursor mode (cursor tracking)</li>
+                    <li><strong>Click Waveform:</strong> Jump to position and start playback</li>
+                    <li><strong>Scrollbar:</strong> Navigate through long audio files</li>
+                    <li><strong>Zoom Controls:</strong> Focus on cursor position or view full track</li>
+                </ul>
+            </div>
+            
+            <h2 id="audio-analysis">Audio Analysis</h2>
+            <div class="section">
+                <h3>Professional Audio Level Analysis</h3>
+                <p>The Loop Editor includes comprehensive audio analysis tools for professional audio management.</p>
+                
+                <h3>Analysis Metrics</h3>
+                <ul>
+                    <li><strong>Peak Level:</strong> Maximum amplitude in dB (prevent clipping at 0dB)</li>
+                    <li><strong>RMS Level:</strong> Perceived loudness measurement in dB</li>
+                    <li><strong>LUFS:</strong> Broadcast standard loudness measurement</li>
+                    <li><strong>Dynamic Range:</strong> Difference between loudest and softest parts</li>
+                    <li><strong>Crest Factor:</strong> Peak-to-RMS ratio indicating audio dynamics</li>
+                    <li><strong>Clipping Detection:</strong> Identifies audio distortion and overloads</li>
+                    <li><strong>File Information:</strong> Sample rate, bit depth, duration, and total samples</li>
+                </ul>
+                
+                <h3>Smart Recommendations</h3>
+                <ul>
+                    <li><strong>Automatic Analysis:</strong> Audio is analyzed when files are loaded</li>
+                    <li><strong>Intelligent Suggestions:</strong> Context-aware recommendations for audio improvement</li>
+                    <li><strong>Gaming Focus:</strong> Recommendations tailored for game audio requirements</li>
+                </ul>
+            </div>
+            
+            <h2 id="volume-controls">Volume Controls & Normalization</h2>
+            <div class="section">
+                <h3>Advanced Volume Adjustment Suite</h3>
+                <p>Professional-grade volume normalization tools integrated into the Loop Editor.</p>
+                
+                <h3>Normalization Methods</h3>
+                <ul>
+                    <li><strong>Auto Volume:</strong> Intelligent algorithm that adapts to audio characteristics
+                        <ul>
+                            <li>High dynamic range (>20dB): Conservative peak normalization (-3dB)</li>
+                            <li>Low dynamic range (<6dB): RMS normalization (-12dB) for compressed audio</li>
+                            <li>Medium dynamic range: Balanced peak normalization (-1dB)</li>
+                        </ul>
+                    </li>
+                    <li><strong>Normalize Peak:</strong> Standard peak normalization to -1dB for maximum loudness</li>
+                    <li><strong>Normalize RMS:</strong> Perceived loudness normalization to -12dB</li>
+                    <li><strong>Custom Volume:</strong> User-defined target levels with gaming presets</li>
+                </ul>
+                
+                <h3>Gaming-Optimized Presets</h3>
+                <ul>
+                    <li><strong>Game (-3dB):</strong> Conservative level good for in-game audio</li>
+                    <li><strong>Typical (-0.2dB):</strong> Standard game audio peak level</li>
+                    <li><strong>Max (-0.1dB):</strong> Maximum level with minimal headroom</li>
+                </ul>
+                
+                <h3>Volume Adjustment Features</h3>
+                <ul>
+                    <li><strong>Real-time Preview:</strong> Volume changes applied to playback instantly</li>
+                    <li><strong>Clipping Prevention:</strong> Automatic gain reduction to prevent distortion</li>
+                    <li><strong>Status Indicator:</strong> Window title shows when volume has been modified</li>
+                    <li><strong>Reset Function:</strong> Restore original volume levels with one click</li>
+                    <li><strong>Safe Editing:</strong> Uses temporary files to prevent data loss</li>
+                    <li><strong>Auto-Save:</strong> Volume adjustments saved with loop points</li>
+                </ul>
+            </div>
+            
             <h2 id="kh-rando-setup">Kingdom Hearts Randomizer Integration</h2>
             <div class="section">
                 <h3>Setting Up KH Rando</h3>
@@ -241,12 +339,22 @@ class HelpDialog(QDialog):
             
             <h2 id="keyboard-shortcuts">Keyboard Shortcuts</h2>
             <div class="section">
+                <h3>Main Window</h3>
                 <ul>
                     <li><span class="shortcut">DEL</span> - Delete selected files from library (permanent deletion)</li>
                     <li><span class="shortcut">Ctrl+L</span> - Open file location in File Explorer (selected or currently playing file)</li>
                     <li><span class="shortcut">F1</span> - Show this help guide</li>
                     <li><span class="shortcut">Double-Click</span> - Load and play file from library</li>
                     <li><span class="shortcut">Space</span> - Play/pause current track (when controls are focused)</li>
+                </ul>
+                
+                <h3>Loop Editor</h3>
+                <ul>
+                    <li><span class="shortcut">F</span> - Toggle follow cursor mode (cursor tracking during playback)</li>
+                    <li><span class="shortcut">Mouse Wheel</span> - Zoom in/out on waveform at cursor position</li>
+                    <li><span class="shortcut">Click Waveform</span> - Jump to position and start playback</li>
+                    <li><span class="shortcut">Drag Markers</span> - Move loop start (green) and end (red) points</li>
+                    <li><span class="shortcut">Space</span> - Play/pause audio with current loop settings</li>
                 </ul>
             </div>
             
@@ -265,11 +373,11 @@ class HelpDialog(QDialog):
             <div class="section">
                 <h3>Using the Export Dialog</h3>
                 <ul>
-                    <li><strong>Quick Assignment:</strong> Use top buttons to assign all files to same category</li>
-                    <li><strong>Individual Selection:</strong> Use dropdown per file for specific assignments</li>
-                    <li><strong>Status Indicators:</strong> Orange text shows files already in KH Rando</li>
+                    <li><strong>Quick Assignment:</strong> Use category buttons to assign all files to the same category</li>
+                    <li><strong>Individual Selection:</strong> Use dropdown menus to set specific categories per file</li>
+                    <li><strong>Status Indicators:</strong> Files already in KH Rando are marked to avoid duplicates</li>
                     <li><strong>Auto-Detection:</strong> Dialog attempts to find your KH Rando folder automatically</li>
-                    <li><strong>Browse Option:</strong> Manually select KH Rando folder if auto-detection fails</li>
+                    <li><strong>Manual Selection:</strong> Browse to select KH Rando folder if auto-detection fails</li>
                 </ul>
             </div>
             
@@ -280,6 +388,10 @@ class HelpDialog(QDialog):
                     <li><strong>File Deletion:</strong> Delete operations are permanent and cannot be undone</li>
                     <li><strong>KH Rando Compatibility:</strong> Always test exported files in your randomizer setup</li>
                     <li><strong>Backup First:</strong> Keep backups of important audio files before making changes</li>
+                    <li><strong>Volume Adjustments:</strong> Volume changes modify audio data permanently when saved - use reset function if needed</li>
+                    <li><strong>Loop Points:</strong> Loop metadata is saved directly to audio files and may not be compatible with all players</li>
+                    <li><strong>Temporary Files:</strong> Loop Editor uses system temp directory for safe audio editing - ensure sufficient disk space</li>
+                    <li><strong>File Locking:</strong> Close other audio applications before editing files to prevent access conflicts</li>
                 </ul>
             </div>
             
@@ -296,6 +408,27 @@ class HelpDialog(QDialog):
                     <li><strong>Case Sensitivity Issues:</strong> KH Rando validation now accepts mixed case folder names</li>
                     <li><strong>File Location Won't Open:</strong> Check file exists and you have permission to access the folder</li>
                     <li><strong>Progress Bars Stuck:</strong> Close and restart application if background tasks freeze</li>
+                </ul>
+                
+                <h3>Loop Editor Issues</h3>
+                <ul>
+                    <li><strong>Loop Editor Won't Open:</strong> Ensure a file is loaded and playable in the main window first</li>
+                    <li><strong>Waveform Not Loading:</strong> Check that the audio file is not corrupted or in an unsupported format</li>
+                    <li><strong>Volume Changes Not Saving:</strong> Ensure the audio file is not write-protected or in use by another application</li>
+                    <li><strong>Audio Analysis Fails:</strong> Try reloading the file or converting to a supported format</li>
+                    <li><strong>Playback Issues in Loop Editor:</strong> Close and reopen the Loop Editor to refresh audio handles</li>
+                    <li><strong>Loop Points Not Saving:</strong> Check file permissions and ensure the file is not read-only</li>
+                    <li><strong>Zoom Problems:</strong> Use the "Zoom to Full Track" button to reset view if display gets corrupted</li>
+                    <li><strong>Performance Issues:</strong> For large files, use lower zoom levels to improve responsiveness</li>
+                </ul>
+                
+                <h3>Volume Control Issues</h3>
+                <ul>
+                    <li><strong>Volume Adjustment Fails:</strong> Ensure audio file has sufficient bit depth and is not corrupted</li>
+                    <li><strong>Clipping After Normalization:</strong> Use lower target levels or try different normalization methods</li>
+                    <li><strong>Reset Volume Not Working:</strong> Close and reopen Loop Editor if original audio data is corrupted</li>
+                    <li><strong>Volume Changes Not Audible:</strong> Check that volume adjustment was applied and saved properly</li>
+                    <li><strong>Temporary File Errors:</strong> Ensure sufficient disk space and write permissions in system temp directory</li>
                 </ul>
             </div>
             

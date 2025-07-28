@@ -1,5 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+# Note: Block cipher encryption was removed in PyInstaller v6.0+
+# We'll use other antivirus evasion techniques: UPX disabled, version info, proper exclusions
 block_cipher = None
 
 a = Analysis(
@@ -58,11 +60,10 @@ a = Analysis(
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
-    cipher=block_cipher,
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure, a.zipped_data)
 
 exe = EXE(
     pyz,
@@ -72,14 +73,15 @@ exe = EXE(
     name='SCDPlayer',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
+    strip=False,  # Disable strip to avoid Windows tool warnings
+    upx=False,  # Disable UPX compression as it can trigger detection
     console=False,
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
     icon='assets/icon.ico',  # Use the Kingdom Hearts themed icon
+    version='version_info.py',  # Add version info to make it look more legitimate
 )
 
 coll = COLLECT(
@@ -87,8 +89,8 @@ coll = COLLECT(
     a.binaries,
     a.zipfiles,
     a.datas,
-    strip=False,
-    upx=True,
+    strip=False,  # Disable strip to avoid Windows tool warnings
+    upx=False,  # Disable UPX for all files
     upx_exclude=[],
     name='SCDPlayer'
 )

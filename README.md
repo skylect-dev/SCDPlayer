@@ -7,6 +7,8 @@ Thank you to the awesome people at the KHRando Discord for some great suggestion
 
 ## Installation
 
+⚠️ **Windows Defender Warning**: Windows may flag the download as a false positive. See [Antivirus False Positive Guide](ANTIVIRUS_FALSE_POSITIVE.md) for safe download instructions.
+
 **Download the executable (recommended):**
 1. Go to [Releases](https://github.com/skylect-dev/SCDPlayer/releases)
 2. Download `SCDPlayer-vX.X.X.zip`
