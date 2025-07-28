@@ -18,7 +18,7 @@ No additional setup needed - everything is included.
 ```bash
 git clone https://github.com/skylect-dev/SCDPlayer.git
 cd SCDPlayer
-pip install PyQt5
+pip install -r requirements.txt
 python main.py
 ```
 
