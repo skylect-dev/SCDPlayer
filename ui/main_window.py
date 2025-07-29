@@ -5,11 +5,12 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QFileDialog, 
     QLabel, QSlider, QSizePolicy, QListWidget, QCheckBox, QMessageBox, 
     QSplitter, QGroupBox, QProgressBar, QComboBox, QDialog, QShortcut,
-    QMenuBar, QAction, QApplication
+    QMenuBar, QAction, QApplication, QScrollArea, QFrame, QListWidgetItem,
+    QLineEdit
 )
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
-from PyQt5.QtCore import QUrl, Qt, QTimer
-from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QKeySequence
+from PyQt5.QtCore import QUrl, Qt, QTimer, pyqtSignal
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QKeySequence, QCursor
 
 from version import __version__
 from ui.widgets import ScrollingLabel, create_icon, create_app_icon
@@ -25,7 +26,7 @@ from core.threading import FileLoadThread
 from core.library import AudioLibrary
 from core.kh_rando import KHRandoExporter
 from utils.config import Config
-from utils.helpers import format_time
+from utils.helpers import format_time, send_to_recycle_bin
 from utils.updater import AutoUpdater
 
 
@@ -35,7 +36,7 @@ class SCDPlayer(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f'SCDPlayer v{__version__}')
-        self.setGeometry(100, 100, 1200, 700)
+        self.setGeometry(100, 100, 1400, 850)
         
         # Initialize components
         self.config = Config()
@@ -285,35 +286,162 @@ class SCDPlayer(QMainWindow):
         library_header.setLayout(header_layout)
         library_layout.addWidget(library_header)
 
-        # File library
-        library_layout.addWidget(QLabel('Audio Files (SCD, WAV, MP3, OGG, FLAC):'))
+        # Create vertical splitter between header and file libraries
+        main_splitter = QSplitter(Qt.Vertical)
+        main_splitter.setChildrenCollapsible(False)
+        
+        # The header is already added to library_layout, so we need to reorganize
+        # Remove header from layout and add to splitter
+        library_layout.removeWidget(library_header)
+        main_splitter.addWidget(library_header)
+        
+        # === File Libraries Section (side by side) ===
+        files_widget = QWidget()
+        files_layout = QHBoxLayout()
+        files_layout.setContentsMargins(0, 0, 0, 0)
+        files_layout.setSpacing(5)
+        
+        # Create horizontal splitter for the two file libraries
+        files_splitter = QSplitter(Qt.Horizontal)
+        files_splitter.setChildrenCollapsible(False)
+        
+        # === Left: Regular Audio Files ===
+        regular_files_widget = QWidget()
+        regular_files_layout = QVBoxLayout()
+        regular_files_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Add search bar for regular files
+        search_layout = QHBoxLayout()
+        search_layout.setContentsMargins(0, 0, 0, 0)
+        
+        search_container = QHBoxLayout()
+        search_container.setContentsMargins(0, 0, 0, 0)
+        search_container.setSpacing(0)
+        
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search files... (filename or folder)")
+        self.search_input.textChanged.connect(self.filter_library_files)
+        search_container.addWidget(self.search_input)
+        
+        self.clear_search_btn = QPushButton("×")
+        self.clear_search_btn.clicked.connect(self.clear_search)
+        self.clear_search_btn.setMaximumWidth(25)
+        self.clear_search_btn.setMaximumHeight(25)
+        self.clear_search_btn.setToolTip("Clear search")
+        self.clear_search_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #444444;
+                border: 1px solid #666666;
+                border-radius: 12px;
+                color: #ffffff;
+                font-weight: bold;
+                font-size: 14px;
+                padding: 0px;
+                margin: 2px;
+            }
+            QPushButton:hover {
+                background-color: #555555;
+                border-color: #888888;
+            }
+            QPushButton:pressed {
+                background-color: #333333;
+            }
+        """)
+        search_container.addWidget(self.clear_search_btn)
+        
+        search_layout.addWidget(QLabel("Search:"))
+        search_layout.addLayout(search_container)
+        
+        regular_files_layout.addLayout(search_layout)
+        
+        # Organization options
+        org_layout = QHBoxLayout()
+        org_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.organize_by_folder_cb = QCheckBox("Group by folder")
+        self.organize_by_folder_cb.stateChanged.connect(self.toggle_folder_organization)
+        self.organize_by_folder_cb.setToolTip("Organize files by their originating folder")
+        self.organize_by_folder_cb.setChecked(True)  # Default to checked
+        org_layout.addWidget(self.organize_by_folder_cb)
+        
+        org_layout.addStretch()
+        regular_files_layout.addLayout(org_layout)
+        
+        regular_files_layout.addWidget(QLabel('Audio Files (SCD, WAV, MP3, OGG, FLAC):'))
         self.file_list = QListWidget()
         self.file_list.setSelectionMode(QListWidget.ExtendedSelection)  # Allow multiple selection
         self.file_list.itemDoubleClicked.connect(self.load_from_library)
+        self.file_list.itemClicked.connect(self.on_library_item_clicked)  # Handle single clicks
         self.file_list.itemSelectionChanged.connect(self.on_library_selection_changed)
-        library_layout.addWidget(self.file_list)
+        regular_files_layout.addWidget(self.file_list)
+        
+        regular_files_widget.setLayout(regular_files_layout)
+        files_splitter.addWidget(regular_files_widget)
+        
+        # === Right: KH Rando Files Section ===
+        kh_rando_widget = QWidget()
+        kh_rando_layout = QVBoxLayout()
+        kh_rando_layout.setContentsMargins(0, 0, 0, 0)
+        
+        kh_rando_layout.addWidget(QLabel('KH Randomizer Files:'))
+        
+        # Create KH Rando file list - identical to main library structure
+        self.kh_rando_file_list = QListWidget()
+        self.kh_rando_file_list.setSelectionMode(QListWidget.ExtendedSelection)
+        self.kh_rando_file_list.itemDoubleClicked.connect(self.load_from_library)
+        self.kh_rando_file_list.itemClicked.connect(self.on_kh_rando_item_clicked)
+        self.kh_rando_file_list.itemSelectionChanged.connect(self.on_kh_rando_selection_changed)
+        
+        # Create storage for KH Rando category tracking
+        self.kh_rando_categories = {}
+        self.kh_rando_category_states = {}
+        from core.kh_rando import KHRandoExporter
+        
+        # Initialize category states (all expanded by default)
+        for category_key, category_name in KHRandoExporter.MUSIC_CATEGORIES.items():
+            self.kh_rando_categories[category_key] = category_name
+            self.kh_rando_category_states[category_key] = True
+        
+        kh_rando_layout.addWidget(self.kh_rando_file_list)
+        
+        kh_rando_widget.setLayout(kh_rando_layout)
+        files_splitter.addWidget(kh_rando_widget)
+        
+        # Set initial splitter sizes (50% regular files, 50% KH Rando)
+        files_splitter.setSizes([300, 300])
+        
+        files_layout.addWidget(files_splitter)
+        files_widget.setLayout(files_layout)
+        
+        # Add files widget to main splitter
+        main_splitter.addWidget(files_widget)
+        
+        # Set initial sizes for header vs files (20% header, 80% files - smaller header by default)
+        main_splitter.setSizes([150, 600])
+        
+        library_layout.addWidget(main_splitter)
 
         # Library management buttons
         library_buttons_layout = QHBoxLayout()
         
-        self.export_selected_btn = QPushButton('Export Selected to KH Rando')
+        self.export_selected_btn = QPushButton('Export Selected to KH Rando (E)')
         self.export_selected_btn.clicked.connect(self.export_selected_to_kh_rando)
         self.export_selected_btn.setEnabled(False)
         self.export_selected_btn.setToolTip('Export selected library files to Kingdom Hearts Randomizer music folder')
         library_buttons_layout.addWidget(self.export_selected_btn)
         
-        self.export_missing_btn = QPushButton('Export Missing to KH Rando')
+        self.export_missing_btn = QPushButton('Export Missing to KH Rando (M)')
         self.export_missing_btn.clicked.connect(self.export_missing_to_kh_rando)
         self.export_missing_btn.setToolTip('Export library files that are not in KH Rando folder')
         library_buttons_layout.addWidget(self.export_missing_btn)
         
-        self.delete_selected_btn = QPushButton('Delete Selected')
+        self.delete_selected_btn = QPushButton('Delete Selected (Del)')
         self.delete_selected_btn.clicked.connect(self.delete_selected_files)
-        self.delete_selected_btn.setToolTip('Delete selected files from disk (DEL key shortcut)')
+        self.delete_selected_btn.setToolTip('Move selected files to Recycle Bin (DEL key shortcut)')
         self.delete_selected_btn.setEnabled(False)  # Disabled initially
         library_buttons_layout.addWidget(self.delete_selected_btn)
         
-        self.open_file_location_btn = QPushButton('Open File Location')
+        self.open_file_location_btn = QPushButton('Open File Location (Ctrl+L)')
         self.open_file_location_btn.clicked.connect(self.open_file_location)
         self.open_file_location_btn.setToolTip('Open the folder containing the selected file or currently playing file in File Explorer (Ctrl+L)')
         self.open_file_location_btn.setEnabled(False)  # Disabled initially
@@ -324,19 +452,19 @@ class SCDPlayer(QMainWindow):
         # Conversion buttons for library files
         convert_buttons_layout = QHBoxLayout()
         
-        self.convert_to_wav_btn = QPushButton('Convert Selected to WAV')
+        self.convert_to_wav_btn = QPushButton('Convert Selected to WAV (W)')
         self.convert_to_wav_btn.clicked.connect(self.convert_selected_to_wav)
         self.convert_to_wav_btn.setEnabled(False)  # Disabled initially
         self.convert_to_wav_btn.setToolTip('Convert selected library files to WAV format')
         convert_buttons_layout.addWidget(self.convert_to_wav_btn)
         
-        self.convert_to_scd_btn = QPushButton('Convert Selected to SCD')
+        self.convert_to_scd_btn = QPushButton('Convert Selected to SCD (S)')
         self.convert_to_scd_btn.clicked.connect(self.convert_selected_to_scd)
         self.convert_to_scd_btn.setEnabled(False)  # Disabled initially
         self.convert_to_scd_btn.setToolTip('Convert selected library files to SCD format')
         convert_buttons_layout.addWidget(self.convert_to_scd_btn)
         
-        self.open_loop_editor_btn = QPushButton('Open Loop Editor')
+        self.open_loop_editor_btn = QPushButton('Open Loop Editor (L)')
         self.open_loop_editor_btn.clicked.connect(self.open_loop_editor)
         self.open_loop_editor_btn.setEnabled(False)  # Disabled initially
         self.open_loop_editor_btn.setToolTip('Edit loop points for selected SCD or WAV file with professional waveform editor')
@@ -344,18 +472,53 @@ class SCDPlayer(QMainWindow):
         
         library_layout.addLayout(convert_buttons_layout)
 
-        # Now that self.file_list exists, initialize self.library
-        self.library = AudioLibrary(self.file_list, self.kh_rando_exporter)
+        # Now that both file lists exist, initialize self.library
+        self.library = AudioLibrary(self.file_list, self.kh_rando_exporter, self.kh_rando_file_list, self.kh_rando_categories)
         
-        # Initialize KH Rando folder if saved in config
+        # Initialize selection handling flag
+        self._updating_selection = False
         if self.config.kh_rando_folder:
             self.set_kh_rando_folder(self.config.kh_rando_folder)
         
         # Initial scan to populate file list
         self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
+        
+        # Apply folder organization since it's checked by default
+        if self.organize_by_folder_cb.isChecked():
+            self._organize_files_by_folder()
+        
+        # Delay KH Rando section count update to ensure UI is ready
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(100, self._update_kh_rando_section_counts)
 
         library_panel.setLayout(library_layout)
         return library_panel
+
+    def on_kh_rando_selection_changed(self):
+        """Handle KH Rando selection changes"""
+        if self._updating_selection:
+            return
+            
+        # Get selected items from KH Rando list
+        selected_items = []
+        if hasattr(self, 'kh_rando_file_list'):
+            selected_items = self.kh_rando_file_list.selectedItems()
+        
+        # Filter out category headers from selection
+        file_items = []
+        for item in selected_items:
+            file_path = item.data(Qt.UserRole)
+            if file_path and not file_path.startswith("KH_CATEGORY_HEADER:"):
+                file_items.append(item)
+        
+        # Clear regular file list selection to avoid conflicts
+        if file_items:
+            self._updating_selection = True
+            self.file_list.clearSelection()
+            self._updating_selection = False
+        
+        # Update button states
+        self.on_library_selection_changed_common(file_items)
     
     def setup_media_player(self):
         """Setup the media player and related components"""
@@ -384,6 +547,37 @@ class SCDPlayer(QMainWindow):
         # Ctrl+L shortcut for opening file location
         open_location_shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
         open_location_shortcut.activated.connect(self.open_file_location)
+        
+        # L key shortcut for opening loop editor
+        loop_editor_shortcut = QShortcut(QKeySequence("L"), self)
+        loop_editor_shortcut.activated.connect(self.open_loop_editor)
+        
+        # E key shortcut for exporting selected to KH Rando
+        export_selected_shortcut = QShortcut(QKeySequence("E"), self)
+        export_selected_shortcut.activated.connect(self.export_selected_to_kh_rando)
+        
+        # M key shortcut for exporting missing to KH Rando
+        export_missing_shortcut = QShortcut(QKeySequence("M"), self)
+        export_missing_shortcut.activated.connect(self.export_missing_to_kh_rando)
+        
+        # F5 key shortcut for rescanning library
+        rescan_shortcut = QShortcut(QKeySequence("F5"), self)
+        rescan_shortcut.activated.connect(self.rescan_library)
+        
+        # W key shortcut for converting selected to WAV
+        convert_wav_shortcut = QShortcut(QKeySequence("W"), self)
+        convert_wav_shortcut.activated.connect(self.convert_selected_to_wav)
+        
+        # S key shortcut for converting selected to SCD
+        convert_scd_shortcut = QShortcut(QKeySequence("S"), self)
+        convert_scd_shortcut.activated.connect(self.convert_selected_to_scd)
+        
+        # Space key shortcut for play/pause
+        play_pause_shortcut = QShortcut(QKeySequence(Qt.Key_Space), self)
+        play_pause_shortcut.activated.connect(self.toggle_play_pause)
+        
+        
+
 
     # === Library Management ===
     def add_library_folder(self):
@@ -481,19 +675,418 @@ class SCDPlayer(QMainWindow):
         """Rescan library folders"""
         if not hasattr(self, 'library') or not self.library:
             return
+            
+        # Store current state
+        current_search = ""
+        if hasattr(self, 'search_input'):
+            current_search = self.search_input.text()
+            
+        organize_by_folder = False
+        if hasattr(self, 'organize_by_folder_cb'):
+            organize_by_folder = self.organize_by_folder_cb.isChecked()
+            
+        # Clear search temporarily to get all files
+        if current_search:
+            self.search_input.clear()
+            
+        # Do the scan
         self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
+        
+        # Force update of KH Rando section counts after rescan
+        self._update_kh_rando_section_counts()
+        
+        # Force update of KH Rando section counts after rescan
+        self._update_kh_rando_section_counts()
 
         # Update UI
         self.folder_list.clear()
         for folder in self.config.library_folders:
             self.folder_list.addItem(folder)
         self.subdirs_checkbox.setChecked(self.config.scan_subdirs)
+        
+        # Apply organization if needed
+        if organize_by_folder:
+            self._organize_files_by_folder()
+        
+        # Restore search filter if it was active
+        if current_search:
+            self.search_input.setText(current_search)
+            self.filter_library_files()
+    
+    def filter_library_files(self):
+        """Filter library files based on search text"""
+        search_text = self.search_input.text().lower()
+        
+        # Show all items if search is empty
+        if not search_text:
+            for i in range(self.file_list.count()):
+                item = self.file_list.item(i)
+                item.setHidden(False)
+            return
+        
+        # Check if we're in folder organization mode
+        is_folder_mode = self.organize_by_folder_cb.isChecked()
+        
+        if is_folder_mode:
+            # In folder mode, we need to handle folder headers and their files
+            current_folder = None
+            folder_has_matches = False
+            folder_header_item = None
+            
+            for i in range(self.file_list.count()):
+                item = self.file_list.item(i)
+                file_path = item.data(Qt.UserRole)
+                
+                if file_path and file_path.startswith("FOLDER_HEADER:"):
+                    # This is a folder header
+                    if folder_header_item is not None:
+                        # Process previous folder
+                        folder_header_item.setHidden(not folder_has_matches)
+                    
+                    # Start new folder
+                    folder_header_item = item
+                    folder_has_matches = False
+                    current_folder = file_path.replace("FOLDER_HEADER:", "")
+                    
+                else:
+                    # This is a file item
+                    item_text = item.text().lower()
+                    folder_path = os.path.dirname(file_path).lower() if file_path else ""
+                    
+                    # Show item if search text matches filename or folder
+                    matches = (search_text in item_text or 
+                              search_text in folder_path or
+                              search_text in os.path.basename(folder_path) or
+                              (current_folder and search_text in current_folder.lower()))
+                    
+                    item.setHidden(not matches)
+                    if matches:
+                        folder_has_matches = True
+            
+            # Process the last folder
+            if folder_header_item is not None:
+                folder_header_item.setHidden(not folder_has_matches)
+        else:
+            # Regular flat mode filtering
+            for i in range(self.file_list.count()):
+                item = self.file_list.item(i)
+                file_path = item.data(Qt.UserRole)
+                item_text = item.text().lower()
+                folder_path = os.path.dirname(file_path).lower() if file_path else ""
+                
+                # Show item if search text matches filename or folder
+                matches = (search_text in item_text or 
+                          search_text in folder_path or
+                          search_text in os.path.basename(folder_path))
+                
+                item.setHidden(not matches)
+    
+    def clear_search(self):
+        """Clear the search input and show all files"""
+        self.search_input.clear()
+        self.filter_library_files()
+    
+    def toggle_folder_organization(self):
+        """Toggle between flat and folder-organized view"""
+        organize_by_folder = self.organize_by_folder_cb.isChecked()
+        
+        if organize_by_folder:
+            self._organize_files_by_folder()
+        else:
+            # Clear folder states when switching to flat view
+            if hasattr(self, '_folder_expanded_states'):
+                self._folder_expanded_states.clear()
+            # Rescan to get flat view
+            self.rescan_library()
+    
+    def _organize_files_by_folder(self):
+        """Reorganize files by their originating folder with collapsible headers"""
+        if not hasattr(self, 'library') or not self.library:
+            return
+            
+        # Store current search text to preserve filtering
+        current_search = ""
+        if hasattr(self, 'search_input'):
+            current_search = self.search_input.text()
+            
+        # Temporarily clear search to get all files
+        if current_search:
+            self.search_input.clear()
+            
+        # Wait for the library to be updated without search filter
+        self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
+            
+        # Collect all files with their paths
+        files_by_folder = {}
+        
+        # Get all items from the fresh scan
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            file_path = item.data(Qt.UserRole)
+            if file_path and not file_path.startswith("FOLDER_HEADER"):
+                folder = os.path.dirname(file_path)
+                
+                # Better folder name handling
+                if folder and folder != ".":
+                    folder_name = os.path.basename(folder)
+                    # Handle empty folder names
+                    if not folder_name:
+                        folder_name = folder  # Use full path if basename is empty
+                else:
+                    folder_name = "Files (No Folder)"  # Better name than "Root"
+                    
+                if folder_name not in files_by_folder:
+                    files_by_folder[folder_name] = []
+                files_by_folder[folder_name].append((item.text(), file_path, item.foreground()))
+        
+        # Cache the files data for instant expansion
+        self._files_by_folder_cache = files_by_folder
+        
+        # Clear and repopulate with folder organization
+        self.file_list.clear()
+        
+        # Store folder states if they don't exist yet
+        if not hasattr(self, '_folder_expanded_states'):
+            self._folder_expanded_states = {}
+        
+        for folder_name in sorted(files_by_folder.keys()):
+            # Default to expanded if not set
+            if folder_name not in self._folder_expanded_states:
+                self._folder_expanded_states[folder_name] = True
+            
+            is_expanded = self._folder_expanded_states[folder_name]
+            arrow = "▼" if is_expanded else "▶"
+            file_count = len(files_by_folder[folder_name])
+            
+            # Add collapsible folder header
+            header_item = QListWidgetItem(f"{arrow} 📁 {folder_name} ({file_count})")
+            header_item.setData(Qt.UserRole, f"FOLDER_HEADER:{folder_name}")
+            header_item.setForeground(QColor('lightblue'))
+            header_item.setFlags(header_item.flags() | Qt.ItemIsSelectable)  # Make selectable for clicking
+            self.file_list.addItem(header_item)
+            
+            # Add files in this folder (only if expanded)
+            if is_expanded:
+                for file_text, file_path, file_color in sorted(files_by_folder[folder_name]):
+                    file_item = QListWidgetItem(f"    {file_text}")  # Indent files
+                    file_item.setData(Qt.UserRole, file_path)
+                    if file_color:
+                        file_item.setForeground(file_color)
+                    self.file_list.addItem(file_item)
+        
+        # Restore search filter if it was active
+        if current_search:
+            self.search_input.setText(current_search)
+            self.filter_library_files()
+
+    def on_kh_rando_item_clicked(self, item):
+        """Handle single clicks on KH Rando items (for category expansion and selection)"""
+        file_path = item.data(Qt.UserRole)
+        
+        # Handle category header single clicks
+        if file_path and file_path.startswith("KH_CATEGORY_HEADER:"):
+            category_key = file_path.replace("KH_CATEGORY_HEADER:", "")
+            self._toggle_kh_category_expansion(category_key)
+            return
+        
+        # Clear regular file list selection to avoid conflicts
+        if file_path and not file_path.startswith("KH_CATEGORY_HEADER:"):
+            self._updating_selection = True
+            self.file_list.clearSelection()
+            self._updating_selection = False
+
+    def on_library_item_clicked(self, item):
+        """Handle single clicks on library items (for folder expansion and selection)"""
+        file_path = item.data(Qt.UserRole)
+        
+        # Handle folder header single clicks
+        if file_path and file_path.startswith("FOLDER_HEADER:"):
+            folder_name = file_path.replace("FOLDER_HEADER:", "")
+            
+            # Get click position to determine if arrow was clicked
+            cursor_pos = self.file_list.mapFromGlobal(QCursor.pos())
+            item_rect = self.file_list.visualItemRect(item)
+            
+            # Arrow is in the first ~20 pixels of the item
+            if cursor_pos.x() - item_rect.x() <= 20:
+                # Clicked on arrow - toggle expansion
+                self._toggle_folder_expansion(folder_name)
+            else:
+                # Clicked on text - select all files in folder
+                self._select_files_in_folder(folder_name)
 
     def load_from_library(self, item):
         """Load file from library double-click and auto-play"""
         file_path = item.data(Qt.UserRole)
-        if file_path:
+        
+        # Ignore double-clicks on folder headers - only single clicks should toggle
+        if file_path and file_path.startswith("FOLDER_HEADER:"):
+            return  # Do nothing on double-click
+        
+        # Load and play files on double-click
+        if file_path and file_path != "FOLDER_HEADER":  # Skip folder headers
             self.load_file_path(file_path, auto_play=True)
+    
+    def _update_kh_rando_section_counts(self):
+        """Force update of KH Rando list after library scan"""
+        if hasattr(self, 'kh_rando_file_list'):
+            self._populate_kh_rando_list()
+            
+            # Force Qt to process the UI updates
+            from PyQt5.QtWidgets import QApplication
+            QApplication.processEvents()
+
+    def _select_files_in_folder(self, folder_name):
+        """Select all files in the specified folder"""
+        # Clear current selection
+        self.file_list.clearSelection()
+        
+        # Find and select all files in this folder
+        found_folder = False
+        
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            file_path = item.data(Qt.UserRole)
+            
+            if file_path == f"FOLDER_HEADER:{folder_name}":
+                found_folder = True
+                continue  # Skip the folder header itself
+                
+            elif found_folder and file_path and not file_path.startswith("FOLDER_HEADER"):
+                # This is a file in our target folder
+                item.setSelected(True)
+                
+            elif found_folder and file_path and file_path.startswith("FOLDER_HEADER"):
+                # We've reached the next folder, stop selecting
+                break
+
+    def _toggle_kh_category_expansion(self, category_key):
+        """Toggle the expansion state of a KH Rando category"""
+        if category_key not in self.kh_rando_category_states:
+            return
+            
+        # Toggle state
+        current_state = self.kh_rando_category_states[category_key]
+        self.kh_rando_category_states[category_key] = not current_state
+        
+        # Refresh the KH Rando list to reflect the change
+        self._populate_kh_rando_list()
+
+    def _populate_kh_rando_list(self):
+        """Populate the KH Rando list with categories and files"""
+        if not hasattr(self, 'kh_rando_file_list') or not hasattr(self, 'library'):
+            return
+            
+        # Store current selection
+        selected_paths = []
+        for item in self.kh_rando_file_list.selectedItems():
+            path = item.data(Qt.UserRole)
+            if path and not path.startswith("KH_CATEGORY_HEADER:"):
+                selected_paths.append(path)
+        
+        # Clear the list
+        self.kh_rando_file_list.clear()
+        
+        # Get files by category from the library
+        if hasattr(self.library, 'kh_rando_files_by_category'):
+            files_by_category = self.library.kh_rando_files_by_category
+        else:
+            files_by_category = {}
+        
+        # Add each category with its files
+        for category_key, category_name in self.kh_rando_categories.items():
+            is_expanded = self.kh_rando_category_states.get(category_key, True)
+            category_files = files_by_category.get(category_key, [])
+            file_count = len(category_files)
+            
+            # Add category header
+            arrow = "▼" if is_expanded else "▶"
+            header_item = QListWidgetItem(f"{arrow} 📁 {category_name} ({file_count})")
+            header_item.setData(Qt.UserRole, f"KH_CATEGORY_HEADER:{category_key}")
+            header_item.setForeground(QColor('lightblue'))
+            header_item.setFlags(header_item.flags() | Qt.ItemIsSelectable)
+            self.kh_rando_file_list.addItem(header_item)
+            
+            # Add files if expanded
+            if is_expanded and category_files:
+                for file_info in sorted(category_files):
+                    file_path, display_name = file_info
+                    file_item = QListWidgetItem(f"    {display_name}")  # Indent files
+                    file_item.setData(Qt.UserRole, file_path)
+                    self.kh_rando_file_list.addItem(file_item)
+        
+        # Restore selection
+        if selected_paths:
+            for i in range(self.kh_rando_file_list.count()):
+                item = self.kh_rando_file_list.item(i)
+                if item.data(Qt.UserRole) in selected_paths:
+                    item.setSelected(True)
+
+    def _toggle_folder_expansion(self, folder_name):
+        """Toggle the expansion state of a folder - optimized for instant response"""
+        if not hasattr(self, '_folder_expanded_states'):
+            self._folder_expanded_states = {}
+            
+        # Toggle state
+        current_state = self._folder_expanded_states.get(folder_name, True)
+        self._folder_expanded_states[folder_name] = not current_state
+        new_state = not current_state
+        
+        # Find the folder header and update it immediately
+        folder_header_item = None
+        folder_header_index = -1
+        
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            file_path = item.data(Qt.UserRole)
+            if file_path == f"FOLDER_HEADER:{folder_name}":
+                folder_header_item = item
+                folder_header_index = i
+                break
+        
+        if folder_header_item is None:
+            return  # Folder header not found
+        
+        # Update the arrow immediately
+        arrow = "▼" if new_state else "▶"
+        current_text = folder_header_item.text()
+        # Extract the file count from the current text
+        if "(" in current_text and ")" in current_text:
+            file_count_part = current_text[current_text.rfind("("):]
+            folder_header_item.setText(f"{arrow} 📁 {folder_name} {file_count_part}")
+        
+        if new_state:
+            # Expanding - we need to add the files
+            # Find files that belong to this folder from our stored data
+            if hasattr(self, '_files_by_folder_cache') and folder_name in self._files_by_folder_cache:
+                files_to_add = self._files_by_folder_cache[folder_name]
+                
+                # Insert files right after the header
+                insert_position = folder_header_index + 1
+                for file_text, file_path, file_color in sorted(files_to_add):
+                    file_item = QListWidgetItem(f"    {file_text}")  # Indent files
+                    file_item.setData(Qt.UserRole, file_path)
+                    if file_color:
+                        file_item.setForeground(file_color)
+                    self.file_list.insertItem(insert_position, file_item)
+                    insert_position += 1
+        else:
+            # Collapsing - remove all files under this folder
+            items_to_remove = []
+            for i in range(folder_header_index + 1, self.file_list.count()):
+                item = self.file_list.item(i)
+                file_path = item.data(Qt.UserRole)
+                
+                # Stop when we hit another folder header
+                if file_path and file_path.startswith("FOLDER_HEADER:"):
+                    break
+                    
+                # This is a file under our folder
+                items_to_remove.append(i)
+            
+            # Remove items in reverse order to maintain indices
+            for i in reversed(items_to_remove):
+                self.file_list.takeItem(i)
 
     def update_library_selection(self, file_path):
         """Update library list selection to highlight the currently playing track"""
@@ -502,8 +1095,11 @@ class SCDPlayer(QMainWindow):
             
         # Clear current selection first
         self.file_list.clearSelection()
+        if hasattr(self, 'kh_rando_sections'):
+            for section in self.kh_rando_sections.values():
+                section.get_file_list().clearSelection()
         
-        # Find and select the item with matching file path
+        # Find and select the item with matching file path in regular library
         for i in range(self.file_list.count()):
             item = self.file_list.item(i)
             if item and item.data(Qt.UserRole) == file_path:
@@ -511,12 +1107,23 @@ class SCDPlayer(QMainWindow):
                 self.file_list.scrollToItem(item)
                 return  # Found and selected, we're done
         
+        # Check KH Rando sections
+        if hasattr(self, 'kh_rando_sections'):
+            for section in self.kh_rando_sections.values():
+                file_list = section.get_file_list()
+                for i in range(file_list.count()):
+                    item = file_list.item(i)
+                    if item and item.data(Qt.UserRole) == file_path:
+                        file_list.setCurrentItem(item)
+                        file_list.scrollToItem(item)
+                        return  # Found and selected, we're done
+        
         # File not found in library - add it temporarily for this session
         if hasattr(self, 'library') and self.library and os.path.exists(file_path):
             from pathlib import Path
             self.library._add_file_to_library(Path(file_path))
             
-            # Now try to select it again
+            # Now try to select it again in regular library
             for i in range(self.file_list.count()):
                 item = self.file_list.item(i)
                 if item and item.data(Qt.UserRole) == file_path:
@@ -526,31 +1133,72 @@ class SCDPlayer(QMainWindow):
     
     def on_library_selection_changed(self):
         """Handle library selection changes"""
+        if self._updating_selection:
+            return
+            
         selected_items = self.file_list.selectedItems()
+        
+        # Clear KH Rando selections to avoid conflicts
+        if selected_items and hasattr(self, 'kh_rando_file_list'):
+            self._updating_selection = True
+            self.kh_rando_file_list.clearSelection()
+            self._updating_selection = False
+        
+        self.on_library_selection_changed_common(selected_items)
+    
+    def on_library_selection_changed_common(self, selected_items):
+        """Common handler for both regular and KH Rando selection changes"""
         has_selection = len(selected_items) > 0
         single_selection = len(selected_items) == 1
         # Enable open location button if single selection OR if there's a currently playing file and no multi-selection
         can_open_location = single_selection or (len(selected_items) == 0 and self.current_file is not None)
         
-        # Check if single selection is an SCD or WAV file for loop editor
+        # Check file types for smart conversion button enabling
+        has_non_wav_files = False
+        has_non_scd_files = False
         single_supported_selection = False
-        if single_selection:
-            file_path = selected_items[0].data(Qt.UserRole)
-            if file_path:
-                ext = file_path.lower()
-                if ext.endswith('.scd') or ext.endswith('.wav'):
-                    single_supported_selection = True
+        
+        if has_selection:
+            for item in selected_items:
+                file_path = item.data(Qt.UserRole)
+                if file_path:
+                    ext = file_path.lower()
+                    if not ext.endswith('.wav'):
+                        has_non_wav_files = True
+                    if not ext.endswith('.scd'):
+                        has_non_scd_files = True
+                    
+                    # Check for loop editor support (single selection only)
+                    if single_selection and (ext.endswith('.scd') or ext.endswith('.wav')):
+                        single_supported_selection = True
         
         self.export_selected_btn.setEnabled(has_selection)
         self.delete_selected_btn.setEnabled(has_selection)
-        self.convert_to_wav_btn.setEnabled(has_selection)
-        self.convert_to_scd_btn.setEnabled(has_selection)
+        # Only enable conversion if there are files that aren't already in that format
+        self.convert_to_wav_btn.setEnabled(has_selection and has_non_wav_files)
+        self.convert_to_scd_btn.setEnabled(has_selection and has_non_scd_files)
         self.open_file_location_btn.setEnabled(can_open_location)
         self.open_loop_editor_btn.setEnabled(single_supported_selection)
+    
+    def get_all_selected_items(self):
+        """Get all selected items from both regular and KH Rando lists"""
+        selected_items = []
+        
+        # Get regular library selections
+        selected_items.extend(self.file_list.selectedItems())
+        
+        # Get KH Rando list selections (filter out headers)
+        if hasattr(self, 'kh_rando_file_list'):
+            for item in self.kh_rando_file_list.selectedItems():
+                file_path = item.data(Qt.UserRole)
+                if file_path and not file_path.startswith("KH_CATEGORY_HEADER:"):
+                    selected_items.append(item)
+        
+        return selected_items
 
     def delete_selected_files(self):
-        """Delete selected files from disk with confirmation"""
-        selected_items = self.file_list.selectedItems()
+        """Delete selected files to recycle bin with confirmation"""
+        selected_items = self.get_all_selected_items()
         if not selected_items:
             show_themed_message(self, QMessageBox.Information, "No Selection", "Please select one or more files to delete.")
             return
@@ -566,47 +1214,46 @@ class SCDPlayer(QMainWindow):
             show_themed_message(self, QMessageBox.Warning, "No Valid Files", "No valid files found in selection.")
             return
         
-        # Show warning confirmation
-        msg = f"⚠️  PERMANENTLY DELETE {len(files_to_delete)} file(s) from disk?\n\n"
-        msg += "This action CANNOT be undone!\n\n"
+        # Show confirmation (updated to mention recycle bin)
+        msg = f"🗑️  Move {len(files_to_delete)} file(s) to Recycle Bin?\n\n"
+        msg += "Files can be restored from the Recycle Bin if needed.\n\n"
         msg += "Files to delete:\n" + "\n".join(f"• {os.path.basename(f)}" for f in files_to_delete[:10])
         if len(files_to_delete) > 10:
             msg += f"\n• ... and {len(files_to_delete) - 10} more"
         
-        reply = show_themed_message(self, QMessageBox.Question, "Delete Files", msg,
+        reply = show_themed_message(self, QMessageBox.Question, "Move to Recycle Bin", msg,
                                    QMessageBox.Yes | QMessageBox.No,
                                    QMessageBox.No)
         if reply != QMessageBox.Yes:
             return
         
-        # Delete files
+        # Delete files to recycle bin
         deleted_count = 0
         failed_files = []
         
         for file_path in files_to_delete:
-            try:
-                os.remove(file_path)
+            if send_to_recycle_bin(file_path):
                 deleted_count += 1
-            except Exception as e:
+            else:
                 failed_files.append(os.path.basename(file_path))
         
         # Show results
         if failed_files:
-            msg = f"Deleted {deleted_count} file(s).\n\nFailed to delete {len(failed_files)} file(s):\n"
+            msg = f"Moved {deleted_count} file(s) to Recycle Bin.\n\nFailed to delete {len(failed_files)} file(s):\n"
             msg += "\n".join(f"• {f}" for f in failed_files[:5])
             if len(failed_files) > 5:
                 msg += f"\n• ... and {len(failed_files) - 5} more"
             show_themed_message(self, QMessageBox.Warning, "Deletion Results", msg)
         else:
-            show_themed_message(self, QMessageBox.Information, "Files Deleted", f"Successfully deleted {deleted_count} file(s).")
+            show_themed_message(self, QMessageBox.Information, "Files Moved", f"Successfully moved {deleted_count} file(s) to Recycle Bin.")
         
         # Refresh library
         if hasattr(self, 'library') and self.library:
-            self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
+            self.rescan_library()
 
     def open_file_location(self):
         """Open the folder containing the selected file or currently playing file in File Explorer"""
-        selected_items = self.file_list.selectedItems()
+        selected_items = self.get_all_selected_items()
         
         # Determine which file to open location for
         file_path = None
@@ -664,7 +1311,7 @@ class SCDPlayer(QMainWindow):
 
     def open_loop_editor(self):
         """Open the loop editor for the selected SCD or WAV file"""
-        selected_items = self.file_list.selectedItems()
+        selected_items = self.get_all_selected_items()
         if not selected_items or len(selected_items) != 1:
             show_themed_message(self, QMessageBox.Information, "Invalid Selection", 
                                "Please select exactly one SCD or WAV file to edit loop points.")

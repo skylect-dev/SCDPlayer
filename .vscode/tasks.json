@@ -7,6 +7,13 @@
             "command": "C:/Python313/python.exe main.py",
             "group": "build",
             "problemMatcher": []
+        },
+        {
+            "label": "Build ALL then copy updater.exe to SCDPlayer folder",
+            "type": "shell",
+            "command": "C:/Python313/python.exe -m PyInstaller updater.spec --noconfirm ; C:/Python313/python.exe -m PyInstaller SCDPlayer.spec --noconfirm ; Copy-Item 'dist\\updater.exe' 'dist\\SCDPlayer\\updater.exe' -Force",
+            "group": "build",
+            "problemMatcher": []
         }
     ]
 }

@@ -52,6 +52,7 @@ scdplayer_config.json
 CHANGELOG*.md
 temp_*
 *.wav.tmp
+*.wav
 
 # Temporary files
 *.log

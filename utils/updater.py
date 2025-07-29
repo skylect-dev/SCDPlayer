@@ -5,11 +5,12 @@ import json
 import tempfile
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any
 import urllib.request
 import urllib.error
-from PyQt5.QtWidgets import QMessageBox, QProgressDialog
+from PyQt5.QtWidgets import QMessageBox, QProgressDialog, QApplication
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from ui.dialogs import show_themed_message, apply_title_bar_theming
 from version import __version__
@@ -199,55 +200,54 @@ class AutoUpdater:
         
     def install_update(self, progress_dialog, update_type: str):
         """Install the downloaded update"""
-        progress_dialog.close()
+        # Change progress dialog text for installation phase
+        progress_dialog.setLabelText("Installing update...")
+        progress_dialog.setCancelButton(None)  # Disable cancel during install
+        progress_dialog.setValue(100)  # Set to complete for download
         
         if not self.update_downloader or not self.update_downloader.temp_path:
+            progress_dialog.close()
             show_themed_message(self.parent, QMessageBox.Critical, "Update Failed", "Download path not found.")
             return
             
         temp_path = self.update_downloader.temp_path
         
         if update_type == 'exe':
-            self.install_exe_update(temp_path)
+            self.install_exe_update(temp_path, progress_dialog)
         else:
-            self.install_zip_update(temp_path)
+            self.install_zip_update(temp_path, progress_dialog)
             
-    def install_exe_update(self, exe_path: str):
+    def install_exe_update(self, exe_path: str, progress_dialog):
         """Install single exe update"""
         try:
+            progress_dialog.setLabelText("Preparing update...")
+            
             current_exe = sys.executable
             backup_exe = current_exe + ".backup"
             
             # Create backup
+            progress_dialog.setLabelText("Creating backup...")
             shutil.copy2(current_exe, backup_exe)
             
-            msg = "Update downloaded successfully!\n\n"
-            msg += "SCDPlayer will now restart to complete the update.\n"
-            msg += "Click OK to restart."
+            progress_dialog.close()
             
-            reply = show_themed_message(
-                self.parent,
-                QMessageBox.Information,
-                "Update Ready",
-                msg
-            )
-            
-            if reply == QMessageBox.Ok:
-                # Create update script
-                script_content = f'''@echo off
+            # For EXE updates, just run the script directly without extra dialogs
+            # since this method shouldn't be used in production builds
+            script_content = f'''@echo off
+echo Installing SCDPlayer update...
 timeout /t 2 /nobreak >nul
 move "{exe_path}" "{current_exe}"
 start "" "{current_exe}"
 del "{backup_exe}"
 del "%~f0"
 '''
-                script_path = os.path.join(tempfile.gettempdir(), 'scd_update.bat')
-                with open(script_path, 'w') as f:
-                    f.write(script_content)
-                
-                # Run update script and exit
-                subprocess.Popen([script_path], shell=True)
-                self.parent.close()
+            script_path = os.path.join(tempfile.gettempdir(), 'scd_update.bat')
+            with open(script_path, 'w') as f:
+                f.write(script_content)
+            
+            # Run update script with visible console and exit
+            subprocess.Popen([script_path], shell=True, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            self.parent.close()
                 
         except Exception as e:
             show_themed_message(
@@ -257,15 +257,17 @@ del "%~f0"
                 f"Failed to install update:\n{str(e)}"
             )
             
-    def install_zip_update(self, zip_path: str):
+    def install_zip_update(self, zip_path: str, progress_dialog):
         """Install zip update (extract over current directory)"""
         try:
             import zipfile
             current_dir = Path(sys.executable).parent
             
+            progress_dialog.close()
+            
             msg = "Update downloaded successfully!\n\n"
             msg += "The update will be extracted to replace the current installation.\n"
-            msg += "SCDPlayer will close during this process.\n\n"
+            msg += "SCDPlayer will close and the updater will handle the installation.\n\n"
             msg += "Click OK to proceed."
             
             reply = show_themed_message(
@@ -276,65 +278,30 @@ del "%~f0"
             )
             
             if reply == QMessageBox.Ok:
-                # Create update script that handles nested folder structure
-                script_content = f'''@echo off
-echo Updating SCDPlayer...
-timeout /t 3 /nobreak >nul
-
-REM Create temp directory for extraction
-set TEMP_DIR=%TEMP%\\scd_update_extract
-if exist "%TEMP_DIR%" rmdir /s /q "%TEMP_DIR%"
-mkdir "%TEMP_DIR%"
-
-REM Extract to temp directory first
-echo Extracting update archive...
-powershell -Command "Expand-Archive -Path '{zip_path}' -DestinationPath '%TEMP_DIR%' -Force"
-if errorlevel 1 (
-    echo ERROR: Failed to extract update archive
-    pause
-    goto :cleanup
-)
-
-REM Check if extraction created a nested SCDPlayer folder
-if exist "%TEMP_DIR%\\SCDPlayer" (
-    echo Found nested folder structure, copying contents...
-    REM Copy from nested folder to current directory, overwriting existing files
-    xcopy /s /e /y /h /r "%TEMP_DIR%\\SCDPlayer\\*" "{current_dir}\\"
-    if errorlevel 1 (
-        echo ERROR: Failed to copy files from nested structure
-        pause
-        goto :cleanup
-    )
-) else (
-    echo Found direct structure, copying contents...
-    REM Copy directly from temp to current directory, overwriting existing files
-    xcopy /s /e /y /h /r "%TEMP_DIR%\\*" "{current_dir}\\"
-    if errorlevel 1 (
-        echo ERROR: Failed to copy files from direct structure
-        pause
-        goto :cleanup
-    )
-)
-
-echo Update applied successfully!
-
-:cleanup
-REM Clean up temp directory and ZIP file
-if exist "%TEMP_DIR%" rmdir /s /q "%TEMP_DIR%"
-if exist "{zip_path}" del /f /q "{zip_path}"
-
-echo Update complete!
-timeout /t 2 /nobreak >nul
-start "" "{sys.executable}"
-del "%~f0"
-'''
-                script_path = os.path.join(tempfile.gettempdir(), 'scd_update_zip.bat')
-                with open(script_path, 'w') as f:
-                    f.write(script_content)
+                # Use the standalone updater executable
+                updater_exe = os.path.join(os.path.dirname(sys.executable), 'updater.exe')
                 
-                # Run update script and exit
-                subprocess.Popen([script_path], shell=True)
-                self.parent.close()
+                # Check if updater exists
+                if not os.path.exists(updater_exe):
+                    show_themed_message(
+                        self.parent,
+                        QMessageBox.Critical,
+                        "Updater Missing",
+                        f"Updater executable not found at:\n{updater_exe}\n\nPlease download the complete SCDPlayer package."
+                    )
+                    return
+                
+                # Launch the standalone updater immediately
+                subprocess.Popen([
+                    updater_exe,
+                    zip_path,
+                    str(current_dir),
+                    sys.executable
+                ], shell=False)
+                
+                # Force immediate application exit
+                QApplication.instance().quit()
+                os._exit(0)  # Immediate termination without cleanup
                 
         except Exception as e:
             show_themed_message(

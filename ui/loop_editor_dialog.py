@@ -1024,7 +1024,7 @@ class LoopEditorDialog(QDialog):
         
         # Pause main window audio if playing
         if hasattr(parent, 'player') and parent.player.state() == parent.player.PlayingState:
-            parent.player.pause()
+            parent.pause_audio()
             self.main_was_playing = True
         else:
             self.main_was_playing = False
@@ -1522,8 +1522,8 @@ class LoopEditorDialog(QDialog):
         self._cleanup_temp_files()
         
         # Resume main window audio if it was playing
-        if self.main_was_playing and hasattr(self.parent_window, 'player'):
-            self.parent_window.player.play()
+        if self.main_was_playing and hasattr(self.parent_window, 'play_audio'):
+            self.parent_window.play_audio()
         
         super().closeEvent(event)
     
@@ -1587,43 +1587,59 @@ class LoopEditorDialog(QDialog):
         if not self.loop_manager.get_wav_path():
             QMessageBox.warning(self, "Error", "No audio file loaded")
             return
-        
+
         success = self.waveform.load_audio_data(self.loop_manager.get_wav_path())
         if not success:
             QMessageBox.warning(self, "Error", "Failed to load audio data")
             return
-        
+
         # Store original audio data for volume change detection
         if self.waveform.audio_data is not None:
             self._original_audio_data = self.waveform.audio_data.copy()
             self._volume_adjusted = False
-        
+
         # Set timeline info
         file_info = self.loop_manager.get_file_info()
         self.timeline.set_audio_info(file_info['sample_rate'], file_info['total_samples'])
-        
+
         # Update file information display
         self.update_file_info_display(file_info)
-        
+
         # Set current loop points or defaults
         start, end = self.loop_manager.get_loop_points()
-        
+
         # If no loop points exist, set default end to track length
         if end == 0:
             file_info = self.loop_manager.get_file_info()
             end = file_info.get('total_samples', 0)
-        
+
         self.waveform.set_loop_points(start, end)
         self.update_loop_info(start, end)
-        
+
         # Automatically analyze audio levels when file loads
         self.analysis_text.setText("Analyzing audio levels...")
         QTimer.singleShot(100, self.analyze_audio)  # Delay slightly to let UI update
-        
+
         # Update volume button states  
         self._update_volume_buttons_state()
+
+        # Initialize scrollbar and zoom properly after widget is shown
+        QTimer.singleShot(200, self._finalize_waveform_setup)
+
+    def _finalize_waveform_setup(self):
+        """Finalize waveform setup after UI is fully initialized"""
+        # Ensure proper zoom initialization
+        if hasattr(self.waveform, 'audio_data') and self.waveform.audio_data is not None:
+            # Reset zoom to show full waveform with proper scaling
+            total_samples = len(self.waveform.audio_data)
+            widget_width = self.waveform.width()
+            if widget_width > 0:
+                # Set samples per pixel to show full track
+                self.waveform.samples_per_pixel = max(1, total_samples / widget_width)
+                self.waveform._scroll_position = 0
+                self.waveform.update()
         
-        # Initialize scrollbar
+        # Initialize scrollbar with correct values
         self.update_scrollbar_range()
         
     def on_scroll_changed(self, value):
@@ -2274,14 +2290,31 @@ class LoopEditorDialog(QDialog):
         if not wav_path or not os.path.exists(wav_path):
             QMessageBox.warning(self, "Error", "No audio file available for playback")
             return
+
+        # Get current cursor position from waveform first
+        file_info = self.loop_manager.get_file_info()
+        sample_rate = file_info.get('sample_rate', 44100)
+        target_position_ms = 0
         
+        if hasattr(self.waveform, 'current_position'):
+            current_sample_pos = self.waveform.current_position
+            target_position_ms = int((current_sample_pos / sample_rate) * 1000)
+
         # Only set media content if it's different or not set
         current_media = self.media_player.media()
         new_url = QUrl.fromLocalFile(wav_path)
-        if (current_media.isNull() or 
-            current_media.canonicalUrl() != new_url):
+        media_changed = (current_media.isNull() or 
+                        current_media.canonicalUrl() != new_url)
+        
+        if media_changed:
             self.media_player.setMedia(QMediaContent(new_url))
-            logging.info(f"Loaded media for playback: {wav_path}")
+            logging.info(f"Loaded media for playbook: {wav_path}")
+            # Store target position for after playback starts
+            self._target_position_ms = target_position_ms
+        else:
+            # Media already loaded, set position immediately
+            self.media_player.setPosition(target_position_ms)
+            self._target_position_ms = None
         
         # If loop mode is on and we're outside the loop, start from loop beginning
         if self.is_loop_testing:
@@ -2289,18 +2322,21 @@ class LoopEditorDialog(QDialog):
             end = self.end_spin.value()
             
             if start < end:  # Valid loop points
-                current_ms = self.media_player.position()
-                file_info = self.loop_manager.get_file_info()
-                sample_rate = file_info.get('sample_rate', 44100)
-                
                 start_ms = int((start / sample_rate) * 1000)
                 end_ms = int((end / sample_rate) * 1000)
                 
                 # If current position is outside loop, start from loop beginning
-                if current_ms < start_ms or current_ms >= end_ms:
-                    self.media_player.setPosition(start_ms)
-        
+                if target_position_ms < start_ms or target_position_ms >= end_ms:
+                    if media_changed:
+                        self._target_position_ms = start_ms
+                    else:
+                        self.media_player.setPosition(start_ms)
+
         self.media_player.play()
+        
+        # If we have a target position to set after media starts, do it with a short delay
+        if hasattr(self, '_target_position_ms') and self._target_position_ms is not None:
+            QTimer.singleShot(100, lambda: self._set_delayed_position(self._target_position_ms))
         
         # Start ultra-smooth position updates
         self.position_timer.start(8)  # ~120 FPS for ultra-smooth updates
@@ -2308,7 +2344,13 @@ class LoopEditorDialog(QDialog):
         # Start loop timer if loop mode is enabled
         if self.is_loop_testing:
             self.loop_timer.start(16)  # ~60 FPS for smooth visual updates
-    
+            
+    def _set_delayed_position(self, position_ms):
+        """Set media position after a short delay to ensure media is ready"""
+        if self.media_player.state() == QMediaPlayer.PlayingState:
+            self.media_player.setPosition(position_ms)
+            self._target_position_ms = None
+            
     def stop_playback(self):
         """Stop all playback"""
         self.media_player.stop()
@@ -2776,6 +2818,13 @@ class LoopEditorDialog(QDialog):
         self.custom_volume_btn.setEnabled(has_audio)
         # Reset button only enabled if volume was adjusted
         self.reset_volume_btn.setEnabled(has_audio and self._volume_adjusted)
+    
+    def showEvent(self, event):
+        """Handle dialog show event to ensure proper initialization"""
+        super().showEvent(event)
+        # Ensure waveform is properly initialized when dialog becomes visible
+        if hasattr(self, 'waveform') and hasattr(self.waveform, 'audio_data'):
+            QTimer.singleShot(50, self._finalize_waveform_setup)
 
 # Test function
 if __name__ == "__main__":

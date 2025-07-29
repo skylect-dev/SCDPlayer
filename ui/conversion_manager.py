@@ -173,7 +173,7 @@ class ConversionManager:
         
     def convert_selected_to_wav(self):
         """Convert selected library files to WAV"""
-        selected_items = self.main_window.file_list.selectedItems()
+        selected_items = self.main_window.get_all_selected_items()
         if not selected_items:
             show_themed_message(self.main_window, QMessageBox.Information, 'No Selection', 'Please select one or more files to convert.')
             return
@@ -199,7 +199,7 @@ class ConversionManager:
     
     def convert_selected_to_scd(self):
         """Convert selected library files to SCD"""
-        selected_items = self.main_window.file_list.selectedItems()
+        selected_items = self.main_window.get_all_selected_items()
         if not selected_items:
             show_themed_message(self.main_window, QMessageBox.Information, 'No Selection', 'Please select one or more files to convert.')
             return
@@ -285,11 +285,7 @@ class ConversionManager:
             
             # Refresh library to show new converted files
             if hasattr(self.main_window, 'library') and self.main_window.library:
-                self.main_window.library.scan_folders(
-                    self.main_window.config.library_folders, 
-                    self.main_window.config.scan_subdirs, 
-                    self.main_window.config.kh_rando_folder
-                )
+                self.main_window.rescan_library()
         else:
             show_themed_message(self.main_window, QMessageBox.Warning, 'Conversion Failed', message)
         
@@ -324,11 +320,7 @@ class ConversionManager:
                     show_themed_message(self.main_window, QMessageBox.Information, 'Conversion Complete', f'WAV saved to: {save_path}')
                     # Refresh library to show new converted file
                     if hasattr(self.main_window, 'library') and self.main_window.library:
-                        self.main_window.library.scan_folders(
-                            self.main_window.config.library_folders, 
-                            self.main_window.config.scan_subdirs, 
-                            self.main_window.config.kh_rando_folder
-                        )
+                        self.main_window.rescan_library()
                 else:
                     show_themed_message(self.main_window, QMessageBox.Warning, 'Conversion Failed', 'Could not convert SCD to WAV.')
             else:
@@ -337,11 +329,7 @@ class ConversionManager:
                     show_themed_message(self.main_window, QMessageBox.Information, 'Conversion Complete', f'WAV saved to: {save_path}')
                     # Refresh library to show new converted file
                     if hasattr(self.main_window, 'library') and self.main_window.library:
-                        self.main_window.library.scan_folders(
-                            self.main_window.config.library_folders, 
-                            self.main_window.config.scan_subdirs, 
-                            self.main_window.config.kh_rando_folder
-                        )
+                        self.main_window.rescan_library()
                 else:
                     show_themed_message(self.main_window, QMessageBox.Warning, 'Conversion Failed', f'Could not convert {file_ext} to WAV.')
 
@@ -407,10 +395,6 @@ class ConversionManager:
                 show_themed_message(self.main_window, QMessageBox.Information, 'Conversion Complete', f'SCD saved to: {save_path}')
                 # Refresh library to show new converted file
                 if hasattr(self.main_window, 'library') and self.main_window.library:
-                    self.main_window.library.scan_folders(
-                        self.main_window.config.library_folders, 
-                        self.main_window.config.scan_subdirs, 
-                        self.main_window.config.kh_rando_folder
-                    )
+                    self.main_window.rescan_library()
             else:
                 show_themed_message(self.main_window, QMessageBox.Warning, 'Conversion Failed', 'Could not complete SCD conversion.')

@@ -327,7 +327,7 @@ class HelpDialog(QDialog):
             <div class="section">
                 <h3>Advanced Features</h3>
                 <ul>
-                    <li><strong>Delete Selected:</strong> Permanently delete files from disk (DEL key shortcut)</li>
+                    <li><strong>Delete Selected:</strong> Move files to Recycle Bin (DEL key shortcut)</li>
                     <li><strong>Open File Location:</strong> Open the folder containing selected or currently playing file (Ctrl+L)</li>
                     <li><strong>Convert Selected:</strong> Convert multiple files to WAV or SCD format with progress tracking</li>
                     <li><strong>Cross-Format Detection:</strong> Detects song.mp3 and song.scd as duplicates</li>
@@ -341,7 +341,7 @@ class HelpDialog(QDialog):
             <div class="section">
                 <h3>Main Window</h3>
                 <ul>
-                    <li><span class="shortcut">DEL</span> - Delete selected files from library (permanent deletion)</li>
+                    <li><span class="shortcut">DEL</span> - Move selected files to Recycle Bin</li>
                     <li><span class="shortcut">Ctrl+L</span> - Open file location in File Explorer (selected or currently playing file)</li>
                     <li><span class="shortcut">F1</span> - Show this help guide</li>
                     <li><span class="shortcut">Double-Click</span> - Load and play file from library</li>

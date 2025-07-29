@@ -23,7 +23,7 @@ class KHRandoManager:
     
     def export_selected_to_kh_rando(self):
         """Export selected files to KH Rando music folder (auto-converting if needed)"""
-        selected_items = self.file_list.selectedItems()
+        selected_items = self.main_window.get_all_selected_items()
         if not selected_items:
             show_themed_message(self.main_window, QMessageBox.Information, "No Selection", "Please select one or more files to export.")
             return
@@ -130,7 +130,7 @@ class KHRandoManager:
             
             # Refresh library to show updated KH Rando status
             if hasattr(self.main_window, 'library') and self.library:
-                self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
+                self.main_window.rescan_library()
         else:
             # Clean up temporary files if user cancelled
             for temp_file in converted_files:
@@ -239,7 +239,7 @@ class KHRandoManager:
                     
             # Refresh library to show updated status
             if hasattr(self.main_window, 'library') and self.library:
-                self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
+                self.main_window.rescan_library()
         else:
             # Clean up temporary files if user cancelled
             for temp_file in converted_files:

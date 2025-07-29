@@ -1,89 +1,55 @@
 # SCDPlayer
 
-A Windows audio player for SCD music files from games like Kingdom Hearts and Final Fantasy XIV. Also supports WAV, MP3, OGG, and FLAC files.
+A Windows audio player designed for game music files (SCD format) with Kingdom Hearts Randomizer integration. Also plays WAV, MP3, OGG, and FLAC files.
 
-## Acknowledgements
-Thank you to the awesome people at the KHRando Discord for some great suggestions and encouragement on this project!
+## Features
+
+- **Game Audio Support**: Native SCD file playback from Kingdom Hearts, Final Fantasy XIV, and other games
+- **Library Management**: Organize files by folder with search and filtering
+- **KH Randomizer Integration**: Export music directly to Kingdom Hearts Randomizer folders
+- **Format Conversion**: Convert between SCD, WAV, MP3, OGG, and FLAC formats
+- **Loop Editor**: Professional waveform editor for setting precise loop points
+- **Auto-Updates**: Built-in update system keeps you current
+- **Recycle Bin Safety**: File deletion uses Windows Recycle Bin for safety
 
 ## Installation
 
-**Download the executable (recommended):**
-1. Go to [Releases](https://github.com/skylect-dev/SCDPlayer/releases)
-2. Download `SCDPlayer-vX.X.X.zip`
-3. Extract and run `SCDPlayer.exe`
+**Download & Run (Recommended):**
+1. Get the latest version from [Releases](https://github.com/skylect-dev/SCDPlayer/releases)
+2. Extract `SCDPlayer-vX.X.X.zip`
+3. Run `SCDPlayer.exe`
 
-No additional setup needed - everything is included.
+Everything needed is included - no additional setup required.
 
-**Run from source:**
-```bash
-git clone https://github.com/skylect-dev/SCDPlayer.git
-cd SCDPlayer
-pip install -r requirements.txt
-python main.py
-```
-
-You'll also need to download vgmstream and FFmpeg to the appropriate folders.
-
-## Usage
+## Quick Start
 
 1. Launch SCDPlayer
-2. Add folders containing your audio files using the "Add Folder" button
-3. Double-click any file in the library to play
-4. Use the conversion buttons to convert files between formats
-5. Your library folders and preferences are automatically saved
+2. Click "Add Folder" to add your music folders
+3. Double-click any file to play
+4. Use the search box to find specific tracks
+5. Select files and use conversion/export buttons as needed
 
-## Supported Formats
-
-- **SCD**: Game audio files (requires vgmstream)
-- **WAV**: Standard uncompressed audio
-- **MP3**: Compressed audio (requires FFmpeg for conversion)
-- **OGG**: Compressed audio (requires FFmpeg for conversion)  
-- **FLAC**: Lossless compressed audio (requires FFmpeg for conversion)
-
-## Technical Notes
-
-- **Portable Executable**: The `.exe` version is completely self-contained with all dependencies bundled
-- SCD to WAV conversion uses bundled vgmstream
-- WAV to SCD conversion is currently a placeholder (copies file with .scd extension)
-- Format conversions use bundled FFmpeg
-- MP3 files are automatically converted to WAV for reliable playback
-- Tracks auto-advance when finished
-- Temporary files are automatically cleaned up when the application closes
+Your library and settings are automatically saved.
 
 ## Building from Source
 
-If you want to build the executable yourself:
+**Requirements:**
+- Python 3.7+ with `pip install PyQt5 pyinstaller`
+- Download [vgmstream](https://github.com/vgmstream/vgmstream/releases) to `vgmstream/` folder
+- Download [FFmpeg](https://ffmpeg.org/download.html) to `ffmpeg/` folder
 
-**Prerequisites:**
-1. Python 3.7+ with PyQt5 installed: `pip install PyQt5 pyinstaller`
-2. **vgmstream** (for SCD support): 
-   - Download from [vgmstream releases](https://github.com/vgmstream/vgmstream/releases)
-   - Extract all files to `vgmstream/` folder
-   - Ensure `vgmstream-cli.exe` is present
-3. **FFmpeg** (for format conversion):
-   - Download from [FFmpeg](https://ffmpeg.org/download.html)
-   - Extract to `ffmpeg/` folder (maintaining the `bin/`, `lib/`, etc. structure)
-   - Ensure `ffmpeg/bin/ffmpeg.exe` is present
-
-**Build Steps:**
+**Build:**
 ```bash
-# Clone and navigate to project
 git clone https://github.com/skylect-dev/SCDPlayer.git
 cd SCDPlayer
-
-# Install Python dependencies
 pip install -r requirements.txt
-
-# Set up vgmstream and ffmpeg folders (see above)
-
-# Build the executable
 pyinstaller SCDPlayer.spec
-
-# The executable will be in dist/SCDPlayer/SCDPlayer.exe
 ```
 
-The resulting executable is completely portable and self-contained!
+## Acknowledgments
+
+Thanks to the KHRando Discord community for feedback and suggestions!
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License

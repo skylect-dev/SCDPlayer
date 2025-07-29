@@ -12,13 +12,13 @@ class KHRandoExporter:
     
     # KH Rando folder structure
     MUSIC_CATEGORIES = {
-        'atlantica': 'Atlantica (Underwater)',
-        'battle': 'Battle Music',
-        'boss': 'Boss Battle Music', 
-        'cutscene': 'Cutscene Music',
-        'field': 'Field/World Music',
-        'title': 'Title/Menu Music',
-        'wild': 'Wild Card/Other Music'
+        'atlantica': 'Atlantica',
+        'battle': 'Battle',
+        'boss': 'Boss Battle', 
+        'cutscene': 'Cutscene',
+        'field': 'Field',
+        'title': 'Title',
+        'wild': 'Wild'
     }
     
     def __init__(self, parent=None):

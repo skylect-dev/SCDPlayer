@@ -13,13 +13,21 @@ class AudioLibrary:
     
     SUPPORTED_EXTENSIONS = ['.scd', '.wav', '.mp3', '.ogg', '.flac']
     
-    def __init__(self, file_list_widget: QListWidget, kh_rando_exporter=None):
+    def __init__(self, file_list_widget: QListWidget, kh_rando_exporter=None, kh_rando_file_list=None, kh_categories=None):
         self.file_list = file_list_widget
         self.kh_rando_exporter = kh_rando_exporter
+        self.kh_rando_file_list = kh_rando_file_list  # Single list widget for KH Rando
+        self.kh_categories = kh_categories or {}  # Category mapping
+        self.kh_rando_files_by_category = {}  # Store files by category for population
         
     def scan_folders(self, folders: List[str], scan_subdirs: bool = True, kh_rando_folder: str = "") -> None:
         """Scan library folders for supported audio files"""
         self.file_list.clear()
+        
+        # Clear KH Rando files tracking
+        self.kh_rando_files_by_category = {}
+        for category_key in self.kh_categories.keys():
+            self.kh_rando_files_by_category[category_key] = []
         
         # Refresh KH Rando existing files cache before scanning
         if self.kh_rando_exporter:
@@ -32,6 +40,14 @@ class AudioLibrary:
         # Scan KH Rando folder separately - always with subdirectories enabled
         if kh_rando_folder and kh_rando_folder not in folders:
             self._scan_single_folder(Path(kh_rando_folder), True)
+        
+        # Force update of KH Rando list after scan completion
+        self._update_kh_rando_list()
+    
+    def _update_kh_rando_list(self):
+        """Signal that KH Rando list should be updated"""
+        # The main window will call _populate_kh_rando_list which reads self.kh_rando_files_by_category
+        pass
     
     def _scan_single_folder(self, folder_path: Path, scan_subdirs: bool) -> None:
         """Scan a single folder for audio files"""
@@ -114,6 +130,38 @@ class AudioLibrary:
                 else:
                     item.setForeground(QColor('orange'))  # Orange for duplicates elsewhere
             
+            # Check if this is a KH Rando file and should go in KH list
+            if self.kh_rando_file_list and self.kh_rando_exporter:
+                filename_base = filename
+                added_to_kh_display = False
+                
+                if self.kh_rando_exporter.is_file_path_in_kh_rando(str(file_path)):
+                    # File is in KH Rando folder - determine category from path
+                    for part in file_path.parts:
+                        if part.lower() in [cat.lower() for cat in self.kh_rando_exporter.MUSIC_CATEGORIES.keys()]:
+                            # Find the correct category key
+                            for cat_key in self.kh_rando_exporter.MUSIC_CATEGORIES.keys():
+                                if part.lower() == cat_key.lower():
+                                    if cat_key in self.kh_categories:
+                                        # Add to category tracking
+                                        simple_display = f"{filename} ({format_file_size(size)})"
+                                        self.kh_rando_files_by_category[cat_key].append((str(file_path), simple_display))
+                                        added_to_kh_display = True
+                                    break
+                            break
+                    
+                    # If file was added to KH display, don't add to regular list
+                    if added_to_kh_display:
+                        return
+                else:
+                    # Check if file exists in any KH Rando category (duplicates elsewhere)
+                    kh_categories = self.kh_rando_exporter.is_file_in_kh_rando(filename_base)
+                    if kh_categories:
+                        # This is a duplicate - don't show in KH Rando sections, only in regular list
+                        # The regular list will show the duplicate status in orange
+                        pass
+            
+            # Add to regular library list
             self.file_list.addItem(item)
             
         except OSError as e:
@@ -122,9 +170,22 @@ class AudioLibrary:
     def get_playlist(self) -> List[str]:
         """Get all files in library as a playlist"""
         playlist = []
+        
+        # Add files from regular library
         for i in range(self.file_list.count()):
             item = self.file_list.item(i)
-            playlist.append(item.data(Qt.UserRole))
+            file_path = item.data(Qt.UserRole)
+            if file_path and not file_path.startswith("FOLDER_HEADER") and file_path not in playlist:
+                playlist.append(file_path)
+        
+        # Add files from KH Rando list
+        if self.kh_rando_file_list:
+            for i in range(self.kh_rando_file_list.count()):
+                item = self.kh_rando_file_list.item(i)
+                file_path = item.data(Qt.UserRole)
+                if file_path and not file_path.startswith("KH_CATEGORY_HEADER") and file_path not in playlist:
+                    playlist.append(file_path)
+        
         return playlist
     
     def find_file_index(self, file_path: str) -> int:
