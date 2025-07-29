@@ -1638,6 +1638,14 @@ class LoopEditorDialog(QDialog):
                 self.waveform.samples_per_pixel = max(1, total_samples / widget_width)
                 self.waveform._scroll_position = 0
                 self.waveform.update()
+                
+                # IMPORTANT: Update timeline with the correct initial parameters
+                if hasattr(self.waveform, 'scrollChanged') and self.waveform.scrollChanged:
+                    self.waveform.scrollChanged(
+                        self.waveform._scroll_position, 
+                        self.waveform.zoom_factor, 
+                        self.waveform.samples_per_pixel
+                    )
         
         # Initialize scrollbar with correct values
         self.update_scrollbar_range()
