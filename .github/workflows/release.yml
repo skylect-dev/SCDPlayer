@@ -45,17 +45,37 @@ jobs:
     
     - name: Build executable
       run: |
-        # Try building with encrypted PyInstaller first (better antivirus compatibility)
-        Write-Host "Building with encrypted PyInstaller..."
-        python -m PyInstaller SCDPlayer.spec
+        # Build the standalone updater first
+        Write-Host "Building standalone updater..."
+        python -m PyInstaller updater.spec --noconfirm
         
-        # Verify the build worked
-        if (-not (Test-Path "dist\SCDPlayer\SCDPlayer.exe")) {
-            Write-Host "Build failed, executable not found"
+        # Verify updater build worked
+        if (-not (Test-Path "dist\updater.exe")) {
+            Write-Host "Updater build failed, executable not found"
             exit 1
         }
         
-        Write-Host "Build successful with encryption enabled"
+        # Build main application with encrypted PyInstaller
+        Write-Host "Building main SCDPlayer application..."
+        python -m PyInstaller SCDPlayer.spec --noconfirm
+        
+        # Verify the main build worked
+        if (-not (Test-Path "dist\SCDPlayer\SCDPlayer.exe")) {
+            Write-Host "Main application build failed, executable not found"
+            exit 1
+        }
+        
+        # Copy updater.exe into the SCDPlayer distribution folder
+        Write-Host "Copying updater.exe to SCDPlayer folder..."
+        Copy-Item "dist\updater.exe" "dist\SCDPlayer\updater.exe" -Force
+        
+        # Verify updater was copied
+        if (-not (Test-Path "dist\SCDPlayer\updater.exe")) {
+            Write-Host "Failed to copy updater.exe to SCDPlayer folder"
+            exit 1
+        }
+        
+        Write-Host "Build successful with updater included"
         
     - name: Verify build output
       run: |
@@ -64,6 +84,19 @@ jobs:
         if (Test-Path "dist\SCDPlayer") {
             Write-Host "Main application files:"
             Get-ChildItem "dist\SCDPlayer" | ForEach-Object { Write-Host "  $_" }
+            Write-Host ""
+            
+            # Verify critical files exist
+            $criticalFiles = @("SCDPlayer.exe", "updater.exe")
+            foreach ($file in $criticalFiles) {
+                if (Test-Path "dist\SCDPlayer\$file") {
+                    Write-Host "✓ $file found"
+                } else {
+                    Write-Host "✗ $file MISSING!"
+                    exit 1
+                }
+            }
+            
             Write-Host ""
             Write-Host "Build size information:"
             $totalSize = (Get-ChildItem "dist\SCDPlayer" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
@@ -81,25 +114,6 @@ jobs:
         # Copy the entire PyInstaller onedir output
         Copy-Item -Path "dist\SCDPlayer\*" -Destination "SCDPlayer\" -Recurse -Force
         
-        # Add additional documentation
-        copy README.md SCDPlayer\
-        
-        # Create a simple readme for users
-        echo "SCDPlayer - Portable Audio Player for Game Music" > SCDPlayer\INSTRUCTIONS.txt
-        echo "=================================================" >> SCDPlayer\INSTRUCTIONS.txt
-        echo "" >> SCDPlayer\INSTRUCTIONS.txt
-        echo "To run SCDPlayer:" >> SCDPlayer\INSTRUCTIONS.txt
-        echo "1. Extract this entire folder anywhere on your computer" >> SCDPlayer\INSTRUCTIONS.txt
-        echo "2. Double-click SCDPlayer.exe to start the application" >> SCDPlayer\INSTRUCTIONS.txt
-        echo "" >> SCDPlayer\INSTRUCTIONS.txt
-        echo "Features:" >> SCDPlayer\INSTRUCTIONS.txt
-        echo "- Play SCD files from Kingdom Hearts and Final Fantasy XIV" >> SCDPlayer\INSTRUCTIONS.txt
-        echo "- Support for WAV, MP3, OGG, FLAC audio formats" >> SCDPlayer\INSTRUCTIONS.txt
-        echo "- Audio file conversion capabilities" >> SCDPlayer\INSTRUCTIONS.txt
-        echo "- Built-in audio library management" >> SCDPlayer\INSTRUCTIONS.txt
-        echo "" >> SCDPlayer\INSTRUCTIONS.txt
-        echo "No additional downloads or installations required!" >> SCDPlayer\INSTRUCTIONS.txt
-
     - name: Set version for naming
       id: set_version
       run: |
@@ -132,29 +146,5 @@ jobs:
         draft: false
         prerelease: false
         generate_release_notes: true
-        body: |
-          ## SCDPlayer ${{ github.ref_name }}
-          
-          ### Enhanced Antivirus Compatibility ✅
-          This release uses encrypted builds and proper executable signing to minimize false positive detections. While some antivirus software may still flag PyInstaller applications, this version is significantly more compatible.
-          
-          **If Windows Defender still flags the download:**
-          1. Click "Keep" if prompted during download
-          2. Or add temporary exclusion for the download folder
-          3. Extract and add the application folder to permanent exclusions
-          
-          **Verification:** This is open source software built automatically via GitHub Actions. All code is available for inspection.
-          
-          ### Usage
-          1. Download and extract the ZIP file
-          2. Run SCDPlayer.exe from the extracted folder
-          3. All dependencies are included - no additional installation needed
-          
-          **New in this version:**
-          - Enhanced antivirus compatibility with encrypted builds
-          - Improved Loop Editor functionality  
-          - Better audio analysis tools
-          - Volume control enhancements
-          
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
