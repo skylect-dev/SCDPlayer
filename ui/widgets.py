@@ -1,7 +1,7 @@
 """Custom UI widgets for SCDPlayer"""
 import math
 import logging
-from PyQt5.QtWidgets import QLabel, QSplashScreen
+from PyQt5.QtWidgets import QLabel, QSplashScreen, QSlider
 from PyQt5.QtCore import QTimer, Qt, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QPolygon, QPen, QLinearGradient, QRadialGradient
 from PyQt5.QtCore import QPoint, QRect
@@ -228,6 +228,74 @@ def create_app_icon(size=32):
     return QIcon(pixmap)
 
 
+class LoopSlider(QSlider):
+    """Custom slider that can display loop markers"""
+    
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self.loop_start = 0
+        self.loop_end = 0
+        self.show_markers = False
+        
+    def set_loop_markers(self, start, end, total_duration):
+        """Set loop markers positions (all in milliseconds)"""
+        print(f"DEBUG: Setting loop markers - start: {start}ms, end: {end}ms, total: {total_duration}ms")
+        if total_duration > 0:
+            self.loop_start = start
+            self.loop_end = end
+            self.show_markers = True
+            self.update()  # Trigger repaint
+        else:
+            self.show_markers = False
+            
+    def clear_loop_markers(self):
+        """Clear loop markers"""
+        self.show_markers = False
+        self.update()
+        
+    def paintEvent(self, event):
+        """Custom paint to show loop markers"""
+        # Draw the normal slider first
+        super().paintEvent(event)
+        
+        if not self.show_markers:
+            return
+            
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Calculate marker positions
+        slider_range = self.maximum() - self.minimum()
+        if slider_range <= 0:
+            return
+            
+        width = self.width()
+        groove_margin = 10  # Approximate margin for the groove
+        usable_width = width - (2 * groove_margin)
+        
+        # Calculate pixel positions for loop markers
+        start_ratio = (self.loop_start - self.minimum()) / slider_range
+        end_ratio = (self.loop_end - self.minimum()) / slider_range
+        
+        start_x = groove_margin + (start_ratio * usable_width)
+        end_x = groove_margin + (end_ratio * usable_width)
+        
+        # Draw loop start marker (green)
+        painter.setPen(QPen(QColor("#4a8a4a"), 2))
+        painter.drawLine(int(start_x), 5, int(start_x), self.height() - 5)
+        
+        # Draw loop end marker (red)
+        painter.setPen(QPen(QColor("#8a4a4a"), 2))
+        painter.drawLine(int(end_x), 5, int(end_x), self.height() - 5)
+        
+        # Draw loop region highlight (semi-transparent)
+        if end_x > start_x:
+            painter.fillRect(int(start_x), 8, int(end_x - start_x), self.height() - 16, 
+                           QColor(80, 120, 80, 40))
+        
+        painter.end()
+
+
 def create_icon(icon_type, size=24):
     """Create simple icons using QPainter"""
     pixmap = QPixmap(size, size)
@@ -277,6 +345,38 @@ def create_icon(icon_type, size=24):
         ])
         painter.drawPolygon(triangle)
         painter.drawRect(center + 6, center - 8, 2, 16)
+        
+    elif icon_type == "loop":
+        # Loop icon - circular arrow
+        painter.setPen(QPen(QColor("#f0f0f0"), 2, Qt.SolidLine))
+        painter.setBrush(Qt.NoBrush)
+        # Draw circular path
+        painter.drawEllipse(center - 6, center - 6, 12, 12)
+        # Draw arrow at the end
+        arrow = QPolygon([
+            QPoint(center + 6, center - 2),
+            QPoint(center + 4, center - 6),
+            QPoint(center + 8, center - 6)
+        ])
+        painter.setBrush(QColor("#f0f0f0"))
+        painter.setPen(Qt.NoPen)
+        painter.drawPolygon(arrow)
+        
+    elif icon_type == "loop_on":
+        # Loop icon - circular arrow (highlighted)
+        painter.setPen(QPen(QColor("#4a8a4a"), 3, Qt.SolidLine))
+        painter.setBrush(Qt.NoBrush)
+        # Draw circular path
+        painter.drawEllipse(center - 6, center - 6, 12, 12)
+        # Draw arrow at the end
+        arrow = QPolygon([
+            QPoint(center + 6, center - 2),
+            QPoint(center + 4, center - 6),
+            QPoint(center + 8, center - 6)
+        ])
+        painter.setBrush(QColor("#4a8a4a"))
+        painter.setPen(Qt.NoPen)
+        painter.drawPolygon(arrow)
     
     painter.end()
     return QIcon(pixmap)

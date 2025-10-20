@@ -54,6 +54,10 @@ temp_*
 *.wav.tmp
 *.wav
 
+# .NET installer (download separately for releases)
+dotnet_installer/
+windowsdesktop-runtime-*.exe
+
 # Temporary files
 *.log
 *.bak

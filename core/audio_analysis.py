@@ -158,7 +158,7 @@ class AudioAnalyzer:
     
     def get_gain_recommendation(self, levels: AudioLevels) -> Dict[str, Any]:
         """
-        Provide gain adjustment recommendations based on analysis
+        Provide gain adjustment recommendations based on game audio analysis
         
         Args:
             levels: AudioLevels object from analysis
@@ -168,40 +168,70 @@ class AudioAnalyzer:
         """
         recommendations = []
         
-        # Peak level recommendations
-        if levels.peak_db > -0.1:
+        # Peak level recommendations based on real game audio (0.0 to -0.6dB typical)
+        if levels.peak_db > 0.1:
             recommendations.append({
                 'type': 'warning',
-                'message': f'Peak level is very high ({levels.peak_db:.1f} dB). Risk of clipping.',
-                'suggestion': f'Reduce gain by {abs(levels.peak_db + 3):.1f} dB for safety headroom.'
+                'message': f'Peak level exceeds game audio ({levels.peak_db:.1f} dB). Clipping likely.',
+                'suggestion': f'Reduce gain by {abs(levels.peak_db + 0.2):.1f} dB to match typical game audio (-0.2dB).'
             })
-        elif levels.peak_db < -20:
+        elif levels.peak_db > -0.1:
+            recommendations.append({
+                'type': 'info',
+                'message': f'Peak level matches maximum game audio ({levels.peak_db:.1f} dB).',
+                'suggestion': 'Level is at maximum game audio range. No adjustment needed.'
+            })
+        elif levels.peak_db < -10:
             recommendations.append({
                 'type': 'info', 
                 'message': f'Peak level is low ({levels.peak_db:.1f} dB).',
-                'suggestion': f'Could increase gain by up to {abs(levels.peak_db + 3):.1f} dB.'
+                'suggestion': f'Could increase gain by up to {abs(levels.peak_db + 0.2):.1f} dB to match typical game audio.'
             })
-        
-        # RMS level recommendations  
-        if levels.rms_db < -30:
+        elif -0.6 <= levels.peak_db <= -0.1:
             recommendations.append({
                 'type': 'info',
-                'message': f'RMS level is quiet ({levels.rms_db:.1f} dB).',
-                'suggestion': 'Consider increasing overall volume for better presence.'
+                'message': f'Peak level is within game audio range ({levels.peak_db:.1f} dB).',
+                'suggestion': 'Good dynamic range preserved.'
             })
         
-        # LUFS recommendations (for music, target around -14 to -16 LUFS)
+        # RMS level recommendations based on real game audio (-13 to -18dB typical)
+        if levels.rms_db > -10:
+            recommendations.append({
+                'type': 'warning',
+                'message': f'RMS level is higher than game audio ({levels.rms_db:.1f} dB).',
+                'suggestion': 'Consider reducing to -13 to -18dB range typical of game audio.'
+            })
+        elif -18 <= levels.rms_db <= -13:
+            recommendations.append({
+                'type': 'info',
+                'message': f'RMS level matches game audio range ({levels.rms_db:.1f} dB).',
+                'suggestion': 'RMS level is optimal for game audio integration.'
+            })
+        elif levels.rms_db < -25:
+            recommendations.append({
+                'type': 'info',
+                'message': f'RMS level is low ({levels.rms_db:.1f} dB).',
+                'suggestion': 'Could increase to -13 to -18dB range to match game audio.'
+            })
+        
+        # LUFS recommendations based on game audio (-14 to -18 LUFS typical)
         if levels.lufs > -10:
             recommendations.append({
                 'type': 'warning',
-                'message': f'Loudness is very high ({levels.lufs:.1f} LUFS).',
-                'suggestion': 'Consider reducing overall level to prevent listener fatigue.'
+                'message': f'Loudness exceeds game audio ({levels.lufs:.1f} LUFS).',
+                'suggestion': 'Consider reducing to -14 to -18 LUFS range typical of game audio.'
+            })
+        elif -18 <= levels.lufs <= -14:
+            recommendations.append({
+                'type': 'info',
+                'message': f'Loudness matches game audio range ({levels.lufs:.1f} LUFS).',
+                'suggestion': 'LUFS level is optimal for game audio integration.'
             })
         elif levels.lufs < -25:
             recommendations.append({
                 'type': 'info',
                 'message': f'Loudness is low ({levels.lufs:.1f} LUFS).',
-                'suggestion': 'Could increase overall loudness for better playback levels.'
+                'suggestion': 'Could increase to -14 to -18 LUFS range to match game audio.'
             })
         
         # Clipping warnings
@@ -212,12 +242,12 @@ class AudioAnalyzer:
                 'suggestion': 'Reduce gain to eliminate distortion.'
             })
         
-        # Dynamic range assessment
+        # Dynamic range assessment - game audio typically has good dynamic range
         if levels.dynamic_range_db < 6:
             recommendations.append({
                 'type': 'warning',
                 'message': f'Low dynamic range ({levels.dynamic_range_db:.1f} dB).',
-                'suggestion': 'Audio may be over-compressed.'
+                'suggestion': 'Audio may be over-compressed compared to typical game audio.'
             })
         elif levels.dynamic_range_db > 30:
             recommendations.append({
@@ -429,7 +459,7 @@ class AudioAnalyzer:
     
     def auto_level_adjustment(self, audio_data: np.ndarray) -> VolumeAdjustment:
         """
-        Intelligent auto-leveling that chooses the best normalization method
+        Intelligent auto-leveling that targets realistic game audio levels
         
         Args:
             audio_data: Input audio data
@@ -441,18 +471,36 @@ class AudioAnalyzer:
             # Analyze current levels
             levels = self.analyze_audio_levels(audio_data)
             
-            # Choose normalization strategy based on audio characteristics
-            if levels.dynamic_range_db > 20:  # High dynamic range - preserve it with conservative peak normalization
-                result = self.normalize_peak(audio_data, target_db=-3.0)
-                result.normalization_type = "Auto Level (Peak - High Dynamic Range)"
+            # Choose normalization strategy based on current levels and game audio standards
+            if levels.peak_db <= -10:
+                # Very quiet audio - normalize to typical game audio peak (-0.2dB)
+                result = self.normalize_peak(audio_data, target_db=-0.2)
+                result.normalization_type = "Auto Level (Peak to Game Standard)"
                 return result
-            elif levels.dynamic_range_db < 6:  # Low dynamic range (compressed) - use RMS
-                result = self.normalize_rms(audio_data, target_db=-12.0)
-                result.normalization_type = "Auto Level (RMS - Compressed Audio)"
+            elif levels.peak_db > 0.1:
+                # Audio is clipping or too hot - bring down to conservative game level
+                result = self.normalize_peak(audio_data, target_db=-0.6)
+                result.normalization_type = "Auto Level (Peak Reduced - Clipping Prevention)"
                 return result
-            else:  # Medium dynamic range - balanced approach
-                result = self.normalize_peak(audio_data, target_db=-1.0)
-                result.normalization_type = "Auto Level (Peak - Balanced)"
+            elif levels.rms_db < -25:
+                # RMS is very low - use RMS normalization to game audio range
+                result = self.normalize_rms(audio_data, target_db=-15.0)
+                result.normalization_type = "Auto Level (RMS to Game Range)"
+                return result
+            elif levels.rms_db > -10:
+                # RMS is too high - reduce to game audio range
+                result = self.normalize_rms(audio_data, target_db=-15.0)
+                result.normalization_type = "Auto Level (RMS Reduced to Game Range)"
+                return result
+            elif -0.6 <= levels.peak_db <= 0.0 and -18 <= levels.rms_db <= -13:
+                # Already in game audio range - minimal adjustment to typical level
+                result = self.normalize_peak(audio_data, target_db=-0.2)
+                result.normalization_type = "Auto Level (Fine-tune to Game Standard)"
+                return result
+            else:
+                # General case - normalize to typical game audio peak
+                result = self.normalize_peak(audio_data, target_db=-0.2)
+                result.normalization_type = "Auto Level (Peak to Game Standard)"
                 return result
                 
         except Exception as e:

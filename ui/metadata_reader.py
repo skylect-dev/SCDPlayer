@@ -50,6 +50,8 @@ class LoopMetadataReader:
                 [self.vgmstream_path, '-m', file_path],
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 startupinfo=self._create_subprocess_startupinfo(),
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
@@ -176,6 +178,8 @@ class LoopMetadataReader:
                 [self.vgmstream_path, '-i', file_path],
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 timeout=5,  # Quick timeout
                 startupinfo=self._create_subprocess_startupinfo(),
                 creationflags=subprocess.CREATE_NO_WINDOW

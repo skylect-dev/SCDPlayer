@@ -21,6 +21,12 @@ A Windows audio player designed for game music files (SCD format) with Kingdom H
 
 Everything needed is included - no additional setup required.
 
+**Note for SCD Conversion:**
+- Converting files **to** SCD format requires .NET 5.0 Desktop Runtime
+- SCDPlayer will automatically prompt to install it when needed (one-time setup)
+- Or download manually: [.NET 5.0 Runtime](https://dotnet.microsoft.com/download/dotnet/5.0)
+- All other features work without .NET
+
 ## Quick Start
 
 1. Launch SCDPlayer

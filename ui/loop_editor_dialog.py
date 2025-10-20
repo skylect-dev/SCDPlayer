@@ -64,8 +64,8 @@ class CustomVolumeDialog(QDialog):
 Current RMS: {self.current_levels.rms_db:.1f} dB
 Dynamic Range: {self.current_levels.dynamic_range_db:.1f} dB
 
-Note: Peak around -3 to -2dB is good for in-game audio
-Most game audio is around -0.2dB peak level""")
+Note: Game audio typically peaks at 0.0 to -0.6dB
+Real game audio averages around -13 to -18dB RMS""")
         current_info.setStyleSheet("font-family: monospace; color: #ddd; padding: 8px;")
         current_layout.addWidget(current_info)
         
@@ -93,7 +93,7 @@ Most game audio is around -0.2dB peak level""")
         input_layout = QHBoxLayout()
         self.target_spin = QDoubleSpinBox()
         self.target_spin.setRange(-60.0, 0.0)
-        self.target_spin.setValue(-3.0)  # Updated for better in-game audio
+        self.target_spin.setValue(-0.2)  # Updated to match real game audio
         self.target_spin.setSuffix(" dB")
         self.target_spin.setDecimals(1)
         self.target_spin.setSingleStep(0.1)
@@ -103,19 +103,19 @@ Most game audio is around -0.2dB peak level""")
         # Preset buttons
         preset_layout = QHBoxLayout()
         
-        game_preset = QPushButton("Game (-3dB)")
-        game_preset.clicked.connect(lambda: self.target_spin.setValue(-3.0))
-        game_preset.setToolTip("Good level for in-game audio")
+        game_preset = QPushButton("Conservative (-0.6dB)")
+        game_preset.clicked.connect(lambda: self.target_spin.setValue(-0.6))
+        game_preset.setToolTip("Conservative peak level like some game audio")
         game_preset.setStyleSheet("QPushButton { background-color: #2a5a2a; }")
         
         typical_preset = QPushButton("Typical (-0.2dB)")  
         typical_preset.clicked.connect(lambda: self.target_spin.setValue(-0.2))
-        typical_preset.setToolTip("Typical game audio peak level")
+        typical_preset.setToolTip("Most common game audio peak level")
         typical_preset.setStyleSheet("QPushButton { background-color: #5a5a2a; }")
         
-        max_preset = QPushButton("Max (-0.1dB)")
-        max_preset.clicked.connect(lambda: self.target_spin.setValue(-0.1))
-        max_preset.setToolTip("Maximum level with minimal headroom")
+        max_preset = QPushButton("Maximum (0.0dB)")
+        max_preset.clicked.connect(lambda: self.target_spin.setValue(0.0))
+        max_preset.setToolTip("Maximum level with zero headroom (some game audio)")
         max_preset.setStyleSheet("QPushButton { background-color: #5a2a2a; }")
         
         preset_layout.addWidget(game_preset)
@@ -185,13 +185,13 @@ Most game audio is around -0.2dB peak level""")
     def update_recommended_value(self):
         """Update recommended value based on selected method"""
         if self.method_peak.isChecked():
-            # For peak normalization, suggest -3dB for gaming
-            if self.target_spin.value() == -12.0:  # If it was RMS default
-                self.target_spin.setValue(-3.0)
+            # For peak normalization, suggest -0.2dB for gaming (real game audio level)
+            if self.target_spin.value() == -15.0:  # If it was RMS default
+                self.target_spin.setValue(-0.2)
         else:  # RMS normalization
-            # For RMS normalization, suggest -12dB
-            if self.target_spin.value() in [-3.0, -0.2, -0.1]:  # If it was peak default
-                self.target_spin.setValue(-12.0)
+            # For RMS normalization, suggest -15dB (closer to real game audio)
+            if self.target_spin.value() in [-0.6, -0.2, 0.0]:  # If it was peak default
+                self.target_spin.setValue(-15.0)
     
     def get_settings(self):
         """Get the selected settings"""
@@ -308,12 +308,26 @@ class WaveformWidget(QWidget):
                     dtype = np.uint8
                 elif sample_width == 2:
                     dtype = np.int16
+                elif sample_width == 3:
+                    # 24-bit audio - convert to 32-bit for processing
+                    # Read as bytes and convert to int32
+                    audio_bytes = np.frombuffer(raw_data, dtype=np.uint8)
+                    # Reshape to get 3 bytes per sample
+                    num_samples = len(audio_bytes) // (3 * channels)
+                    audio_bytes = audio_bytes.reshape(num_samples * channels, 3)
+                    # Convert 24-bit to 32-bit (pad with zero byte)
+                    audio_int32 = np.zeros((len(audio_bytes), 4), dtype=np.uint8)
+                    audio_int32[:, 1:4] = audio_bytes  # Copy 24 bits to upper bytes
+                    audio_array = audio_int32.view(np.int32).flatten()
+                    dtype = np.int32
                 elif sample_width == 4:
                     dtype = np.int32
                 else:
                     raise ValueError(f"Unsupported sample width: {sample_width}")
                 
-                audio_array = np.frombuffer(raw_data, dtype=dtype)
+                # For non-24-bit, do standard conversion
+                if sample_width != 3:
+                    audio_array = np.frombuffer(raw_data, dtype=dtype)
                 
                 # Handle stereo by taking one channel
                 if channels == 2:
@@ -325,7 +339,12 @@ class WaveformWidget(QWidget):
                 elif dtype == np.int16:
                     audio_array = audio_array.astype(np.float32) / 32768.0
                 elif dtype == np.int32:
-                    audio_array = audio_array.astype(np.float32) / 2147483648.0
+                    if sample_width == 3:
+                        # 24-bit audio scaled to 32-bit range (shifted left by 8 bits)
+                        audio_array = audio_array.astype(np.float32) / 2147483648.0
+                    else:
+                        # True 32-bit audio
+                        audio_array = audio_array.astype(np.float32) / 2147483648.0
                 
                 self.audio_data = audio_array
                 self.sample_rate = sample_rate
@@ -1352,15 +1371,15 @@ class LoopEditorDialog(QDialog):
         
         self.auto_volume_btn = QPushButton("Auto Volume")
         self.auto_volume_btn.clicked.connect(self.auto_volume_adjustment)
-        self.auto_volume_btn.setToolTip("Intelligent auto-leveling based on audio characteristics")
+        self.auto_volume_btn.setToolTip("Intelligent auto-leveling that targets realistic game audio levels (-0.2dB peak, -15dB RMS typical)")
         
         self.normalize_peak_btn = QPushButton("Normalize Peak")
         self.normalize_peak_btn.clicked.connect(self.normalize_peak)
-        self.normalize_peak_btn.setToolTip("Normalize to -1dB peak level")
+        self.normalize_peak_btn.setToolTip("Normalize to -0.2dB peak level (typical game audio)")
         
         self.normalize_rms_btn = QPushButton("Normalize RMS") 
         self.normalize_rms_btn.clicked.connect(self.normalize_rms)
-        self.normalize_rms_btn.setToolTip("Normalize to -12dB RMS level")
+        self.normalize_rms_btn.setToolTip("Normalize to -15dB RMS level (game audio range)")
         
         self.custom_volume_btn = QPushButton("Custom Volume")
         self.custom_volume_btn.clicked.connect(self.custom_volume_adjustment)
@@ -1862,6 +1881,12 @@ class LoopEditorDialog(QDialog):
             elif sample_width == 2:  # 16-bit
                 # Convert from float32 [-1,1] to int16 [-32768,32767]
                 audio_int = (adjusted_data * 32767).clip(-32768, 32767).astype(np.int16)
+            elif sample_width == 3:  # 24-bit
+                # Convert from float32 [-1,1] to int32, then extract 24 bits
+                audio_int32 = (adjusted_data * 2147483647).clip(-2147483648, 2147483647).astype(np.int32)
+                # Convert to bytes and extract middle 3 bytes (24-bit)
+                audio_bytes = audio_int32.view(np.uint8).reshape(-1, 4)
+                audio_int = audio_bytes[:, 1:4].flatten()  # Take bytes 1-3 (24-bit portion)
             elif sample_width == 4:  # 32-bit
                 # Convert from float32 [-1,1] to int32
                 audio_int = (adjusted_data * 2147483647).clip(-2147483648, 2147483647).astype(np.int32)
@@ -1871,11 +1896,21 @@ class LoopEditorDialog(QDialog):
             
             # Handle stereo conversion if original was stereo
             if channels == 2:
-                # Duplicate mono to stereo (interleave)
-                stereo_data = np.empty(len(audio_int) * 2, dtype=audio_int.dtype)
-                stereo_data[0::2] = audio_int  # Left channel
-                stereo_data[1::2] = audio_int  # Right channel (duplicate)
-                audio_int = stereo_data
+                if sample_width == 3:
+                    # For 24-bit, we already have bytes, need to handle differently
+                    # audio_int is already flattened bytes, reshape for stereo duplication
+                    mono_samples = len(audio_int) // 3
+                    audio_24bit = audio_int.reshape(mono_samples, 3)
+                    stereo_data = np.empty((mono_samples * 2, 3), dtype=np.uint8)
+                    stereo_data[0::2] = audio_24bit  # Left channel
+                    stereo_data[1::2] = audio_24bit  # Right channel (duplicate)
+                    audio_int = stereo_data.flatten()
+                else:
+                    # Duplicate mono to stereo (interleave)
+                    stereo_data = np.empty(len(audio_int) * 2, dtype=audio_int.dtype)
+                    stereo_data[0::2] = audio_int  # Left channel
+                    stereo_data[1::2] = audio_int  # Right channel (duplicate)
+                    audio_int = stereo_data
             
             # Write new WAV file with proper error handling and retry
             # Use temporary file approach to avoid file locking issues
@@ -2067,6 +2102,12 @@ class LoopEditorDialog(QDialog):
                 audio_int = ((adjusted_data + 1.0) * 127.5).clip(0, 255).astype(np.uint8)
             elif sample_width == 2:  # 16-bit
                 audio_int = (adjusted_data * 32767).clip(-32768, 32767).astype(np.int16)
+            elif sample_width == 3:  # 24-bit
+                # Convert from float32 [-1,1] to int32, then extract 24 bits
+                audio_int32 = (adjusted_data * 2147483647).clip(-2147483648, 2147483647).astype(np.int32)
+                # Convert to bytes and extract middle 3 bytes (24-bit)
+                audio_bytes = audio_int32.view(np.uint8).reshape(-1, 4)
+                audio_int = audio_bytes[:, 1:4].flatten()  # Take bytes 1-3 (24-bit portion)
             elif sample_width == 4:  # 32-bit
                 audio_int = (adjusted_data * 2147483647).clip(-2147483648, 2147483647).astype(np.int32)
             else:
@@ -2075,10 +2116,19 @@ class LoopEditorDialog(QDialog):
             
             # Handle stereo conversion if original was stereo
             if channels == 2:
-                stereo_data = np.empty(len(audio_int) * 2, dtype=audio_int.dtype)
-                stereo_data[0::2] = audio_int  # Left channel
-                stereo_data[1::2] = audio_int  # Right channel (duplicate)
-                audio_int = stereo_data
+                if sample_width == 3:
+                    # For 24-bit, we already have bytes, need to handle differently
+                    mono_samples = len(audio_int) // 3
+                    audio_24bit = audio_int.reshape(mono_samples, 3)
+                    stereo_data = np.empty((mono_samples * 2, 3), dtype=np.uint8)
+                    stereo_data[0::2] = audio_24bit  # Left channel
+                    stereo_data[1::2] = audio_24bit  # Right channel (duplicate)
+                    audio_int = stereo_data.flatten()
+                else:
+                    stereo_data = np.empty(len(audio_int) * 2, dtype=audio_int.dtype)
+                    stereo_data[0::2] = audio_int  # Left channel
+                    stereo_data[1::2] = audio_int  # Right channel (duplicate)
+                    audio_int = stereo_data
             
             # Write to temporary file
             with wave.open(self._temp_wav_path, 'wb') as wav_file:
@@ -2633,15 +2683,15 @@ class LoopEditorDialog(QDialog):
             self.analysis_text.setText(f"Error analyzing audio: {str(e)}")
     
     def auto_volume_adjustment(self):
-        """Apply automatic volume adjustment using intelligent algorithm"""
+        """Apply automatic volume adjustment targeting realistic game audio levels"""
         self._apply_volume_adjustment("auto")
     
     def normalize_peak(self):
-        """Normalize audio to -1dB peak level"""
+        """Normalize audio to -0.2dB peak level (typical game audio)"""
         self._apply_volume_adjustment("peak")
     
     def normalize_rms(self):
-        """Normalize audio to -12dB RMS level"""
+        """Normalize audio to -15dB RMS level (game audio range)"""
         self._apply_volume_adjustment("rms")
     
     def custom_volume_adjustment(self):
@@ -2735,9 +2785,9 @@ class LoopEditorDialog(QDialog):
             if method == "auto":
                 adjustment = analyzer.auto_level_adjustment(self.waveform.audio_data)
             elif method == "peak":
-                adjustment = analyzer.normalize_peak(self.waveform.audio_data, target_db=-1.0)
+                adjustment = analyzer.normalize_peak(self.waveform.audio_data, target_db=-0.2)
             elif method == "rms":
-                adjustment = analyzer.normalize_rms(self.waveform.audio_data, target_db=-12.0)
+                adjustment = analyzer.normalize_rms(self.waveform.audio_data, target_db=-15.0)
             elif method == "custom":
                 # Open custom volume dialog
                 dialog = CustomVolumeDialog(original_levels, self)

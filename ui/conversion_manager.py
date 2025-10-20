@@ -203,6 +203,23 @@ class ConversionManager:
         if not selected_items:
             show_themed_message(self.main_window, QMessageBox.Information, 'No Selection', 'Please select one or more files to convert.')
             return
+        
+        # Check for .NET 5.0 runtime availability
+        if not self.main_window.converter.check_dotnet_available():
+            from utils.dotnet_installer import prompt_dotnet_install, install_dotnet_runtime
+            
+            # Ask user if they want to install .NET
+            if prompt_dotnet_install(self.main_window):
+                # Run installation
+                if install_dotnet_runtime(self.main_window):
+                    # Installation successful - invalidate cache and proceed
+                    self.main_window.converter.invalidate_dotnet_cache()
+                else:
+                    # Installation failed - abort
+                    return
+            else:
+                # User declined - abort
+                return
             
         # Get file paths
         files_to_convert = []

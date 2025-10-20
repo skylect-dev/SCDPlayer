@@ -169,7 +169,7 @@ class HybridLoopManager:
                 '-ar', '48000',  # Standard sample rate for game audio
                 '-y',  # Overwrite output
                 temp_wav_path
-            ], capture_output=True, text=True, 
+            ], capture_output=True, text=True, encoding='utf-8', errors='replace',
                startupinfo=self._create_subprocess_startupinfo(),
                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             
@@ -200,7 +200,7 @@ class HybridLoopManager:
                 str(vgmstream_path),
                 '-o', temp_wav_path,
                 scd_path
-            ], capture_output=True, text=True,
+            ], capture_output=True, text=True, encoding='utf-8', errors='replace',
                startupinfo=self._create_subprocess_startupinfo(),
                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             
@@ -252,7 +252,7 @@ class HybridLoopManager:
                 '-show_format',
                 '-show_streams',
                 wav_path
-            ], capture_output=True, text=True,
+            ], capture_output=True, text=True, encoding='utf-8', errors='replace',
                startupinfo=self._create_subprocess_startupinfo(),
                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             
@@ -537,7 +537,7 @@ class HybridLoopManager:
                 str(encoder_exe),
                 scd_name,
                 wav_name
-            ], cwd=encoder_dir, capture_output=True, text=True,
+            ], cwd=encoder_dir, capture_output=True, text=True, encoding='utf-8', errors='replace',
                startupinfo=self._create_subprocess_startupinfo(),
                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             

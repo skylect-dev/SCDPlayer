@@ -12,6 +12,28 @@ class AudioConverter:
     
     def __init__(self):
         self.temp_files = []
+        self._dotnet_checked = False
+        self._dotnet_available = False
+    
+    def check_dotnet_available(self) -> bool:
+        """
+        Check if .NET 5.0 runtime is available (cached result)
+        
+        Returns:
+            True if .NET 5.0 is available
+        """
+        if not self._dotnet_checked:
+            from utils.dotnet_installer import DotNetRuntimeChecker
+            self._dotnet_available, _ = DotNetRuntimeChecker.check_dotnet_installed()
+            self._dotnet_checked = True
+            logging.info(f".NET 5.0 availability: {self._dotnet_available}")
+        
+        return self._dotnet_available
+    
+    def invalidate_dotnet_cache(self):
+        """Force re-check of .NET availability (call after installation)"""
+        self._dotnet_checked = False
+        self._dotnet_available = False
     
     def _create_subprocess_startupinfo(self) -> subprocess.STARTUPINFO:
         """Create startup info to hide console windows"""
@@ -230,6 +252,8 @@ class AudioConverter:
                     cwd=str(encoder_dir),  # CRITICAL: Run from MusicEncoder directory
                     capture_output=True,
                     text=True,
+                    encoding='utf-8',
+                    errors='replace',
                     timeout=120,  # 2 minute timeout for conversion
                     startupinfo=self._create_subprocess_startupinfo(),
                     creationflags=subprocess.CREATE_NO_WINDOW

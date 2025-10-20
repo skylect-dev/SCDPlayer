@@ -1,5 +1,6 @@
 """Streamlined main application window for SCDPlayer"""
 import os
+import logging
 import tempfile
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QFileDialog, 
@@ -13,7 +14,7 @@ from PyQt5.QtCore import QUrl, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QKeySequence, QCursor
 
 from version import __version__
-from ui.widgets import ScrollingLabel, create_icon, create_app_icon
+from ui.widgets import ScrollingLabel, create_icon, create_app_icon, LoopSlider
 from ui.styles import DARK_THEME
 from ui.dialogs import show_themed_message, show_themed_file_dialog, apply_title_bar_theming
 from ui.conversion_manager import ConversionManager
@@ -48,6 +49,7 @@ class SCDPlayer(QMainWindow):
         self.current_file = None
         self.current_playlist_index = -1
         self.playlist = []
+        self._loop_marker_retry_count = 0  # For handling loop marker timing
         
         # Initialize UI components
         self.setup_menu_bar()
@@ -146,8 +148,8 @@ class SCDPlayer(QMainWindow):
         info_layout.addWidget(self.time_label)
         player_layout.addLayout(info_layout)
         
-        # Seek bar
-        self.seek_slider = QSlider(Qt.Horizontal)
+        # Seek bar with loop markers
+        self.seek_slider = LoopSlider(Qt.Horizontal)
         self.seek_slider.setRange(0, 0)
         # Add state tracking for scrubbing
         self.is_playing_before_scrub = False
@@ -172,8 +174,13 @@ class SCDPlayer(QMainWindow):
         self.play_pause_btn.setFixedSize(50, 40)  # Keep play/pause button wider
         self.next_btn = self.create_control_button("next", "Next Track", self.next_track)
         self.next_btn.setFixedSize(45, 40)  # Make prev/next buttons wider
+        # Loop toggle button
+        self.loop_btn = self.create_control_button("loop", "Loop Off", self.toggle_loop)
+        self.loop_btn.setFixedSize(40, 40)
+        self.loop_btn.setEnabled(True)  # Loop button should always be enabled
+        self.loop_enabled = False  # Track loop state
         
-        for btn in [self.prev_btn, self.play_pause_btn, self.next_btn]:
+        for btn in [self.prev_btn, self.play_pause_btn, self.next_btn, self.loop_btn]:
             controls_layout.addWidget(btn)
         
         # Add the controls container to the player layout
@@ -533,6 +540,12 @@ class SCDPlayer(QMainWindow):
         self.timer = QTimer(self)
         self.timer.setInterval(500)
         self.timer.timeout.connect(self.update_time_label)
+        
+        # High-frequency timer for accurate loop checking (every 1ms for maximum precision)
+        self.loop_timer = QTimer(self)
+        self.loop_timer.setInterval(1)  # 1ms = maximum precision possible
+        self.loop_timer.timeout.connect(self.check_loop_position)
+        self.loop_timer.start()  # Always running when player exists
 
     def setup_title_bar_theming(self):
         """Setup title bar to respect OS dark mode on Windows 11"""
@@ -1171,12 +1184,26 @@ class SCDPlayer(QMainWindow):
                     # Check for loop editor support (single selection only)
                     if single_selection and (ext.endswith('.scd') or ext.endswith('.wav')):
                         single_supported_selection = True
+        else:
+            # No selection - check if we have a currently loaded file to enable buttons for
+            if self.current_file and os.path.exists(self.current_file):
+                ext = self.current_file.lower()
+                if not ext.endswith('.wav'):
+                    has_non_wav_files = True
+                if not ext.endswith('.scd'):
+                    has_non_scd_files = True
+                # Enable loop editor for current file if it's supported
+                if ext.endswith('.scd') or ext.endswith('.wav'):
+                    single_supported_selection = True
         
         self.export_selected_btn.setEnabled(has_selection)
         self.delete_selected_btn.setEnabled(has_selection)
-        # Only enable conversion if there are files that aren't already in that format
-        self.convert_to_wav_btn.setEnabled(has_selection and has_non_wav_files)
-        self.convert_to_scd_btn.setEnabled(has_selection and has_non_scd_files)
+        # Enable conversion if there are selected files OR current file that can be converted
+        # Ensure boolean conversion to avoid None values
+        enable_wav_convert = bool((has_selection and has_non_wav_files) or (not has_selection and self.current_file and has_non_wav_files))
+        enable_scd_convert = bool((has_selection and has_non_scd_files) or (not has_selection and self.current_file and has_non_scd_files))
+        self.convert_to_wav_btn.setEnabled(enable_wav_convert)
+        self.convert_to_scd_btn.setEnabled(enable_scd_convert)
         self.open_file_location_btn.setEnabled(can_open_location)
         self.open_loop_editor_btn.setEnabled(single_supported_selection)
     
@@ -1393,10 +1420,15 @@ class SCDPlayer(QMainWindow):
         self.converter.cleanup_temp_files()
         self.current_file = file_path
         
+        # Load file into loop manager for loop detection
+        file_ext = os.path.splitext(file_path)[1].lower()
+        if file_ext == '.wav':
+            self.loop_manager.load_wav_file(file_path)
+        else:
+            self.loop_manager.load_file_for_editing(file_path)
+
         # Update library selection to highlight current track
-        self.update_library_selection(file_path)
-        
-        # Update button states now that we have a current file
+        self.update_library_selection(file_path)        # Update button states now that we have a current file
         self.on_library_selection_changed()
         
         file_ext = os.path.splitext(file_path)[1].lower()
@@ -1443,8 +1475,48 @@ class SCDPlayer(QMainWindow):
             self.auto_play_after_load = False
             QTimer.singleShot(100, self.play_audio)
         
+        # Update loop markers for the loaded file (with delay to allow loop manager to process)
+        QTimer.singleShot(500, self.update_loop_markers)
+        
         # Update library selection to highlight the loaded file (enables export/convert buttons)
         self.update_library_selection(file_path)
+        
+    def update_loop_markers(self):
+        """Update loop markers on the seek slider"""
+        print("DEBUG: update_loop_markers called")
+        try:
+            if self.current_file and self.loop_manager:
+                print(f"DEBUG: current_file={self.current_file}, loop_manager exists")
+                
+                # Use the same method as loop editor for accuracy
+                loop_start, loop_end = self.loop_manager.get_loop_points()
+                file_info = self.loop_manager.get_file_info()
+                
+                print(f"DEBUG: get_loop_points() returned: start={loop_start}, end={loop_end}")
+                print(f"DEBUG: file_info sample_rate={file_info.get('sample_rate', 'unknown')}")
+                
+                if loop_start >= 0 and loop_end > loop_start:
+                    sample_rate = file_info.get('sample_rate', 44100)
+                    total_samples = file_info.get('total_samples', 0)
+                    
+                    if sample_rate > 0:
+                        # Convert to milliseconds for the slider
+                        loop_start_ms = int((loop_start / sample_rate) * 1000)
+                        loop_end_ms = int((loop_end / sample_rate) * 1000)
+                        total_duration_ms = int((total_samples / sample_rate) * 1000)
+                        
+                        print(f"DEBUG: Setting markers - start: {loop_start_ms}ms, end: {loop_end_ms}ms")
+                        self.seek_slider.set_loop_markers(loop_start_ms, loop_end_ms, total_duration_ms)
+                        return
+                        
+            # Clear markers if no valid loop points
+            print("DEBUG: Clearing loop markers - no valid loop points found")
+            self.seek_slider.clear_loop_markers()
+        except Exception as e:
+            print(f"DEBUG: Error in update_loop_markers: {e}")
+            self.seek_slider.clear_loop_markers()
+            logging.warning(f"Error updating loop markers: {e}")
+            self.seek_slider.clear_loop_markers()
         
     def on_file_load_error(self, error_msg):
         """Handle file load error"""
@@ -1459,6 +1531,7 @@ class SCDPlayer(QMainWindow):
         self.play_pause_btn.setToolTip("Play")
         self.prev_btn.setEnabled(len(self.playlist) > 1)
         self.next_btn.setEnabled(len(self.playlist) > 1)
+        self.loop_btn.setEnabled(True)  # Enable loop button
 
     # === Playback Controls ===
     def toggle_play_pause(self):
@@ -1480,6 +1553,28 @@ class SCDPlayer(QMainWindow):
     def stop_audio(self):
         self.player.stop()
         self.timer.stop()
+
+    def toggle_loop(self):
+        """Toggle loop mode on/off"""
+        self.loop_enabled = not self.loop_enabled
+        print(f"DEBUG: Loop toggled to {self.loop_enabled}")
+        
+        if self.loop_enabled:
+            self.loop_btn.setIcon(create_icon("loop_on"))
+            self.loop_btn.setToolTip("Loop On\n\nNote: Main window looping may not be 100% perfect due to Python/Qt constraints.\nFor perfect looping, use the Loop Editor (L key).")
+            self.loop_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2a5a2a;
+                    border: 2px solid #4a8a4a;
+                }
+                QPushButton:hover {
+                    background-color: #3a7a3a;
+                }
+            """)
+        else:
+            self.loop_btn.setIcon(create_icon("loop"))
+            self.loop_btn.setToolTip("Loop Off")
+            self.loop_btn.setStyleSheet("")  # Reset to default style
 
     def previous_track(self):
         """Play previous track in playlist"""
@@ -1518,6 +1613,46 @@ class SCDPlayer(QMainWindow):
         self.seek_slider.setValue(position)
         self.seek_slider.blockSignals(False)
         self.update_time_label()
+        
+    def check_loop_position(self):
+        """High-frequency loop position checking for sample-accurate looping"""
+        if not (self.loop_enabled and self.current_file and self.loop_manager and 
+                self.player.state() == QMediaPlayer.PlayingState):
+            return
+            
+        try:
+            position = self.player.position()  # Current position in ms
+            
+            # Use the same method as loop editor for accuracy
+            loop_start, loop_end = self.loop_manager.get_loop_points()
+            file_info = self.loop_manager.get_file_info()
+            
+            if loop_start >= 0 and loop_end > loop_start:
+                sample_rate = file_info.get('sample_rate', 44100)
+                
+                if sample_rate > 0:
+                    # Use fractional milliseconds for better precision
+                    loop_end_ms = (loop_end / sample_rate) * 1000.0
+                    loop_start_ms = (loop_start / sample_rate) * 1000.0
+                    
+                    # Calculate sample-accurate tolerance with predictive compensation
+                    sample_tolerance = 20  # samples - very tight tolerance 
+                    tolerance_ms = (sample_tolerance / sample_rate) * 1000.0
+                    
+                    # Add predictive offset to compensate for timer/player lag (about 1-2ms)
+                    predictive_offset_ms = 30  # Jump slightly earlier to compensate for lag
+                    
+                    # Get current position as float for better precision
+                    current_pos = float(position)
+                    
+                    # If we've reached or passed the loop end point (with predictive offset), jump back to loop start
+                    if current_pos >= (loop_end_ms - tolerance_ms - predictive_offset_ms):
+                        # Round to nearest millisecond for setPosition (it only accepts int)
+                        target_ms = int(round(loop_start_ms))
+                        print(f"DEBUG: Loop end predicted at {current_pos:.1f}ms (target: {loop_end_ms:.1f}ms, trigger: {loop_end_ms - tolerance_ms - predictive_offset_ms:.1f}ms), jumping to {target_ms}ms")
+                        self.player.setPosition(target_ms)
+        except Exception as e:
+            print(f"DEBUG: Error in loop checking: {e}")
 
     def update_duration(self, duration):
         self.duration = duration
@@ -1552,9 +1687,42 @@ class SCDPlayer(QMainWindow):
             self.play_pause_btn.setToolTip("Play")
 
     def media_status_changed(self, status):
-        """Handle media status changes for auto-advance"""
+        """Handle media status changes for auto-advance and looping"""
         from PyQt5.QtMultimedia import QMediaPlayer
         if status == QMediaPlayer.EndOfMedia:
+            print(f"DEBUG: EndOfMedia detected, loop_enabled={self.loop_enabled}")
+            if self.loop_enabled and self.current_file:
+                # Handle looping - check if we have loop points
+                try:
+                    # Use the same method as loop editor for accuracy
+                    loop_start, loop_end = self.loop_manager.get_loop_points()
+                    file_info = self.loop_manager.get_file_info()
+                    
+                    if loop_start >= 0 and loop_end > loop_start:
+                        sample_rate = file_info.get('sample_rate', 44100)
+                        # Use precise calculation like the timer
+                        loop_start_ms = int(round((loop_start / sample_rate) * 1000.0))
+                        print(f"DEBUG: Looping back to loop start: {loop_start_ms}ms")
+                        self.player.setPosition(loop_start_ms)
+                        if self.player.state() != QMediaPlayer.PlayingState:
+                            self.player.play()
+                        return  # Don't advance to next track
+                    
+                    # No loop points, just restart from beginning
+                    print("DEBUG: No loop points, restarting from beginning")
+                    self.player.setPosition(0)
+                    if self.player.state() != QMediaPlayer.PlayingState:
+                        self.player.play()
+                    return
+                except Exception as e:
+                    logging.warning(f"Error handling loop: {e}")
+                    # Fallback - restart from beginning
+                    self.player.setPosition(0)
+                    if self.player.state() != QMediaPlayer.PlayingState:
+                        self.player.play()
+                    return
+            
+            # No looping or loop failed - advance to next track if available
             if len(self.playlist) > 1 and self.current_playlist_index < len(self.playlist) - 1:
                 self.next_track()
 
