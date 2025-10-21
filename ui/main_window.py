@@ -135,6 +135,26 @@ class SCDPlayer(QMainWindow):
         check_updates_action.triggered.connect(self.check_for_updates_manual)
         help_menu.addAction(check_updates_action)
         
+        # Discord menu
+        discord_menu = menubar.addMenu('&Discord')
+        
+        discord_action = QAction('Join Discord Server', self)
+        discord_action.triggered.connect(self.open_discord)
+        discord_menu.addAction(discord_action)
+        
+        # Log menu
+        log_menu = menubar.addMenu('&Log')
+        
+        view_log_action = QAction('View Log File', self)
+        view_log_action.triggered.connect(self.show_log_viewer)
+        log_menu.addAction(view_log_action)
+        
+        log_menu.addSeparator()
+        
+        open_log_file_action = QAction('Open Log File', self)
+        open_log_file_action.triggered.connect(self.open_log_file)
+        log_menu.addAction(open_log_file_action)
+        
     def show_help_dialog(self):
         """Show the help dialog"""
         help_dialog = HelpDialog(self)
@@ -149,6 +169,35 @@ class SCDPlayer(QMainWindow):
         """Manually check for updates (show result)"""
         if hasattr(self, 'auto_updater'):
             self.auto_updater.check_for_updates(silent=False)
+    
+    def open_discord(self):
+        """Open Discord server invite link"""
+        import webbrowser
+        webbrowser.open('https://discord.gg/FqePtT2BBM')
+    
+    def show_log_viewer(self):
+        """Show the log viewer dialog"""
+        from ui.dialogs import LogViewerDialog
+        
+        # Reuse existing log viewer or create new one
+        if not hasattr(self, 'log_viewer') or not self.log_viewer.dialog.isVisible():
+            self.log_viewer = LogViewerDialog(self)
+            self.log_viewer.show()
+        else:
+            # Bring existing window to front
+            self.log_viewer.dialog.raise_()
+            self.log_viewer.dialog.activateWindow()
+    
+    def open_log_file(self):
+        """Open the log file in default text editor"""
+        import os
+        import subprocess
+        log_path = os.path.abspath('scdplayer_debug.log')
+        
+        # Check if file exists
+        if os.path.exists(log_path):
+            # Open with default application
+            os.startfile(log_path)
         
     def setup_ui(self):
         """Setup the user interface"""
