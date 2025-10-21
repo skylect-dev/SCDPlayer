@@ -21,6 +21,7 @@ from ui.conversion_manager import ConversionManager
 from ui.kh_rando_manager import KHRandoManager
 from ui.help_dialog import HelpDialog
 from ui.loop_editor_dialog import LoopEditorDialog
+from ui.scan_overlay import ScanOverlay
 from core.loop_manager import HybridLoopManager
 from core.converter import AudioConverter
 from core.threading import FileLoadThread
@@ -34,15 +35,24 @@ from utils.updater import AutoUpdater
 class SCDPlayer(QMainWindow):
     """Main SCDPlayer application window"""
     
-    def __init__(self):
+    def __init__(self, progress_callback=None):
         super().__init__()
         self.setWindowTitle(f'SCDPlayer v{__version__}')
         self.setGeometry(100, 100, 1400, 850)
         
+        # Store progress callback for startup reporting
+        self._startup_progress = progress_callback
+        
         # Initialize components
+        if self._startup_progress:
+            self._startup_progress("Loading configuration...")
+        
         self.config = Config()
         # Load settings early, before UI setup
         self.config.load_settings()
+        
+        if self._startup_progress:
+            self._startup_progress("Initializing converters...")
         
         self.converter = AudioConverter()
         self.kh_rando_exporter = KHRandoExporter(self)
@@ -52,23 +62,57 @@ class SCDPlayer(QMainWindow):
         self._loop_marker_retry_count = 0  # For handling loop marker timing
         
         # Initialize UI components
+        if self._startup_progress:
+            self._startup_progress("Creating menu bar...")
+        
         self.setup_menu_bar()
+        
+        if self._startup_progress:
+            self._startup_progress("Building interface...")
+        
         self.setup_ui()
+        
+        if self._startup_progress:
+            self._startup_progress("Initializing audio player...")
+        
         self.setup_media_player()
         
+        # Create scan overlay (must be after setup_ui so it has a parent)
+        self.scan_overlay = ScanOverlay(self.centralWidget())
+        
         # Initialize managers after UI is created
+        if self._startup_progress:
+            self._startup_progress("Loading managers...")
+        
         self.conversion_manager = ConversionManager(self)
         self.kh_rando_manager = KHRandoManager(self)
         self.loop_manager = HybridLoopManager()
         self.auto_updater = AutoUpdater(self)
         
+        # Initialize audio analyzer for visualizer
+        from core.audio_analyzer import AudioAnalyzer
+        self.audio_analyzer = AudioAnalyzer()
+        
+        # Connect visualizer to audio data
+        if hasattr(self, 'visualizer'):
+            self.visualizer.set_audio_callback(self.get_visualizer_audio_data)
+        
         # Setup keyboard shortcuts
+        if self._startup_progress:
+            self._startup_progress("Configuring shortcuts...")
+        
         self.setup_shortcuts()
         
         # Set window icon and style
+        if self._startup_progress:
+            self._startup_progress("Applying theme...")
+        
         self.setWindowIcon(create_app_icon())
         self.setup_title_bar_theming()
         self.setStyleSheet(DARK_THEME)
+        
+        # Clear progress callback reference
+        self._startup_progress = None
         
         # Threading components
         self.file_load_thread = None
@@ -127,6 +171,14 @@ class SCDPlayer(QMainWindow):
         # Set splitter sizes
         splitter.setSizes([450, 550])
         main_layout.addWidget(splitter)
+        main_widget.setLayout(main_layout)
+        
+        # Audio visualizer (bottom left corner of entire window)
+        from ui.visualizer import VisualizerWidget
+        self.visualizer = VisualizerWidget(main_widget)
+        # Size is set in VisualizerWidget itself
+        self.visualizer.visualizer_changed.connect(self.on_visualizer_changed)
+        # Position will be set in resizeEvent
         main_widget.setLayout(main_layout)
     
     def create_player_panel(self):
@@ -488,6 +540,9 @@ class SCDPlayer(QMainWindow):
             self.set_kh_rando_folder(self.config.kh_rando_folder)
         
         # Initial scan to populate file list
+        if self._startup_progress:
+            self._startup_progress("Scanning audio library...")
+        
         self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
         
         # Apply folder organization since it's checked by default
@@ -688,7 +743,11 @@ class SCDPlayer(QMainWindow):
         """Rescan library folders"""
         if not hasattr(self, 'library') or not self.library:
             return
-            
+        
+        # Show scanning overlay if it exists (may not exist during initial setup)
+        if hasattr(self, 'scan_overlay'):
+            self.scan_overlay.show_scanning("Scanning library folders...")
+        
         # Store current state
         current_search = ""
         if hasattr(self, 'search_input'):
@@ -701,30 +760,45 @@ class SCDPlayer(QMainWindow):
         # Clear search temporarily to get all files
         if current_search:
             self.search_input.clear()
+        
+        # Set up progress callback only if overlay exists
+        if hasattr(self, 'scan_overlay'):
+            def on_scan_progress(current, total, filename):
+                self.scan_overlay.update_progress(current, total, filename)
+                # Process events to keep UI responsive
+                QApplication.processEvents()
             
-        # Do the scan
-        self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
+            self.library.set_progress_callback(on_scan_progress)
         
-        # Force update of KH Rando section counts after rescan
-        self._update_kh_rando_section_counts()
+        try:
+            # Do the scan
+            self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
+            
+            # Force update of KH Rando section counts after rescan
+            self._update_kh_rando_section_counts()
+            
+            # Update UI
+            self.folder_list.clear()
+            for folder in self.config.library_folders:
+                self.folder_list.addItem(folder)
+            self.subdirs_checkbox.setChecked(self.config.scan_subdirs)
+            
+            # Apply organization if needed
+            if organize_by_folder:
+                self._organize_files_by_folder()
+            
+            # Restore search filter if it was active
+            if current_search:
+                self.search_input.setText(current_search)
+                self.filter_library_files()
         
-        # Force update of KH Rando section counts after rescan
-        self._update_kh_rando_section_counts()
-
-        # Update UI
-        self.folder_list.clear()
-        for folder in self.config.library_folders:
-            self.folder_list.addItem(folder)
-        self.subdirs_checkbox.setChecked(self.config.scan_subdirs)
-        
-        # Apply organization if needed
-        if organize_by_folder:
-            self._organize_files_by_folder()
-        
-        # Restore search filter if it was active
-        if current_search:
-            self.search_input.setText(current_search)
-            self.filter_library_files()
+        finally:
+            # Clear progress callback
+            self.library.set_progress_callback(None)
+            
+            # Hide scanning overlay if it exists
+            if hasattr(self, 'scan_overlay'):
+                self.scan_overlay.hide_scanning()
     
     def filter_library_files(self):
         """Filter library files based on search text"""
@@ -825,14 +899,13 @@ class SCDPlayer(QMainWindow):
         # Temporarily clear search to get all files
         if current_search:
             self.search_input.clear()
+            # Apply empty search to show all files (don't rescan)
+            self.filter_library_files()
             
-        # Wait for the library to be updated without search filter
-        self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
-            
-        # Collect all files with their paths
+        # Collect all files with their paths from current list (don't rescan!)
         files_by_folder = {}
         
-        # Get all items from the fresh scan
+        # Get all items from the current list
         for i in range(self.file_list.count()):
             item = self.file_list.item(i)
             file_path = item.data(Qt.UserRole)
@@ -1420,17 +1493,6 @@ class SCDPlayer(QMainWindow):
         self.converter.cleanup_temp_files()
         self.current_file = file_path
         
-        # Load file into loop manager for loop detection
-        file_ext = os.path.splitext(file_path)[1].lower()
-        if file_ext == '.wav':
-            self.loop_manager.load_wav_file(file_path)
-        else:
-            self.loop_manager.load_file_for_editing(file_path)
-
-        # Update library selection to highlight current track
-        self.update_library_selection(file_path)        # Update button states now that we have a current file
-        self.on_library_selection_changed()
-        
         file_ext = os.path.splitext(file_path)[1].lower()
         filename = os.path.basename(file_path)
         
@@ -1444,10 +1506,14 @@ class SCDPlayer(QMainWindow):
         self.playlist = self.library.get_playlist()
         self.current_playlist_index = self.library.find_file_index(file_path)
         
+        # Track the actual WAV file being played (for loop manager sync)
+        playback_wav_file = None
+        
         # Handle different file types
         if file_ext == '.scd':
             wav_file = self.converter.convert_scd_to_wav(file_path)
             if wav_file:
+                playback_wav_file = wav_file
                 self.enable_playback_controls()
                 self.player.setMedia(QMediaContent(QUrl.fromLocalFile(wav_file)))
             else:
@@ -1456,6 +1522,7 @@ class SCDPlayer(QMainWindow):
                 return
                 
         elif file_ext == '.wav':
+            playback_wav_file = file_path
             self.enable_playback_controls()
             media_url = QUrl.fromLocalFile(os.path.abspath(file_path))
             self.player.setMedia(QMediaContent(media_url))
@@ -1463,6 +1530,7 @@ class SCDPlayer(QMainWindow):
         else:  # MP3, OGG, FLAC
             wav_file = self.converter.convert_to_wav_temp(file_path)
             if wav_file:
+                playback_wav_file = wav_file
                 self.enable_playback_controls()
                 self.player.setMedia(QMediaContent(QUrl.fromLocalFile(wav_file)))
             else:
@@ -1470,16 +1538,31 @@ class SCDPlayer(QMainWindow):
                 self.metadata_label.setText('Failed to load file metadata.')
                 return
         
+        # Load the SAME WAV file into loop manager for duration/loop sync
+        # This ensures loop markers match the actual playback duration
+        if playback_wav_file:
+            self.loop_manager.load_wav_file(playback_wav_file)
+            # Store original SCD path if applicable (for save operations)
+            if file_ext == '.scd':
+                self.loop_manager.original_scd_path = file_path
+            
+            # Load audio into analyzer for real-time visualization
+            if hasattr(self, 'audio_analyzer'):
+                self.audio_analyzer.load_file(playback_wav_file)
+        
         # Auto-play if requested
         if hasattr(self, 'auto_play_after_load') and self.auto_play_after_load:
             self.auto_play_after_load = False
             QTimer.singleShot(100, self.play_audio)
         
-        # Update loop markers for the loaded file (with delay to allow loop manager to process)
+        # Update loop markers for the loaded file (with delay to allow QMediaPlayer to load)
         QTimer.singleShot(500, self.update_loop_markers)
         
         # Update library selection to highlight the loaded file (enables export/convert buttons)
         self.update_library_selection(file_path)
+        
+        # Update button states now that we have a current file
+        self.on_library_selection_changed()
         
     def update_loop_markers(self):
         """Update loop markers on the seek slider"""
@@ -1835,6 +1918,49 @@ Path: {file_path}"""
     def export_missing_to_kh_rando(self):
         """Wrapper method for KH Rando manager"""
         self.kh_rando_manager.export_missing_to_kh_rando()
+    
+    # === Visualizer methods ===
+    def on_visualizer_changed(self, name):
+        """Handle visualizer change"""
+        logging.info(f"Visualizer changed to: {name}")
+    
+    def get_visualizer_audio_data(self):
+        """Get real-time audio data for visualizer using FFT analysis"""
+        import numpy as np
+        
+        # Get current state
+        is_playing = self.player.state() == QMediaPlayer.PlayingState
+        position_ms = self.player.position()
+        
+        # Calculate volume from player
+        player_volume = self.player.volume() / 100.0
+        
+        # Get real spectrum data from audio analyzer
+        if is_playing and position_ms > 0 and self.audio_analyzer.audio_data is not None:
+            # Get FFT spectrum at current position
+            spectrum = self.audio_analyzer.get_spectrum_at_position(position_ms)
+            
+            # Get actual RMS volume from audio
+            volume = self.audio_analyzer.get_volume_at_position(position_ms)
+            
+            # Apply player volume scaling
+            spectrum = spectrum * player_volume
+            volume = volume * player_volume
+        else:
+            # Silent/stopped - return zeros
+            spectrum = np.zeros(32)
+            volume = 0.0
+        
+        return spectrum, volume, position_ms, is_playing
+    
+    def resizeEvent(self, event):
+        """Handle window resize to reposition visualizer"""
+        super().resizeEvent(event)
+        
+        # Position visualizer in bottom-left, below file info, above window bottom
+        if hasattr(self, 'visualizer'):
+            window_height = self.centralWidget().height()
+            self.visualizer.move(10, window_height - 350)  # 10px from left, 330px from bottom (320 height + 10 margin)
     
     def closeEvent(self, event):
         """Handle application close"""

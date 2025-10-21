@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import QMessageBox, QDialog, QProgressDialog, QApplication
 from PyQt5.QtCore import Qt, QTimer
 from core.kh_rando import KHRandoExportDialog
 from ui.dialogs import show_themed_message
-from ui.conversion_manager import SimpleStatusDialog
+from ui.conversion_manager import SimpleStatusDialog, QualitySelectionDialog
 
 
 class KHRandoManager:
@@ -41,9 +41,25 @@ class KHRandoManager:
                 elif file_ext in ['.wav', '.mp3', '.ogg', '.flac']:
                     files_to_convert.append(file_path)
         
-        # Show info about conversion if needed
+        # Show quality selection dialog if there are files to convert
+        selected_quality = 10  # Default quality
         if files_to_convert:
+            quality_dialog = QualitySelectionDialog(self.main_window)
+            try:
+                from ui.styles import apply_title_bar_theming
+                apply_title_bar_theming(quality_dialog)
+            except:
+                pass
+                
+            if quality_dialog.exec_() != QualitySelectionDialog.Accepted:
+                return  # User cancelled
+                
+            selected_quality = quality_dialog.get_quality()
+            
+            # Show info about conversion with quality
             convert_msg = f"""Auto-Convert to SCD for KH Rando Export
+
+Quality: {selected_quality}/10
 
 {len(files_to_convert)} non-SCD file(s) will be automatically converted to SCD format for export:
 """ + "\n".join(f"• {os.path.basename(f)}" for f in files_to_convert[:5])
@@ -84,7 +100,7 @@ class KHRandoManager:
                     current_file = i + 1
                     total_files = len(files_to_convert)
                     
-                    status_text = f"Converting {filename}...\n\nFile {current_file} of {total_files}"
+                    status_text = f"Converting {filename}...\n\nFile {current_file} of {total_files}\nQuality: {selected_quality}/10"
                     status_dialog.update_status(status_text)
                     
                     # Create temp SCD file with original name
@@ -100,8 +116,8 @@ class KHRandoManager:
                         if not source_wav:
                             continue
                     
-                    # Convert WAV to SCD
-                    if self.converter.convert_wav_to_scd(source_wav, temp_scd):
+                    # Convert WAV to SCD with selected quality
+                    if self.converter.convert_wav_to_scd(source_wav, temp_scd, quality=selected_quality):
                         final_files.append(temp_scd)
                         converted_files.append(temp_scd)
                 
@@ -180,9 +196,27 @@ class KHRandoManager:
             else:
                 files_to_convert.append(file_path)
         
+        # Show quality selection dialog if there are files to convert
+        selected_quality = 10  # Default quality
+        if files_to_convert:
+            quality_dialog = QualitySelectionDialog(self.main_window)
+            try:
+                from ui.styles import apply_title_bar_theming
+                apply_title_bar_theming(quality_dialog)
+            except:
+                pass
+                
+            if quality_dialog.exec_() != QualitySelectionDialog.Accepted:
+                return  # User cancelled
+                
+            selected_quality = quality_dialog.get_quality()
+        
         # Show confirmation with conversion info
         total_count = len(missing_files)
         msg = f"Export {total_count} missing audio files to KH Rando?\n\n"
+        
+        if files_to_convert:
+            msg += f"Quality: {selected_quality}/10\n\n"
         
         if scd_files:
             msg += f"• {len(scd_files)} SCD files (direct export)\n"
@@ -204,8 +238,27 @@ class KHRandoManager:
         converted_files = []
         
         if files_to_convert:
-            for file_path in files_to_convert:
+            # Create simple status dialog
+            status_dialog = SimpleStatusDialog("Converting Files", self.main_window)
+            status_dialog.update_status("Preparing files for KH Rando export...")
+            status_dialog.show()
+            
+            # Apply theme to status dialog
+            try:
+                from ui.styles import apply_title_bar_theming
+                apply_title_bar_theming(status_dialog)
+            except:
+                pass
+            
+            for i, file_path in enumerate(files_to_convert):
                 try:
+                    filename = os.path.basename(file_path)
+                    current_file = i + 1
+                    total_files = len(files_to_convert)
+                    
+                    status_text = f"Converting {filename}...\n\nFile {current_file} of {total_files}\nQuality: {selected_quality}/10"
+                    status_dialog.update_status(status_text)
+                    
                     # Create temp SCD file with original name
                     base_name = os.path.splitext(os.path.basename(file_path))[0]
                     temp_scd = os.path.join(tempfile.gettempdir(), f"{base_name}.scd")
@@ -219,13 +272,19 @@ class KHRandoManager:
                         if not source_wav:
                             continue
                     
-                    # Convert WAV to SCD
-                    if self.converter.convert_wav_to_scd(source_wav, temp_scd):
+                    # Convert WAV to SCD with selected quality
+                    if self.converter.convert_wav_to_scd(source_wav, temp_scd, quality=selected_quality):
                         final_files.append(temp_scd)
                         converted_files.append(temp_scd)
                 
                 except Exception as e:
                     logging.error(f"Failed to convert {file_path}: {e}")
+            
+            status_dialog.update_status(f"Conversion complete!\n\nProcessed {len(files_to_convert)} files")
+            QApplication.processEvents()
+            import time
+            time.sleep(1)  # Brief pause to show completion
+            status_dialog.close_dialog()
         
         # Show export dialog
         dialog = KHRandoExportDialog(final_files, self.kh_rando_exporter, self.main_window)

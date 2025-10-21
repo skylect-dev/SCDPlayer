@@ -19,6 +19,11 @@ class AudioLibrary:
         self.kh_rando_file_list = kh_rando_file_list  # Single list widget for KH Rando
         self.kh_categories = kh_categories or {}  # Category mapping
         self.kh_rando_files_by_category = {}  # Store files by category for population
+        self.progress_callback = None  # Callback for progress updates
+        
+    def set_progress_callback(self, callback):
+        """Set callback function for progress updates: callback(current, total, filename)"""
+        self.progress_callback = callback
         
     def scan_folders(self, folders: List[str], scan_subdirs: bool = True, kh_rando_folder: str = "") -> None:
         """Scan library folders for supported audio files"""
@@ -33,13 +38,30 @@ class AudioLibrary:
         if self.kh_rando_exporter:
             self.kh_rando_exporter.refresh_existing_files()
         
-        # Scan regular library folders with user's subdirectory preference
-        for folder in folders:
-            self._scan_single_folder(Path(folder), scan_subdirs)
+        # First pass: count total files for progress tracking
+        total_files = 0
+        all_scan_paths = []
         
-        # Scan KH Rando folder separately - always with subdirectories enabled
+        for folder in folders:
+            folder_path = Path(folder)
+            all_scan_paths.append((folder_path, scan_subdirs))
+            if folder_path.exists() and folder_path.is_dir():
+                if scan_subdirs:
+                    total_files += sum(1 for f in folder_path.rglob('*') if f.is_file() and self._is_supported_file(f))
+                else:
+                    total_files += sum(1 for f in folder_path.iterdir() if f.is_file() and self._is_supported_file(f))
+        
+        # Include KH Rando folder
         if kh_rando_folder and kh_rando_folder not in folders:
-            self._scan_single_folder(Path(kh_rando_folder), True)
+            kh_path = Path(kh_rando_folder)
+            all_scan_paths.append((kh_path, True))
+            if kh_path.exists() and kh_path.is_dir():
+                total_files += sum(1 for f in kh_path.rglob('*') if f.is_file() and self._is_supported_file(f))
+        
+        # Second pass: scan with progress tracking
+        current_file_count = 0
+        for folder_path, should_scan_subdirs in all_scan_paths:
+            current_file_count = self._scan_single_folder(folder_path, should_scan_subdirs, current_file_count, total_files)
         
         # Force update of KH Rando list after scan completion
         self._update_kh_rando_list()
@@ -49,26 +71,38 @@ class AudioLibrary:
         # The main window will call _populate_kh_rando_list which reads self.kh_rando_files_by_category
         pass
     
-    def _scan_single_folder(self, folder_path: Path, scan_subdirs: bool) -> None:
-        """Scan a single folder for audio files"""
+    def _scan_single_folder(self, folder_path: Path, scan_subdirs: bool, current_count: int = 0, total_count: int = 0) -> int:
+        """Scan a single folder for audio files and return updated count"""
         try:
             if not folder_path.exists() or not folder_path.is_dir():
                 logging.warning(f"Folder not found or not a directory: {folder_path}")
-                return
+                return current_count
                 
             if scan_subdirs:
                 # Recursively scan all subdirectories
                 for file_path in folder_path.rglob('*'):
                     if file_path.is_file() and self._is_supported_file(file_path):
                         self._add_file_to_library(file_path)
+                        current_count += 1
+                        
+                        # Report progress
+                        if self.progress_callback and total_count > 0:
+                            self.progress_callback(current_count, total_count, file_path.name)
             else:
                 # Only scan immediate directory
                 for file_path in folder_path.iterdir():
                     if file_path.is_file() and self._is_supported_file(file_path):
                         self._add_file_to_library(file_path)
+                        current_count += 1
                         
+                        # Report progress
+                        if self.progress_callback and total_count > 0:
+                            self.progress_callback(current_count, total_count, file_path.name)
+                            
         except (OSError, PermissionError) as e:
             logging.warning(f"Error scanning folder {folder_path}: {e}")
+        
+        return current_count
     
     def _is_supported_file(self, file_path: Path) -> bool:
         """Check if file has a supported extension"""

@@ -1,9 +1,127 @@
 """Conversion features for SCDPlayer"""
 import os
 import tempfile
-from PyQt5.QtWidgets import QMessageBox, QLabel, QDialog, QVBoxLayout, QApplication
+from PyQt5.QtWidgets import QMessageBox, QLabel, QDialog, QVBoxLayout, QApplication, QSlider, QPushButton, QHBoxLayout
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from ui.dialogs import show_themed_message, show_themed_file_dialog
+
+
+class QualitySelectionDialog(QDialog):
+    """Dialog for selecting SCD conversion quality (0-10)"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("SCD Conversion Quality")
+        self.setModal(True)
+        self.setMinimumSize(400, 200)
+        self.setMaximumSize(500, 250)
+        
+        # Apply dark theme
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QLabel {
+                color: #ffffff;
+                font-size: 12px;
+                padding: 5px;
+            }
+            QSlider::groove:horizontal {
+                background: #3d3d3d;
+                height: 8px;
+                border-radius: 4px;
+            }
+            QSlider::handle:horizontal {
+                background: #0d7377;
+                width: 18px;
+                margin: -5px 0;
+                border-radius: 9px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #14ffec;
+            }
+            QPushButton {
+                background-color: #3d3d3d;
+                color: #ffffff;
+                border: 1px solid #555555;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #0d7377;
+                border: 1px solid #14ffec;
+            }
+            QPushButton:pressed {
+                background-color: #0a5f63;
+            }
+        """)
+        
+        layout = QVBoxLayout(self)
+        
+        # Title
+        title_label = QLabel("Select SCD Conversion Quality")
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet("font-size: 14px; font-weight: bold; padding: 10px;")
+        layout.addWidget(title_label)
+        
+        # Description
+        desc_label = QLabel(
+            "Quality affects file size and audio fidelity.\n"
+            "Higher quality = larger files, better sound.\n"
+            "Lower quality = smaller files, compressed audio."
+        )
+        desc_label.setAlignment(Qt.AlignCenter)
+        desc_label.setWordWrap(True)
+        layout.addWidget(desc_label)
+        
+        # Quality slider
+        self.quality_slider = QSlider(Qt.Horizontal)
+        self.quality_slider.setMinimum(0)
+        self.quality_slider.setMaximum(10)
+        self.quality_slider.setValue(10)  # Default to highest quality
+        self.quality_slider.setTickPosition(QSlider.TicksBelow)
+        self.quality_slider.setTickInterval(1)
+        self.quality_slider.valueChanged.connect(self.update_quality_label)
+        layout.addWidget(self.quality_slider)
+        
+        # Quality value label
+        self.quality_label = QLabel("Quality: 10/10 (Highest)")
+        self.quality_label.setAlignment(Qt.AlignCenter)
+        self.quality_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #14ffec; padding: 10px;")
+        layout.addWidget(self.quality_label)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        ok_button = QPushButton("Convert")
+        ok_button.clicked.connect(self.accept)
+        button_layout.addWidget(ok_button)
+        
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_button)
+        
+        layout.addLayout(button_layout)
+        
+        self.selected_quality = 10
+        
+    def update_quality_label(self, value):
+        """Update quality label when slider moves"""
+        self.selected_quality = value
+        
+        if value == 10:
+            quality_text = "Quality: 10/10 (Highest)"
+        elif value == 0:
+            quality_text = "Quality: 0/10 (Lowest)"
+        else:
+            quality_text = f"Quality: {value}/10"
+            
+        self.quality_label.setText(quality_text)
+    
+    def get_quality(self):
+        """Get selected quality value"""
+        return self.selected_quality
 
 
 class SimpleStatusDialog(QDialog):
@@ -49,12 +167,13 @@ class ConversionWorker(QThread):
     progress_update = pyqtSignal(int, str)  # progress percentage, status message
     conversion_complete = pyqtSignal(bool, str)  # success, result message
     
-    def __init__(self, converter, operation_type, files, output_dir=None):
+    def __init__(self, converter, operation_type, files, output_dir=None, quality=10):
         super().__init__()
         self.converter = converter
         self.operation_type = operation_type  # 'to_wav' or 'to_scd'
         self.files = files
         self.output_dir = output_dir
+        self.quality = quality  # Quality for SCD conversion (0-10)
         
     def run(self):
         """Run the conversion operation"""
@@ -149,7 +268,7 @@ class ConversionWorker(QThread):
             # Convert WAV to SCD
             # If original file was SCD, use it as template to preserve codec/compression
             original_scd_template = file_path if file_ext == '.scd' else None
-            success = self.converter.convert_wav_to_scd(source_file, output_path, original_scd_template)
+            success = self.converter.convert_wav_to_scd(source_file, output_path, original_scd_template, self.quality)
             
             # Cleanup temp file
             if temp_wav:
@@ -232,12 +351,25 @@ class ConversionManager:
             show_themed_message(self.main_window, QMessageBox.Warning, 'No Valid Files', 'No valid files found in selection.')
             return
         
+        # Show quality selection dialog
+        quality_dialog = QualitySelectionDialog(self.main_window)
+        try:
+            from ui.styles import apply_title_bar_theming
+            apply_title_bar_theming(quality_dialog)
+        except:
+            pass
+            
+        if quality_dialog.exec_() != QualitySelectionDialog.Accepted:
+            return  # User cancelled
+            
+        selected_quality = quality_dialog.get_quality()
+        
         # Show confirmation dialog with file list
         files_preview = "\n".join(f"• {os.path.basename(f)}" for f in files_to_convert[:5])
         if len(files_to_convert) > 5:
             files_preview += f"\n• ... and {len(files_to_convert) - 5} more"
             
-        convert_msg = f"Convert {len(files_to_convert)} file(s) to SCD format?\n\n{files_preview}"
+        convert_msg = f"Convert {len(files_to_convert)} file(s) to SCD format?\n\nQuality: {selected_quality}/10\n\n{files_preview}"
         
         reply = show_themed_message(self.main_window, QMessageBox.Question, 'Convert to SCD', convert_msg,
                                    QMessageBox.Yes | QMessageBox.No,
@@ -251,9 +383,9 @@ class ConversionManager:
         )
         
         if output_dir:
-            self._start_conversion_with_progress(files_to_convert, 'to_scd', output_dir)
+            self._start_conversion_with_progress(files_to_convert, 'to_scd', output_dir, selected_quality)
     
-    def _start_conversion_with_progress(self, files, operation_type, output_dir):
+    def _start_conversion_with_progress(self, files, operation_type, output_dir, quality=10):
         """Start conversion operation with status dialog"""
         # Create simple status dialog
         operation_name = "WAV" if operation_type == 'to_wav' else "SCD"
@@ -268,7 +400,7 @@ class ConversionManager:
             pass
         
         # Create and start worker thread
-        self.conversion_worker = ConversionWorker(self.converter, operation_type, files, output_dir)
+        self.conversion_worker = ConversionWorker(self.converter, operation_type, files, output_dir, quality)
         
         # Connect signals
         self.conversion_worker.progress_update.connect(
@@ -361,10 +493,23 @@ class ConversionManager:
             show_themed_message(self.main_window, QMessageBox.Information, 'Already SCD', 'The loaded file is already in SCD format.')
             return
         
+        # Show quality selection dialog
+        quality_dialog = QualitySelectionDialog(self.main_window)
+        try:
+            from ui.styles import apply_title_bar_theming
+            apply_title_bar_theming(quality_dialog)
+        except:
+            pass
+            
+        if quality_dialog.exec_() != QualitySelectionDialog.Accepted:
+            return  # User cancelled
+            
+        selected_quality = quality_dialog.get_quality()
+        
         # Show simple conversion dialog
         filename = os.path.basename(self.main_window.current_file)
         reply = show_themed_message(self.main_window, QMessageBox.Question, 'Convert to SCD', 
-                                   f'Convert {filename} to SCD format?', 
+                                   f'Convert {filename} to SCD format?\n\nQuality: {selected_quality}/10', 
                                    QMessageBox.Yes | QMessageBox.No, 
                                    QMessageBox.Yes)
         
@@ -399,7 +544,7 @@ class ConversionManager:
             
             # Convert WAV to SCD using original file as template if it's SCD
             original_scd_template = self.main_window.current_file if file_ext == '.scd' else None
-            success = self.converter.convert_wav_to_scd(source_file, save_path, original_scd_template)
+            success = self.converter.convert_wav_to_scd(source_file, save_path, original_scd_template, selected_quality)
             
             # Cleanup temp file
             if temp_wav:

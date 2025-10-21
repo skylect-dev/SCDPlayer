@@ -32,15 +32,16 @@ def main():
     splash.show()
     
     # Helper function to update splash with consistent timing
-    def update_splash(message, delay=0.3):
+    def update_splash(message, delay=0.15):
         splash.showMessage(message, Qt.AlignCenter | Qt.AlignBottom, Qt.white)
         app.processEvents()
         if delay > 0:
             time.sleep(delay)
     
-    # Loading sequence
-    update_splash("Initializing audio system...", 0.5)
+    # Loading sequence with more detail
+    update_splash("Starting SCDPlayer...", 0.2)
     
+    update_splash("Cleaning up temporary files...", 0.15)
     # Clean up any temporary files from previous runs
     try:
         from utils.khpc_cleanup import cleanup_khpc_tools
@@ -48,13 +49,17 @@ def main():
     except:
         pass  # Don't fail if cleanup fails
     
-    update_splash("Loading interface...", 0.3)
+    update_splash("Loading configuration...", 0.15)
     
-    # Create main window
-    window = SCDPlayer()
+    update_splash("Initializing audio system...", 0.15)
+    
+    # Create main window with progress callback
+    window = SCDPlayer(progress_callback=update_splash)
+    
+    update_splash("Finalizing...", 0.1)
     
     # Finalize splash
-    update_splash("Ready!", 0.2)
+    update_splash("Ready!", 0.15)
     window.show()
     splash.finish(window)
     

@@ -156,7 +156,7 @@ class AudioConverter:
             logging.error(f"Error in temp WAV conversion: {e}")
             return None
     
-    def convert_wav_to_scd(self, wav_path: str, scd_path: str, original_scd_path: str = None) -> bool:
+    def convert_wav_to_scd(self, wav_path: str, scd_path: str, original_scd_path: str = None, quality: int = 10) -> bool:
         """
         Convert WAV to SCD using KH PC Sound Tools MusicEncoder
         
@@ -164,9 +164,12 @@ class AudioConverter:
             wav_path: Path to input WAV file
             scd_path: Path to output SCD file
             original_scd_path: Optional path to original SCD to use as template (preserves codec/settings)
+            quality: Quality level 0-10 (default 10 = highest quality, 0 = lowest quality)
         
         Note: MusicEncoder requires all files to be in the same directory as the executable
         """
+        # Validate quality parameter
+        quality = max(0, min(10, int(quality)))  # Clamp to 0-10 range
         try:
             wav_file = Path(wav_path)
             scd_file = Path(scd_path)
@@ -242,13 +245,15 @@ class AudioConverter:
             
             try:
                 # Run MusicEncoder from its own directory with files in same directory
-                # Usage: MusicEncoder.exe <template.scd> <input.wav>
+                # Usage: MusicEncoder.exe <template.scd> <input.wav> [quality]
+                # Quality is optional parameter 0-10 (default 10)
                 # This follows the exact pattern from mass_convert.bat
                 logging.info(f"Converting WAV to SCD using KH PC Sound Tools: {wav_path} -> {scd_path}")
-                logging.info(f"MusicEncoder command: {music_encoder_exe.name} {encoder_template.name} {encoder_wav.name}")
+                logging.info(f"MusicEncoder command: {music_encoder_exe.name} {encoder_template.name} {encoder_wav.name} {quality}")
+                logging.info(f"Quality level: {quality}/10 {'(highest)' if quality == 10 else '(lowest)' if quality == 0 else ''}")
                 
                 result = subprocess.run(
-                    [str(music_encoder_exe), str(encoder_template.name), str(encoder_wav.name)],
+                    [str(music_encoder_exe), str(encoder_template.name), str(encoder_wav.name), str(quality)],
                     cwd=str(encoder_dir),  # CRITICAL: Run from MusicEncoder directory
                     capture_output=True,
                     text=True,
