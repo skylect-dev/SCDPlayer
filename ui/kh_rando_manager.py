@@ -144,9 +144,7 @@ Quality: {selected_quality}/10
                 except:
                     pass
             
-            # Refresh library to show updated KH Rando status
-            if hasattr(self.main_window, 'library') and self.library:
-                self.main_window.rescan_library()
+            # File watcher will automatically update the library
         else:
             # Clean up temporary files if user cancelled
             for temp_file in converted_files:
@@ -296,9 +294,7 @@ Quality: {selected_quality}/10
                 except:
                     pass
                     
-            # Refresh library to show updated status
-            if hasattr(self.main_window, 'library') and self.library:
-                self.main_window.rescan_library()
+            # File watcher will automatically update the library
         else:
             # Clean up temporary files if user cancelled
             for temp_file in converted_files:

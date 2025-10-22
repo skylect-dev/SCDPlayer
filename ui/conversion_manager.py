@@ -431,10 +431,7 @@ class ConversionManager:
         
         if success:
             show_themed_message(self.main_window, QMessageBox.Information, 'Conversion Complete', message)
-            
-            # Refresh library to show new converted files
-            if hasattr(self.main_window, 'library') and self.main_window.library:
-                self.main_window.rescan_library()
+            # File watcher will automatically update the library
         else:
             show_themed_message(self.main_window, QMessageBox.Warning, 'Conversion Failed', message)
         
@@ -467,18 +464,14 @@ class ConversionManager:
                 wav = self.converter.convert_scd_to_wav(self.main_window.current_file, out_path=save_path)
                 if wav:
                     show_themed_message(self.main_window, QMessageBox.Information, 'Conversion Complete', f'WAV saved to: {save_path}')
-                    # Refresh library to show new converted file
-                    if hasattr(self.main_window, 'library') and self.main_window.library:
-                        self.main_window.rescan_library()
+                    # File watcher will automatically update the library
                 else:
                     show_themed_message(self.main_window, QMessageBox.Warning, 'Conversion Failed', 'Could not convert SCD to WAV.')
             else:
                 success = self.converter.convert_with_ffmpeg(self.main_window.current_file, save_path, 'wav')
                 if success:
                     show_themed_message(self.main_window, QMessageBox.Information, 'Conversion Complete', f'WAV saved to: {save_path}')
-                    # Refresh library to show new converted file
-                    if hasattr(self.main_window, 'library') and self.main_window.library:
-                        self.main_window.rescan_library()
+                    # File watcher will automatically update the library
                 else:
                     show_themed_message(self.main_window, QMessageBox.Warning, 'Conversion Failed', f'Could not convert {file_ext} to WAV.')
 
@@ -555,8 +548,6 @@ class ConversionManager:
                     
             if success:
                 show_themed_message(self.main_window, QMessageBox.Information, 'Conversion Complete', f'SCD saved to: {save_path}')
-                # Refresh library to show new converted file
-                if hasattr(self.main_window, 'library') and self.main_window.library:
-                    self.main_window.rescan_library()
+                # File watcher will automatically update the library
             else:
                 show_themed_message(self.main_window, QMessageBox.Warning, 'Conversion Failed', 'Could not complete SCD conversion.')

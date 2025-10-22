@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QLabel, QSlider, QSizePolicy, QListWidget, QCheckBox, QMessageBox, 
     QSplitter, QGroupBox, QProgressBar, QComboBox, QDialog, QShortcut,
     QMenuBar, QAction, QApplication, QScrollArea, QFrame, QListWidgetItem,
-    QLineEdit
+    QLineEdit, QMenu
 )
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtCore import QUrl, Qt, QTimer, pyqtSignal
@@ -56,6 +56,15 @@ class SCDPlayer(QMainWindow):
         
         self.converter = AudioConverter()
         self.kh_rando_exporter = KHRandoExporter(self)
+        
+        # Initialize file watcher
+        from core.file_watcher import LibraryFileWatcher
+        self.file_watcher = LibraryFileWatcher(self)
+        self.file_watcher.file_added.connect(self._on_file_added)
+        self.file_watcher.file_removed.connect(self._on_file_removed)
+        self.file_watcher.file_modified.connect(self._on_file_modified)
+        self.file_watcher.directory_added.connect(self._on_directory_added)
+        
         self.current_file = None
         self.current_playlist_index = -1
         self.playlist = []
@@ -135,12 +144,11 @@ class SCDPlayer(QMainWindow):
         check_updates_action.triggered.connect(self.check_for_updates_manual)
         help_menu.addAction(check_updates_action)
         
-        # Discord menu
-        discord_menu = menubar.addMenu('&Discord')
+        help_menu.addSeparator()
         
-        discord_action = QAction('Join Discord Server', self)
+        discord_action = QAction('Join &Discord Server', self)
         discord_action.triggered.connect(self.open_discord)
-        discord_menu.addAction(discord_action)
+        help_menu.addAction(discord_action)
         
         # Log menu
         log_menu = menubar.addMenu('&Log')
@@ -154,6 +162,13 @@ class SCDPlayer(QMainWindow):
         open_log_file_action = QAction('Open Log File', self)
         open_log_file_action.triggered.connect(self.open_log_file)
         log_menu.addAction(open_log_file_action)
+        
+        # Tools menu
+        tools_menu = menubar.addMenu('&Tools')
+        
+        musiclist_editor_action = QAction('Edit Music List (musiclist.json)', self)
+        musiclist_editor_action.triggered.connect(self.show_musiclist_editor)
+        tools_menu.addAction(musiclist_editor_action)
         
     def show_help_dialog(self):
         """Show the help dialog"""
@@ -198,6 +213,12 @@ class SCDPlayer(QMainWindow):
         if os.path.exists(log_path):
             # Open with default application
             os.startfile(log_path)
+    
+    def show_musiclist_editor(self):
+        """Show the musiclist.json editor"""
+        from ui.musiclist_editor import MusicListEditor
+        editor = MusicListEditor(self)
+        editor.exec_()
         
     def setup_ui(self):
         """Setup the user interface"""
@@ -481,6 +502,16 @@ class SCDPlayer(QMainWindow):
         self.file_list.itemDoubleClicked.connect(self.load_from_library)
         self.file_list.itemClicked.connect(self.on_library_item_clicked)  # Handle single clicks
         self.file_list.itemSelectionChanged.connect(self.on_library_selection_changed)
+        
+        # Enable drag with custom transparency
+        self.file_list.setDragEnabled(True)
+        self.file_list.setDragDropMode(QListWidget.DragOnly)
+        self.file_list.startDrag = lambda supportedActions: self.start_file_drag(self.file_list, supportedActions)
+        
+        # Enable context menu for main file list
+        self.file_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.file_list.customContextMenuRequested.connect(self.show_file_list_context_menu)
+        
         regular_files_layout.addWidget(self.file_list)
         
         regular_files_widget.setLayout(regular_files_layout)
@@ -491,7 +522,19 @@ class SCDPlayer(QMainWindow):
         kh_rando_layout = QVBoxLayout()
         kh_rando_layout.setContentsMargins(0, 0, 0, 0)
         
-        kh_rando_layout.addWidget(QLabel('KH Randomizer Files:'))
+        # Header with title and add folder button
+        kh_header_layout = QHBoxLayout()
+        kh_header_layout.addWidget(QLabel('KH Randomizer Files:'))
+        kh_header_layout.addStretch()
+        
+        add_folder_btn = QPushButton('+')
+        add_folder_btn.clicked.connect(self.add_kh_rando_folder)
+        add_folder_btn.setMaximumWidth(30)
+        add_folder_btn.setMaximumHeight(25)
+        add_folder_btn.setToolTip('Add new folder to KH Randomizer music directory')
+        kh_header_layout.addWidget(add_folder_btn)
+        
+        kh_rando_layout.addLayout(kh_header_layout)
         
         # Create KH Rando file list - identical to main library structure
         self.kh_rando_file_list = QListWidget()
@@ -500,15 +543,30 @@ class SCDPlayer(QMainWindow):
         self.kh_rando_file_list.itemClicked.connect(self.on_kh_rando_item_clicked)
         self.kh_rando_file_list.itemSelectionChanged.connect(self.on_kh_rando_selection_changed)
         
+        # Enable drag-and-drop for KH Rando file list (accept drops)
+        self.kh_rando_file_list.setAcceptDrops(True)
+        self.kh_rando_file_list.setDragDropMode(QListWidget.DropOnly)
+        
+        # Use proper method binding for drag events
+        self.kh_rando_file_list.dragEnterEvent = lambda event: self.kh_rando_drag_enter_event(event)
+        self.kh_rando_file_list.dragMoveEvent = lambda event: self.kh_rando_drag_move_event(event)
+        self.kh_rando_file_list.dragLeaveEvent = lambda event: self.kh_rando_drag_leave_event(event)
+        self.kh_rando_file_list.dropEvent = lambda event: self.kh_rando_drop_event(event)
+        
+        # Track hover state for drag-and-drop visual feedback
+        self._drag_hover_item = None
+        
+        # Enable context menu for KH Rando file list
+        self.kh_rando_file_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.kh_rando_file_list.customContextMenuRequested.connect(self.show_kh_rando_context_menu)
+        
         # Create storage for KH Rando category tracking
         self.kh_rando_categories = {}
         self.kh_rando_category_states = {}
         from core.kh_rando import KHRandoExporter
         
-        # Initialize category states (all expanded by default)
-        for category_key, category_name in KHRandoExporter.MUSIC_CATEGORIES.items():
-            self.kh_rando_categories[category_key] = category_name
-            self.kh_rando_category_states[category_key] = True
+        # Categories will be populated dynamically when library is scanned
+        # Initialize with empty state for now
         
         kh_rando_layout.addWidget(self.kh_rando_file_list)
         
@@ -590,12 +648,36 @@ class SCDPlayer(QMainWindow):
         
         # Initial scan to populate file list
         if self._startup_progress:
-            self._startup_progress("Scanning audio library...")
+            self._startup_progress("Scanning audio library... (This may take a moment for large libraries)")
+        
+        # Update KH Rando categories from detected folders BEFORE scanning
+        # This ensures the library knows which categories to populate
+        if self.config.kh_rando_folder:
+            self.kh_rando_exporter.set_kh_rando_path(self.config.kh_rando_folder)
+            self._update_kh_rando_categories()
+        
+        # Set up progress callback for library scan
+        if self._startup_progress:
+            def on_scan_progress(current, total, filename):
+                # With optimized splash screen, we can update on every file
+                self._startup_progress(f"Scanning library... {current} files found")
+            
+            self.library.set_progress_callback(on_scan_progress)
         
         self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
         
+        # Clear the progress callback after scan
+        self.library.set_progress_callback(None)
+        
+        # Start file watcher after initial scan
+        if self._startup_progress:
+            self._startup_progress("Starting file watcher...")
+        self._start_file_watcher()
+        
         # Apply folder organization since it's checked by default
         if self.organize_by_folder_cb.isChecked():
+            if self._startup_progress:
+                self._startup_progress("Organizing library by folder...")
             self._organize_files_by_folder()
         
         # Delay KH Rando section count update to ensure UI is ready
@@ -704,6 +786,12 @@ class SCDPlayer(QMainWindow):
             self.config.library_folders.append(folder)
             self.folder_list.addItem(folder)
             self.config.save_settings()
+            
+            # Add folder to file watcher
+            if hasattr(self, 'file_watcher'):
+                self.file_watcher.scan_initial_files([folder], self.config.scan_subdirs)
+                self.file_watcher.add_watch_paths([folder], self.config.scan_subdirs)
+            
             self.rescan_library()
 
     def on_folder_selection_changed(self):
@@ -715,9 +803,15 @@ class SCDPlayer(QMainWindow):
         """Remove selected folder from library"""
         current_row = self.folder_list.currentRow()
         if current_row >= 0:
+            removed_folder = self.config.library_folders[current_row]
             self.config.library_folders.pop(current_row)
             self.folder_list.takeItem(current_row)
             self.config.save_settings()
+            
+            # Remove folder from file watcher
+            if hasattr(self, 'file_watcher'):
+                self.file_watcher.remove_watch_paths([removed_folder])
+            
             self.rescan_library()
 
     def toggle_subdirs(self, state):
@@ -744,6 +838,9 @@ class SCDPlayer(QMainWindow):
             self.config.kh_rando_folder = folder_path
             self.config.save_settings()
             self.kh_rando_exporter.set_kh_rando_path(folder_path)
+            
+            # Update categories from detected folders
+            self._update_kh_rando_categories()
             
             # Update UI
             folder_name = os.path.basename(folder_path)
@@ -823,7 +920,8 @@ class SCDPlayer(QMainWindow):
             # Do the scan
             self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
             
-            # Force update of KH Rando section counts after rescan
+            # Repopulate KH Rando list and update section counts after rescan
+            self._populate_kh_rando_list()
             self._update_kh_rando_section_counts()
             
             # Update UI
@@ -1002,8 +1100,12 @@ class SCDPlayer(QMainWindow):
             
             # Add files in this folder (only if expanded)
             if is_expanded:
-                for file_text, file_path, file_color in sorted(files_by_folder[folder_name]):
-                    file_item = QListWidgetItem(f"    {file_text}")  # Indent files
+                # Sort files alphabetically by filename (case-insensitive)
+                sorted_files = sorted(files_by_folder[folder_name], key=lambda x: os.path.basename(x[1]).lower())
+                for file_text, file_path, file_color in sorted_files:
+                    # Strip any existing indentation before adding new indentation
+                    clean_text = file_text.lstrip()
+                    file_item = QListWidgetItem(f"    {clean_text}")  # Indent files
                     file_item.setData(Qt.UserRole, file_path)
                     if file_color:
                         file_item.setForeground(file_color)
@@ -1062,6 +1164,24 @@ class SCDPlayer(QMainWindow):
         if file_path and file_path != "FOLDER_HEADER":  # Skip folder headers
             self.load_file_path(file_path, auto_play=True)
     
+    def _update_kh_rando_categories(self):
+        """Update KH Rando categories from detected folders"""
+        if hasattr(self, 'kh_rando_exporter') and self.kh_rando_exporter:
+            # Get detected folders from exporter
+            categories = self.kh_rando_exporter.get_categories()
+            
+            # Update categories dict
+            self.kh_rando_categories = categories.copy()
+            
+            # Initialize expansion states for new categories
+            for category_key in categories.keys():
+                if category_key not in self.kh_rando_category_states:
+                    self.kh_rando_category_states[category_key] = True
+            
+            # Update library's category reference
+            if hasattr(self, 'library') and self.library:
+                self.library.kh_rando_categories = self.kh_rando_categories
+    
     def _update_kh_rando_section_counts(self):
         """Force update of KH Rando list after library scan"""
         if hasattr(self, 'kh_rando_file_list'):
@@ -1070,6 +1190,64 @@ class SCDPlayer(QMainWindow):
             # Force Qt to process the UI updates
             from PyQt5.QtWidgets import QApplication
             QApplication.processEvents()
+    
+    def _refresh_duplicate_status(self):
+        """Refresh duplicate status for all files in main library"""
+        if not hasattr(self, 'kh_rando_exporter') or not self.kh_rando_exporter:
+            return
+        
+        # Refresh the KH Rando existing files cache
+        self.kh_rando_exporter.refresh_existing_files()
+        
+        from utils.helpers import format_file_size
+        
+        # Update all items in main library
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            if not item:
+                continue
+            
+            file_path = item.data(Qt.UserRole)
+            if not file_path or file_path.startswith("FOLDER_HEADER:"):
+                continue
+            
+            filename = os.path.basename(file_path)
+            
+            # Check if file exists in KH Rando
+            kh_categories = self.kh_rando_exporter.is_file_in_kh_rando(filename)
+            
+            # Determine new status
+            kh_status = ""
+            if kh_categories:
+                if kh_categories == ['root']:
+                    kh_status = " [KH: root folder - misplaced]"
+                else:
+                    display_categories = [cat for cat in kh_categories if cat != 'root']
+                    if display_categories:
+                        kh_status = f" [KH: {', '.join(display_categories)} - duplicate]"
+            
+            # Get file size from path
+            try:
+                size = os.path.getsize(file_path)
+                size_str = format_file_size(size)
+            except:
+                size_str = "? MB"
+            
+            # Reconstruct display text
+            display_text = f"{filename} ({size_str}){kh_status}"
+            
+            # Strip existing indentation if present
+            current_text = item.text()
+            is_indented = current_text.startswith("    ")
+            if is_indented:
+                display_text = f"    {display_text}"
+            
+            # Update item text and color
+            item.setText(display_text)
+            if kh_status:
+                item.setForeground(QColor('orange'))
+            else:
+                item.setForeground(QColor('white'))
 
     def _select_files_in_folder(self, folder_name):
         """Select all files in the specified folder"""
@@ -1106,6 +1284,74 @@ class SCDPlayer(QMainWindow):
         
         # Refresh the KH Rando list to reflect the change
         self._populate_kh_rando_list()
+
+    def add_kh_rando_folder(self):
+        """Add a new folder to the KH Rando music directory"""
+        kh_rando_folder = self.config.kh_rando_folder
+        
+        if not kh_rando_folder or not os.path.exists(kh_rando_folder):
+            QMessageBox.warning(
+                self,
+                "No KH Rando Directory",
+                "KH Randomizer music directory not found. Please set it in the settings first."
+            )
+            return
+        
+        # Ask for folder name
+        from PyQt5.QtWidgets import QInputDialog, QLineEdit
+        folder_name, ok = QInputDialog.getText(
+            self,
+            "Add New Folder",
+            "Enter the name of the new folder:",
+            QLineEdit.Normal,
+            ""
+        )
+        
+        if ok and folder_name:
+            folder_name = folder_name.strip()
+            if not folder_name:
+                return
+            
+            # Create the folder path
+            new_folder_path = os.path.join(kh_rando_folder, folder_name)
+            
+            # Check if it already exists
+            if os.path.exists(new_folder_path):
+                QMessageBox.warning(
+                    self,
+                    "Folder Exists",
+                    f"The folder '{folder_name}' already exists."
+                )
+                return
+            
+            try:
+                # Create the folder
+                os.makedirs(new_folder_path)
+                logging.info(f"Created new KH Rando folder: {new_folder_path}")
+                
+                # Rescan the library to pick up the new folder
+                if hasattr(self, 'library') and self.library:
+                    self.library.scan_folders(
+                        self.config.library_folders, 
+                        self.config.scan_subdirs, 
+                        self.config.kh_rando_folder
+                    )
+                    # Update categories from detected folders
+                    self._update_kh_rando_categories()
+                    self._populate_kh_rando_list()
+                
+                QMessageBox.information(
+                    self,
+                    "Folder Created",
+                    f"Successfully created folder '{folder_name}' in the KH Randomizer music directory.\n\nYou can now add files to this folder."
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to create folder:\n{e}"
+                )
+                logging.error(f"Failed to create KH Rando folder: {e}")
 
     def _populate_kh_rando_list(self):
         """Populate the KH Rando list with categories and files"""
@@ -1256,15 +1502,37 @@ class SCDPlayer(QMainWindow):
         # File not found in library - add it temporarily for this session
         if hasattr(self, 'library') and self.library and os.path.exists(file_path):
             from pathlib import Path
-            self.library._add_file_to_library(Path(file_path))
+            # Pre-compute KH Rando path for proper categorization
+            kh_rando_path_obj = None
+            if self.kh_rando_exporter and self.kh_rando_exporter.kh_rando_path:
+                try:
+                    kh_rando_path_obj = Path(self.kh_rando_exporter.kh_rando_path).resolve()
+                except:
+                    pass
             
-            # Now try to select it again in regular library
+            self.library._add_file_to_library(Path(file_path), kh_rando_path_obj)
+            
+            # Refresh KH Rando display in case file was added there
+            self._populate_kh_rando_list()
+            
+            # Now try to select it again (in regular library or KH Rando sections)
             for i in range(self.file_list.count()):
                 item = self.file_list.item(i)
                 if item and item.data(Qt.UserRole) == file_path:
                     self.file_list.setCurrentItem(item)
                     self.file_list.scrollToItem(item)
-                    break
+                    return  # Found and selected
+            
+            # Check KH Rando sections again after adding
+            if hasattr(self, 'kh_rando_sections'):
+                for section in self.kh_rando_sections.values():
+                    file_list = section.get_file_list()
+                    for i in range(file_list.count()):
+                        item = file_list.item(i)
+                        if item and item.data(Qt.UserRole) == file_path:
+                            file_list.setCurrentItem(item)
+                            file_list.scrollToItem(item)
+                            return  # Found and selected
     
     def on_library_selection_changed(self):
         """Handle library selection changes"""
@@ -1396,9 +1664,7 @@ class SCDPlayer(QMainWindow):
         else:
             show_themed_message(self, QMessageBox.Information, "Files Moved", f"Successfully moved {deleted_count} file(s) to Recycle Bin.")
         
-        # Refresh library
-        if hasattr(self, 'library') and self.library:
-            self.rescan_library()
+        # File watcher will automatically update the library
 
     def open_file_location(self):
         """Open the folder containing the selected file or currently playing file in File Explorer"""
@@ -1513,6 +1779,453 @@ class SCDPlayer(QMainWindow):
                 loading_dialog.close_dialog()
             show_themed_message(self, QMessageBox.Critical, "Loop Editor Error", 
                                f"Failed to open loop editor:\n{str(e)}")
+
+    # === Context Menus ===
+    def show_file_list_context_menu(self, position):
+        """Show context menu for main file list"""
+        item = self.file_list.itemAt(position)
+        if not item:
+            return
+        
+        file_path = item.data(Qt.UserRole)
+        if not file_path or file_path.startswith("FOLDER_HEADER"):
+            return
+        
+        menu = QMenu(self)
+        
+        # Export to KH Rando action
+        export_action = menu.addAction("Export to KH Rando")
+        export_action.triggered.connect(self.export_selected_to_kh_rando)
+        
+        menu.addSeparator()
+        
+        # Loop Editor action (only for SCD/WAV files with single selection)
+        selected_items = [item for item in self.file_list.selectedItems() 
+                         if item.data(Qt.UserRole) and not item.data(Qt.UserRole).startswith("FOLDER_HEADER")]
+        
+        if len(selected_items) == 1:
+            file_ext = os.path.splitext(file_path)[1].lower()
+            if file_ext in ['.scd', '.wav']:
+                loop_editor_action = menu.addAction("Open Loop Editor")
+                loop_editor_action.triggered.connect(self.open_loop_editor)
+                menu.addSeparator()
+        
+        # Rename action (single file only)
+        if len(selected_items) == 1:
+            rename_action = menu.addAction("Rename")
+            rename_action.triggered.connect(lambda: self.rename_file(file_path))
+        
+        # Delete action
+        delete_action = menu.addAction("Delete")
+        delete_action.triggered.connect(self.delete_selected_files)
+        
+        menu.exec_(self.file_list.mapToGlobal(position))
+    
+    def show_kh_rando_context_menu(self, position):
+        """Show context menu for KH Rando file list"""
+        item = self.kh_rando_file_list.itemAt(position)
+        if not item:
+            return
+        
+        file_path = item.data(Qt.UserRole)
+        if not file_path or file_path.startswith("KH_CATEGORY_HEADER"):
+            return
+        
+        menu = QMenu(self)
+        
+        # Loop Editor action (only for SCD/WAV files with single selection)
+        selected_items = [item for item in self.kh_rando_file_list.selectedItems() 
+                         if item.data(Qt.UserRole) and not item.data(Qt.UserRole).startswith("KH_CATEGORY_HEADER")]
+        
+        if len(selected_items) == 1:
+            file_ext = os.path.splitext(file_path)[1].lower()
+            if file_ext in ['.scd', '.wav']:
+                loop_editor_action = menu.addAction("Open Loop Editor")
+                loop_editor_action.triggered.connect(self.open_loop_editor)
+                menu.addSeparator()
+        
+        # Rename action (single file only)
+        if len(selected_items) == 1:
+            rename_action = menu.addAction("Rename")
+            rename_action.triggered.connect(lambda: self.rename_file(file_path))
+        
+        # Delete action
+        delete_action = menu.addAction("Delete")
+        delete_action.triggered.connect(self.delete_selected_files)
+        
+        menu.exec_(self.kh_rando_file_list.mapToGlobal(position))
+    
+    def rename_file(self, file_path):
+        """Rename a file"""
+        from pathlib import Path
+        from PyQt5.QtWidgets import QInputDialog, QLineEdit
+        
+        path = Path(file_path)
+        if not path.exists():
+            show_themed_message(self, QMessageBox.Warning, "File Not Found", 
+                               "The file no longer exists.")
+            return
+        
+        old_name = path.stem
+        old_ext = path.suffix
+        
+        new_name, ok = QInputDialog.getText(
+            self,
+            "Rename File",
+            f"Enter new name for '{path.name}':",
+            QLineEdit.Normal,
+            old_name
+        )
+        
+        if ok and new_name:
+            new_name = new_name.strip()
+            if not new_name:
+                return
+            
+            # Ensure extension is preserved
+            new_file_path = path.parent / (new_name + old_ext)
+            
+            if new_file_path.exists():
+                show_themed_message(self, QMessageBox.Warning, "File Exists", 
+                                   f"A file named '{new_file_path.name}' already exists.")
+                return
+            
+            try:
+                path.rename(new_file_path)
+                logging.info(f"Renamed file: {path} -> {new_file_path}")
+                
+                # The file watcher should detect this change, but we can also manually refresh
+                # to ensure immediate update
+                QTimer.singleShot(100, lambda: self._on_file_removed(str(path)))
+                QTimer.singleShot(200, lambda: self._on_file_added(str(new_file_path)))
+                
+            except Exception as e:
+                show_themed_message(self, QMessageBox.Critical, "Rename Error", 
+                                   f"Failed to rename file:\n{str(e)}")
+    
+    # === Drag and Drop ===
+    def start_file_drag(self, list_widget, supportedActions):
+        """Custom drag start with transparency"""
+        from PyQt5.QtCore import QMimeData
+        from PyQt5.QtGui import QDrag
+        
+        # Get selected items
+        selected_items = [item for item in list_widget.selectedItems()
+                         if item.data(Qt.UserRole) and not item.data(Qt.UserRole).startswith("FOLDER_HEADER")]
+        
+        if not selected_items:
+            return
+        
+        # Create mime data with file paths
+        mime_data = QMimeData()
+        file_paths = []
+        for item in selected_items:
+            file_path = item.data(Qt.UserRole)
+            if file_path:
+                file_paths.append(file_path)
+        
+        # Store file paths as text
+        mime_data.setText("\n".join(file_paths))
+        
+        # Create drag object
+        drag = QDrag(list_widget)
+        drag.setMimeData(mime_data)
+        
+        # Create simple drag pixmap with transparency and count
+        pixmap_width = 200
+        pixmap_height = 40
+        pixmap = QPixmap(pixmap_width, pixmap_height)
+        pixmap.fill(Qt.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Draw semi-transparent background
+        painter.setOpacity(0.7)
+        painter.setBrush(QColor(60, 60, 60))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(0, 0, pixmap_width, pixmap_height, 5, 5)
+        
+        # Draw text
+        painter.setOpacity(1.0)
+        painter.setPen(Qt.white)
+        from PyQt5.QtGui import QFont
+        font = QFont("Segoe UI", 10)
+        painter.setFont(font)
+        
+        if len(selected_items) == 1:
+            text = f"📄 {selected_items[0].text()[:25]}"
+        else:
+            text = f"📄 {len(selected_items)} files"
+        
+        painter.drawText(10, 5, pixmap_width - 20, pixmap_height - 10, 
+                        Qt.AlignLeft | Qt.AlignVCenter, text)
+        
+        painter.end()
+        
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(pixmap.rect().center())
+        
+        # Execute drag
+        drag.exec_(Qt.CopyAction)
+    
+    def kh_rando_drag_enter_event(self, event):
+        """Handle drag enter event for KH Rando list"""
+        if event.mimeData().hasText() or event.source() == self.file_list:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+    
+    def kh_rando_drag_move_event(self, event):
+        """Handle drag move event for KH Rando list with hover highlighting"""
+        if not (event.mimeData().hasText() or event.source() == self.file_list):
+            event.ignore()
+            return
+        
+        # Auto-scroll if near edges
+        drop_position = event.pos()
+        list_height = self.kh_rando_file_list.height()
+        scroll_margin = 30  # pixels from edge to trigger scroll
+        
+        if drop_position.y() < scroll_margin:
+            # Near top - scroll up
+            current_value = self.kh_rando_file_list.verticalScrollBar().value()
+            self.kh_rando_file_list.verticalScrollBar().setValue(current_value - 5)
+        elif drop_position.y() > list_height - scroll_margin:
+            # Near bottom - scroll down
+            current_value = self.kh_rando_file_list.verticalScrollBar().value()
+            self.kh_rando_file_list.verticalScrollBar().setValue(current_value + 5)
+        
+        # Clear previous hover highlight
+        if self._drag_hover_item:
+            font = self._drag_hover_item.font()
+            font.setBold(False)
+            self._drag_hover_item.setFont(font)
+            self._drag_hover_item.setBackground(Qt.transparent)
+            self._drag_hover_item = None
+        
+        # Get item under cursor
+        target_item = self.kh_rando_file_list.itemAt(drop_position)
+        
+        if target_item:
+            item_data = target_item.data(Qt.UserRole)
+            
+            # Only highlight category headers
+            if item_data and item_data.startswith("KH_CATEGORY_HEADER:"):
+                # Make header bold and add background
+                font = target_item.font()
+                font.setBold(True)
+                target_item.setFont(font)
+                target_item.setBackground(QColor(86, 156, 214, 80))  # Blue highlight
+                self._drag_hover_item = target_item
+            # If hovering over a file, find and highlight its category
+            elif item_data and not item_data.startswith("KH_CATEGORY_HEADER:"):
+                # Find the category header above this file
+                for i in range(self.kh_rando_file_list.row(target_item), -1, -1):
+                    check_item = self.kh_rando_file_list.item(i)
+                    check_data = check_item.data(Qt.UserRole)
+                    if check_data and check_data.startswith("KH_CATEGORY_HEADER:"):
+                        font = check_item.font()
+                        font.setBold(True)
+                        check_item.setFont(font)
+                        check_item.setBackground(QColor(86, 156, 214, 80))
+                        self._drag_hover_item = check_item
+                        break
+        
+        event.acceptProposedAction()
+    
+    def kh_rando_drag_leave_event(self, event):
+        """Handle drag leave event - clear hover highlighting"""
+        if self._drag_hover_item:
+            font = self._drag_hover_item.font()
+            font.setBold(False)
+            self._drag_hover_item.setFont(font)
+            self._drag_hover_item.setBackground(Qt.transparent)
+            self._drag_hover_item = None
+        event.accept()
+    
+    def kh_rando_drop_event(self, event):
+        """Handle drop event for KH Rando list - instant export to folder"""
+        # Clear hover highlight
+        if self._drag_hover_item:
+            font = self._drag_hover_item.font()
+            font.setBold(False)
+            self._drag_hover_item.setFont(font)
+            self._drag_hover_item.setBackground(Qt.transparent)
+            self._drag_hover_item = None
+        
+        if not (event.mimeData().hasText() or event.source() == self.file_list):
+            event.ignore()
+            return
+        
+        # Get the dropped item position to determine target category
+        drop_position = event.pos()
+        target_item = self.kh_rando_file_list.itemAt(drop_position)
+        
+        # Get selected files from main list
+        selected_items = [item for item in self.file_list.selectedItems()
+                        if item.data(Qt.UserRole) and not item.data(Qt.UserRole).startswith("FOLDER_HEADER")]
+        
+        if not selected_items:
+            event.ignore()
+            return
+        
+        # Determine target category from drop position
+        target_category = None
+        if target_item:
+            item_data = target_item.data(Qt.UserRole)
+            if item_data:
+                if item_data.startswith("KH_CATEGORY_HEADER:"):
+                    # Dropped on category header
+                    target_category = item_data.replace("KH_CATEGORY_HEADER:", "")
+                else:
+                    # Dropped on a file - find its category
+                    for i in range(self.kh_rando_file_list.row(target_item), -1, -1):
+                        check_item = self.kh_rando_file_list.item(i)
+                        check_data = check_item.data(Qt.UserRole)
+                        if check_data and check_data.startswith("KH_CATEGORY_HEADER:"):
+                            target_category = check_data.replace("KH_CATEGORY_HEADER:", "")
+                            break
+        
+        if not target_category:
+            show_themed_message(self, QMessageBox.Information, "Drop Target", 
+                               "Please drop files onto a KH Rando category folder.")
+            event.ignore()
+            return
+        
+        # Export files instantly to the target category
+        self.export_files_to_category_instant(selected_items, target_category)
+        event.acceptProposedAction()
+    
+    def export_files_to_category_instant(self, items, category):
+        """Instantly export files to a specific KH Rando category (auto-convert if needed)"""
+        from pathlib import Path
+        
+        # Get file paths and separate SCD vs non-SCD files
+        scd_files = []
+        files_to_convert = []
+        
+        for item in items:
+            file_path = item.data(Qt.UserRole)
+            if file_path and not file_path.startswith("FOLDER_HEADER") and os.path.exists(file_path):
+                file_ext = os.path.splitext(file_path)[1].lower()
+                if file_ext == '.scd':
+                    scd_files.append(file_path)
+                elif file_ext in ['.wav', '.mp3', '.ogg', '.flac']:
+                    files_to_convert.append(file_path)
+        
+        if not scd_files and not files_to_convert:
+            return
+        
+        # Check if KH Rando folder is set
+        if not self.config.kh_rando_folder or not os.path.exists(self.config.kh_rando_folder):
+            show_themed_message(self, QMessageBox.Warning, "KH Rando Not Set", 
+                               "Please set the KH Randomizer music folder first.")
+            return
+        
+        # Show quality selection dialog only if conversion is needed
+        selected_quality = 10  # Default quality
+        if files_to_convert:
+            from ui.conversion_manager import QualitySelectionDialog
+            quality_dialog = QualitySelectionDialog(self)
+            apply_title_bar_theming(quality_dialog)
+            
+            if quality_dialog.exec_() != QDialog.Accepted:
+                return  # User cancelled
+            
+            selected_quality = quality_dialog.get_quality()
+        
+        # Prepare final file list (with conversions)
+        final_files = scd_files.copy()
+        converted_files = []
+        
+        # Convert non-SCD files if needed
+        if files_to_convert:
+            from ui.conversion_manager import SimpleStatusDialog
+            status_dialog = SimpleStatusDialog("Converting Files", self)
+            status_dialog.update_status(f"Converting {len(files_to_convert)} file(s) for export...")
+            status_dialog.show()
+            apply_title_bar_theming(status_dialog)
+            QApplication.processEvents()
+            
+            for file_path in files_to_convert:
+                try:
+                    filename = os.path.basename(file_path)
+                    status_dialog.update_status(f"Converting: {filename}")
+                    QApplication.processEvents()
+                    
+                    # Convert to SCD in temp directory
+                    temp_scd = os.path.join(tempfile.gettempdir(), 
+                                          f"{os.path.splitext(filename)[0]}.scd")
+                    
+                    success = self.converter.convert_to_scd(file_path, temp_scd, selected_quality)
+                    
+                    if success and os.path.exists(temp_scd):
+                        final_files.append(temp_scd)
+                        converted_files.append(temp_scd)
+                    else:
+                        logging.warning(f"Conversion failed for: {filename}")
+                except Exception as e:
+                    logging.error(f"Error converting {file_path}: {e}")
+            
+            status_dialog.close_dialog()
+        
+        # Export all files to the target category
+        if final_files:
+            from ui.conversion_manager import SimpleStatusDialog
+            export_dialog = SimpleStatusDialog("Exporting to KH Rando", self)
+            export_dialog.update_status(f"Exporting {len(final_files)} file(s) to {category}...")
+            export_dialog.show()
+            apply_title_bar_theming(export_dialog)
+            QApplication.processEvents()
+            
+            success_count = 0
+            fail_count = 0
+            
+            for file_path in final_files:
+                try:
+                    filename = Path(file_path).name
+                    export_dialog.update_status(f"Exporting: {filename}")
+                    QApplication.processEvents()
+                    
+                    # Use the kh_rando_exporter to export to category
+                    success = self.kh_rando_exporter.export_file(
+                        file_path, category, self.config.kh_rando_folder
+                    )
+                    
+                    if success:
+                        success_count += 1
+                    else:
+                        fail_count += 1
+                        
+                except Exception as e:
+                    logging.error(f"Error exporting {file_path}: {e}")
+                    fail_count += 1
+            
+            export_dialog.close_dialog()
+            
+            # Clean up converted temp files
+            for temp_file in converted_files:
+                try:
+                    if os.path.exists(temp_file):
+                        os.remove(temp_file)
+                except:
+                    pass
+            
+            # Show result
+            if success_count > 0:
+                message = f"Successfully exported {success_count} file(s) to {category}"
+                if fail_count > 0:
+                    message += f"\n{fail_count} file(s) failed to export"
+                show_themed_message(self, QMessageBox.Information, "Export Complete", message)
+                
+                # Refresh the library
+                self._refresh_duplicate_status()
+                self._populate_kh_rando_list()
+                self._update_kh_rando_section_counts()
+            else:
+                show_themed_message(self, QMessageBox.Warning, "Export Failed", 
+                                   "Failed to export files. Check the log for details.")
 
     # === File Loading ===
     def load_file(self):
@@ -2017,7 +2730,123 @@ Path: {file_path}"""
         if self.file_load_thread and self.file_load_thread.isRunning():
             self.file_load_thread.quit()
             self.file_load_thread.wait()
+        
+        # Stop file watcher
+        if hasattr(self, 'file_watcher'):
+            self.file_watcher.clear_watches()
             
         # Clean up temp files
         self.converter.cleanup_temp_files()
         event.accept()
+    
+    # File Watcher Methods
+    def _start_file_watcher(self):
+        """Start watching library folders for changes"""
+        if not hasattr(self, 'file_watcher'):
+            return
+        
+        # Add library folders to watch
+        folders_to_watch = list(self.config.library_folders)
+        
+        # Add KH Rando folder if set
+        if self.config.kh_rando_folder:
+            folders_to_watch.append(self.config.kh_rando_folder)
+        
+        # Scan initial files for tracking
+        self.file_watcher.scan_initial_files(folders_to_watch, self.config.scan_subdirs)
+        
+        # Start watching
+        self.file_watcher.add_watch_paths(folders_to_watch, self.config.scan_subdirs)
+        
+        logging.info(f"File watcher started for {len(folders_to_watch)} folders")
+    
+    def _on_file_added(self, file_path: str):
+        """Handle file added event"""
+        from pathlib import Path
+        logging.info(f"File added: {file_path}")
+        
+        # Refresh KH Rando exporter cache to detect new folders
+        if self.library.kh_rando_exporter:
+            self.library.kh_rando_exporter.refresh_existing_files()
+        
+        # Add single file to library without full rescan
+        self.library._add_single_file(Path(file_path))
+        
+        # Update displays
+        if self.organize_by_folder_cb.isChecked():
+            self._organize_files_by_folder()
+        
+        # Refresh KH Rando list in case file was added to KH Rando folder
+        self._populate_kh_rando_list()
+        self._update_kh_rando_section_counts()
+        
+        # Refresh duplicate status for main library files
+        self._refresh_duplicate_status()
+    
+    def _on_file_removed(self, file_path: str):
+        """Handle file removed event"""
+        logging.info(f"File removed: {file_path}")
+        # Remove file from display
+        self._remove_file_from_display(file_path)
+        
+        # Refresh KH Rando list in case file was removed from KH Rando folder
+        self._populate_kh_rando_list()
+        
+        # Update displays
+        if self.organize_by_folder_cb.isChecked():
+            self._organize_files_by_folder()
+        self._update_kh_rando_section_counts()
+        
+        # Refresh duplicate status for main library files
+        self._refresh_duplicate_status()
+    
+    def _on_directory_added(self, directory_path: str):
+        """Handle new directory added event (for KH Rando folder detection)"""
+        from pathlib import Path
+        logging.info(f"Directory added: {directory_path}")
+        
+        # Check if this directory is under the KH Rando folder
+        if self.config.kh_rando_folder:
+            try:
+                dir_path = Path(directory_path).resolve()
+                kh_rando_path = Path(self.config.kh_rando_folder).resolve()
+                
+                # If the new directory is under KH Rando folder, refresh categories
+                if dir_path.is_relative_to(kh_rando_path):
+                    # Refresh KH Rando exporter to detect new folders
+                    if self.library.kh_rando_exporter:
+                        self.library.kh_rando_exporter.refresh_existing_files()
+                    
+                    # Update categories and repopulate list
+                    self._update_kh_rando_categories()
+                    self._populate_kh_rando_list()
+                    self._update_kh_rando_section_counts()
+                    
+                    logging.info(f"KH Rando categories updated for new directory: {directory_path}")
+            except (ValueError, OSError) as e:
+                logging.warning(f"Error checking directory path: {e}")
+    
+    def _on_file_modified(self, file_path: str):
+        """Handle file modified event"""
+        logging.info(f"File modified: {file_path}")
+        # For now, just log - we could update file size/metadata if needed
+        pass
+    
+    def _remove_file_from_display(self, file_path: str):
+        """Remove a file from the library display"""
+        file_path_str = str(file_path)
+        
+        # Remove from main file list
+        for i in range(self.file_list.count() - 1, -1, -1):
+            item = self.file_list.item(i)
+            if item and item.data(Qt.UserRole) == file_path_str:
+                self.file_list.takeItem(i)
+                break
+        
+        # Remove from KH Rando files by category tracking
+        if hasattr(self.library, 'kh_rando_files_by_category'):
+            for category_key in list(self.library.kh_rando_files_by_category.keys()):
+                self.library.kh_rando_files_by_category[category_key] = [
+                    (fpath, display) for fpath, display in self.library.kh_rando_files_by_category[category_key]
+                    if fpath != file_path_str
+                ]

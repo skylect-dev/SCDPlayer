@@ -130,58 +130,6 @@ class CircularSpectrumVisualizer(AudioVisualizer):
             painter.drawLine(int(x1), int(y1), int(x2), int(y2))
 
 
-class VUMeterVisualizer(AudioVisualizer):
-    """Classic VU meters"""
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setStyleSheet("background-color: #1a1a1a;")
-        self.left_level = 0
-        self.right_level = 0
-        
-    def update_audio_data(self, data, volume, position_ms, is_playing):
-        # Split spectrum into left/right channels (simulated)
-        mid = len(data) // 2
-        self.left_level = np.mean(data[:mid])
-        self.right_level = np.mean(data[mid:])
-        super().update_audio_data(data, volume, position_ms, is_playing)
-        
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        w = self.width()
-        h = self.height()
-        
-        # Draw left channel VU meter
-        self._draw_vu_meter(painter, 10, h * 0.25, w - 20, h * 0.15, self.left_level, "L")
-        
-        # Draw right channel VU meter
-        self._draw_vu_meter(painter, 10, h * 0.6, w - 20, h * 0.15, self.right_level, "R")
-        
-    def _draw_vu_meter(self, painter, x, y, w, h, level, label):
-        # Background
-        painter.setBrush(QBrush(QColor(30, 30, 30)))
-        painter.setPen(QPen(QColor(60, 60, 60), 1))
-        painter.drawRect(int(x), int(y), int(w), int(h))
-        
-        # Level bar with gradient
-        bar_width = w * level
-        
-        gradient = QLinearGradient(x, 0, x + w, 0)
-        gradient.setColorAt(0, QColor(0, 255, 0))
-        gradient.setColorAt(0.7, QColor(255, 255, 0))
-        gradient.setColorAt(1, QColor(255, 0, 0))
-        
-        painter.setBrush(QBrush(gradient))
-        painter.setPen(Qt.NoPen)
-        painter.drawRect(int(x), int(y), int(bar_width), int(h))
-        
-        # Label
-        painter.setPen(QPen(QColor(200, 200, 200)))
-        painter.drawText(int(x + 5), int(y - 5), label)
-
-
 class WaveformVisualizer(AudioVisualizer):
     """Symmetric waveform (like SoundCloud)"""
     
@@ -225,11 +173,13 @@ class ParticleVisualizer(AudioVisualizer):
         self.particles = []
         
     def update_audio_data(self, data, volume, position_ms, is_playing):
-        # Generate particles based on audio intensity
-        if is_playing and volume > 0.1:
-            for _ in range(int(volume * 5)):
+        # Generate particles based on audio intensity (more responsive)
+        if is_playing and volume > 0.05:
+            # More particles with better volume scaling
+            num_particles = int(volume * 10) + 2  # At least 2 particles, up to 12
+            for _ in range(num_particles):
                 angle = np.random.rand() * 2 * np.pi
-                speed = np.random.rand() * volume * 3
+                speed = (np.random.rand() * 0.5 + 0.5) * volume * 5  # Faster particles
                 self.particles.append({
                     'x': self.width() / 2,
                     'y': self.height() / 2,
@@ -239,12 +189,12 @@ class ParticleVisualizer(AudioVisualizer):
                     'color': QColor.fromHsv(int(np.random.rand() * 360), 255, 255)
                 })
         
-        # Update particles
-        self.particles = [p for p in self.particles if p['life'] > 0]
+        # Update particles - remove dead ones immediately
+        self.particles = [p for p in self.particles if p['life'] > 0.01]  # Small threshold
         for p in self.particles:
             p['x'] += p['vx']
             p['y'] += p['vy']
-            p['life'] -= 0.02
+            p['life'] -= 0.025  # Slightly faster decay
             
         super().update_audio_data(data, volume, position_ms, is_playing)
         
@@ -254,11 +204,13 @@ class ParticleVisualizer(AudioVisualizer):
         
         for p in self.particles:
             color = p['color']
-            color.setAlphaF(p['life'])
+            # Clamp alpha to valid range [0.0, 1.0] to avoid negative values
+            alpha = max(0.0, min(1.0, p['life']))
+            color.setAlphaF(alpha)
             painter.setBrush(QBrush(color))
             painter.setPen(Qt.NoPen)
             
-            size = p['life'] * 4
+            size = alpha * 6  # Slightly larger particles
             painter.drawEllipse(int(p['x'] - size/2), int(p['y'] - size/2), int(size), int(size))
 
 
@@ -310,7 +262,6 @@ class VisualizerWidget(QWidget):
         ("Spectrum Bars", SpectrumBarsVisualizer),
         ("Oscilloscope", OscilloscopeVisualizer),
         ("Circular Spectrum", CircularSpectrumVisualizer),
-        ("VU Meters", VUMeterVisualizer),
         ("Waveform", WaveformVisualizer),
         ("Particles", ParticleVisualizer),
         ("Retro Plasma", RetroPlasmaVisualizer),
@@ -322,9 +273,14 @@ class VisualizerWidget(QWidget):
         self.current_visualizer = None
         self.is_visible = False
         
-        # Set transparent background
-        self.setAttribute(Qt.WA_TranslucentBackground, False)
-        self.setStyleSheet("background-color: transparent;")
+        # Set background with border
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #1a1a1a;
+                border: 2px solid #404040;
+                border-radius: 8px;
+            }
+        """)
         
         # Toggle button (on/off)
         self.toggle_button = QPushButton("▶", self)
@@ -477,7 +433,10 @@ class VisualizerWidget(QWidget):
         # Create new visualizer
         if viz_class:
             self.current_visualizer = viz_class(self)
-            self.current_visualizer.setGeometry(0, 0, self.width(), self.height())
+            # Leave 40px at bottom for buttons, with padding for border
+            button_bar_height = 40
+            visualizer_height = self.height() - button_bar_height
+            self.current_visualizer.setGeometry(4, 4, self.width() - 8, visualizer_height - 8)
             self.current_visualizer.show()
             self.current_visualizer.lower()  # Put behind buttons
         
@@ -496,10 +455,13 @@ class VisualizerWidget(QWidget):
         """Show visualizer name for 2 seconds"""
         self.name_label.setText(name)
         
-        # Center the label
+        # Center the label in visualizer area (not including button bar)
+        button_bar_height = 40
+        visualizer_height = self.height() - button_bar_height
+        
         self.name_label.adjustSize()
         x = (self.width() - self.name_label.width()) // 2
-        y = (self.height() - self.name_label.height()) // 2
+        y = (visualizer_height - self.name_label.height()) // 2
         self.name_label.move(x, y)
         
         self.name_label.show()
@@ -528,18 +490,24 @@ class VisualizerWidget(QWidget):
         
     def resizeEvent(self, event):
         """Keep visualizer and buttons sized correctly"""
-        if self.current_visualizer:
-            self.current_visualizer.setGeometry(0, 0, self.width(), self.height())
+        # Leave 40px at the bottom for buttons
+        button_bar_height = 40
+        visualizer_height = self.height() - button_bar_height
         
-        # Position buttons in bottom-left corner
-        self.toggle_button.move(5, self.height() - 35)
-        self.prev_button.move(40, self.height() - 35)
-        self.next_button.move(75, self.height() - 35)
+        if self.current_visualizer:
+            # Visualizer takes up space minus button bar, with padding for border
+            self.current_visualizer.setGeometry(4, 4, self.width() - 8, visualizer_height - 8)
+        
+        # Position buttons at the bottom, centered
+        button_y = self.height() - button_bar_height + 5
+        self.toggle_button.move(5, button_y)
+        self.prev_button.move(40, button_y)
+        self.next_button.move(75, button_y)
         
         # Reposition name label if visible
         if self.name_label.isVisible():
             x = (self.width() - self.name_label.width()) // 2
-            y = (self.height() - self.name_label.height()) // 2
+            y = (visualizer_height - self.name_label.height()) // 2
             self.name_label.move(x, y)
         
     def update_visualizer(self):

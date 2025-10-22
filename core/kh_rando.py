@@ -10,7 +10,7 @@ from ui.dialogs import apply_title_bar_theming
 class KHRandoExporter:
     """Handle Kingdom Hearts Randomizer music export operations"""
     
-    # KH Rando folder structure
+    # KH Rando folder structure (kept for backward compatibility with export dialog)
     MUSIC_CATEGORIES = {
         'atlantica': 'Atlantica',
         'battle': 'Battle',
@@ -25,6 +25,7 @@ class KHRandoExporter:
         self.parent = parent
         self.kh_rando_path = None
         self.existing_files: Dict[str, Set[str]] = {}
+        self.detected_folders: Dict[str, str] = {}  # folder_key -> display_name
         
     def is_valid_kh_rando_folder(self, path: str) -> bool:
         """Check if path contains valid KH Rando music folder structure"""
@@ -49,8 +50,11 @@ class KHRandoExporter:
         """Scan existing files in KH Rando music folders"""
         existing_files = {}
         
+        # Use detected folders if available, otherwise use default categories
+        folders_to_scan = self.detected_folders if self.detected_folders else self.MUSIC_CATEGORIES
+        
         # Scan category folders
-        for category in self.MUSIC_CATEGORIES.keys():
+        for category in folders_to_scan.keys():
             actual_folder_name = self.find_actual_folder_name(kh_rando_path, category)
             category_path = os.path.join(kh_rando_path, actual_folder_name)
             files = set()
@@ -81,6 +85,26 @@ class KHRandoExporter:
         existing_files['root'] = root_files
         
         return existing_files
+    
+    def detect_folders(self, kh_rando_path: str) -> Dict[str, str]:
+        """Detect all folders in the KH Rando directory dynamically"""
+        detected_folders = {}
+        
+        if not os.path.exists(kh_rando_path):
+            return detected_folders
+        
+        try:
+            for item in os.listdir(kh_rando_path):
+                item_path = os.path.join(kh_rando_path, item)
+                if os.path.isdir(item_path):
+                    # Use folder name as key (lowercase) and display name (capitalized)
+                    folder_key = item.lower()
+                    display_name = item[0].upper() + item[1:] if item else item
+                    detected_folders[folder_key] = display_name
+        except (OSError, PermissionError):
+            pass
+        
+        return detected_folders
     
     def find_actual_folder_name(self, kh_rando_path: str, category: str) -> str:
         """Find the actual folder name for a category (case-insensitive)"""
@@ -179,14 +203,23 @@ class KHRandoExporter:
         """Set the KH Rando path and scan existing files"""
         self.kh_rando_path = path
         if path:
+            self.detected_folders = self.detect_folders(path)
             self.existing_files = self.scan_existing_files(path)
         else:
+            self.detected_folders = {}
             self.existing_files = {}
     
     def refresh_existing_files(self):
         """Refresh the existing files cache if KH Rando path is set"""
         if self.kh_rando_path:
+            self.detected_folders = self.detect_folders(self.kh_rando_path)
             self.existing_files = self.scan_existing_files(self.kh_rando_path)
+    
+    def get_categories(self) -> Dict[str, str]:
+        """Get the categories to use (detected folders or default)"""
+        if self.detected_folders:
+            return self.detected_folders
+        return self.MUSIC_CATEGORIES
 
 
 class KHRandoExportDialog(QDialog):
@@ -282,7 +315,10 @@ class KHRandoExportDialog(QDialog):
         quick_layout.addWidget(QLabel("Assign all files to:"))
         quick_layout.addStretch()
         
-        for cat_key, cat_name in self.exporter.MUSIC_CATEGORIES.items():
+        # Use detected folders or default categories
+        categories = self.exporter.get_categories()
+        
+        for cat_key, cat_name in categories.items():
             btn = QPushButton(cat_name)
             btn.clicked.connect(lambda checked, c=cat_key: self.assign_all_category(c))
             btn.setStyleSheet("""
@@ -329,7 +365,10 @@ class KHRandoExportDialog(QDialog):
         # Create dropdown for this file
         category_combo = QComboBox()
         category_combo.addItem("Select category...", "")
-        for cat_key, cat_name in self.exporter.MUSIC_CATEGORIES.items():
+        
+        # Use detected folders or default categories
+        categories = self.exporter.get_categories()
+        for cat_key, cat_name in categories.items():
             category_combo.addItem(cat_name, cat_key)
         
         category_combo.currentTextChanged.connect(
@@ -375,6 +414,27 @@ class KHRandoExportDialog(QDialog):
                     break
         self.update_export_button()
     
+    def refresh_category_dropdowns(self):
+        """Refresh all category dropdowns with newly detected folders"""
+        categories = self.exporter.get_categories()
+        
+        for filename, combo in self.file_categories.items():
+            # Store current selection
+            current_selection = combo.currentData()
+            
+            # Clear and rebuild dropdown
+            combo.clear()
+            combo.addItem("Select category...", "")
+            for cat_key, cat_name in categories.items():
+                combo.addItem(cat_name, cat_key)
+            
+            # Restore selection if it still exists
+            if current_selection:
+                for i in range(combo.count()):
+                    if combo.itemData(i) == current_selection:
+                        combo.setCurrentIndex(i)
+                        break
+    
     def update_export_button(self):
         """Update export button state based on selections"""
         has_selection = False
@@ -411,6 +471,9 @@ class KHRandoExportDialog(QDialog):
             self.path_label.setText(f"Selected: {path}")
             self.path_label.setStyleSheet("color: green;")
             self.export_btn.setEnabled(True)
+            
+            # Refresh category dropdowns with detected folders
+            self.refresh_category_dropdowns()
             
             # Update existing file indicators
             self.update_existing_file_indicators()

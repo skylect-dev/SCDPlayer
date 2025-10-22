@@ -113,4 +113,84 @@ DARK_THEME = '''
         selection-background-color: #0078d4;
         border-radius: 6px;
     }
+    QMenuBar {
+        background: #202020;
+        color: #ffffff;
+        border-bottom: 1px solid #404040;
+    }
+    QMenuBar::item {
+        background: transparent;
+        padding: 6px 12px;
+    }
+    QMenuBar::item:selected {
+        background: #505050;
+        color: #ffffff;
+    }
+    QMenuBar::item:pressed {
+        background: #0078d4;
+    }
+    QMenu {
+        background: #2c2c2c;
+        border: 1px solid #404040;
+        color: #ffffff;
+    }
+    QMenu::item {
+        padding: 6px 24px;
+    }
+    QMenu::item:selected {
+        background: #0078d4;
+    }
+    /* Scrollbar Styling */
+    QScrollBar:vertical {
+        background: transparent;
+        width: 14px;
+        margin: 0px;
+    }
+    QScrollBar::handle:vertical {
+        background: #404040;
+        min-height: 30px;
+        border-radius: 4px;
+        margin: 3px;
+    }
+    QScrollBar::handle:vertical:hover {
+        background: #505050;
+    }
+    QScrollBar::handle:vertical:pressed {
+        background: #0078d4;
+    }
+    QScrollBar::add-line:vertical {
+        height: 0px;
+    }
+    QScrollBar::sub-line:vertical {
+        height: 0px;
+    }
+    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+        background: transparent;
+    }
+    QScrollBar:horizontal {
+        background: transparent;
+        height: 14px;
+        margin: 0px;
+    }
+    QScrollBar::handle:horizontal {
+        background: #404040;
+        min-width: 30px;
+        border-radius: 4px;
+        margin: 3px;
+    }
+    QScrollBar::handle:horizontal:hover {
+        background: #505050;
+    }
+    QScrollBar::handle:horizontal:pressed {
+        background: #0078d4;
+    }
+    QScrollBar::add-line:horizontal {
+        width: 0px;
+    }
+    QScrollBar::sub-line:horizontal {
+        width: 0px;
+    }
+    QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+        background: transparent;
+    }
 '''

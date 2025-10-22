@@ -1,5 +1,6 @@
 """Library management for audio files"""
 import logging
+import os
 from pathlib import Path
 from typing import List, Optional
 from PyQt5.QtWidgets import QListWidget, QListWidgetItem
@@ -38,30 +39,31 @@ class AudioLibrary:
         if self.kh_rando_exporter:
             self.kh_rando_exporter.refresh_existing_files()
         
-        # First pass: count total files for progress tracking
-        total_files = 0
-        all_scan_paths = []
+        # Pre-compute KH Rando path for faster checking
+        kh_rando_path_obj = None
+        if self.kh_rando_exporter and self.kh_rando_exporter.kh_rando_path:
+            try:
+                kh_rando_path_obj = Path(self.kh_rando_exporter.kh_rando_path).resolve()
+            except:
+                pass
         
+        # Build list of all folders to scan
+        all_scan_paths = []
         for folder in folders:
             folder_path = Path(folder)
-            all_scan_paths.append((folder_path, scan_subdirs))
             if folder_path.exists() and folder_path.is_dir():
-                if scan_subdirs:
-                    total_files += sum(1 for f in folder_path.rglob('*') if f.is_file() and self._is_supported_file(f))
-                else:
-                    total_files += sum(1 for f in folder_path.iterdir() if f.is_file() and self._is_supported_file(f))
+                all_scan_paths.append((folder_path, scan_subdirs))
         
         # Include KH Rando folder
         if kh_rando_folder and kh_rando_folder not in folders:
             kh_path = Path(kh_rando_folder)
-            all_scan_paths.append((kh_path, True))
             if kh_path.exists() and kh_path.is_dir():
-                total_files += sum(1 for f in kh_path.rglob('*') if f.is_file() and self._is_supported_file(f))
+                all_scan_paths.append((kh_path, True))
         
-        # Second pass: scan with progress tracking
+        # Single pass: scan folders
         current_file_count = 0
         for folder_path, should_scan_subdirs in all_scan_paths:
-            current_file_count = self._scan_single_folder(folder_path, should_scan_subdirs, current_file_count, total_files)
+            current_file_count = self._scan_single_folder(folder_path, should_scan_subdirs, current_file_count, kh_rando_path_obj)
         
         # Force update of KH Rando list after scan completion
         self._update_kh_rando_list()
@@ -71,7 +73,7 @@ class AudioLibrary:
         # The main window will call _populate_kh_rando_list which reads self.kh_rando_files_by_category
         pass
     
-    def _scan_single_folder(self, folder_path: Path, scan_subdirs: bool, current_count: int = 0, total_count: int = 0) -> int:
+    def _scan_single_folder(self, folder_path: Path, scan_subdirs: bool, current_count: int = 0, kh_rando_path_obj: Path = None) -> int:
         """Scan a single folder for audio files and return updated count"""
         try:
             if not folder_path.exists() or not folder_path.is_dir():
@@ -82,22 +84,22 @@ class AudioLibrary:
                 # Recursively scan all subdirectories
                 for file_path in folder_path.rglob('*'):
                     if file_path.is_file() and self._is_supported_file(file_path):
-                        self._add_file_to_library(file_path)
+                        self._add_file_to_library(file_path, kh_rando_path_obj)
                         current_count += 1
                         
-                        # Report progress
-                        if self.progress_callback and total_count > 0:
-                            self.progress_callback(current_count, total_count, file_path.name)
+                        # Report progress (without total since we don't pre-count)
+                        if self.progress_callback:
+                            self.progress_callback(current_count, 0, file_path.name)
             else:
                 # Only scan immediate directory
                 for file_path in folder_path.iterdir():
                     if file_path.is_file() and self._is_supported_file(file_path):
-                        self._add_file_to_library(file_path)
+                        self._add_file_to_library(file_path, kh_rando_path_obj)
                         current_count += 1
                         
-                        # Report progress
-                        if self.progress_callback and total_count > 0:
-                            self.progress_callback(current_count, total_count, file_path.name)
+                        # Report progress (without total since we don't pre-count)
+                        if self.progress_callback:
+                            self.progress_callback(current_count, 0, file_path.name)
                             
         except (OSError, PermissionError) as e:
             logging.warning(f"Error scanning folder {folder_path}: {e}")
@@ -107,39 +109,8 @@ class AudioLibrary:
     def _is_supported_file(self, file_path: Path) -> bool:
         """Check if file has a supported extension"""
         return file_path.suffix.lower() in self.SUPPORTED_EXTENSIONS
-    
-    def _get_kh_status(self, file_path: Path) -> tuple[str, bool]:
-        """Get KH Rando status for a file"""
-        if not self.kh_rando_exporter:
-            return "", False
-            
-        filename = file_path.name
-        is_in_kh_rando = False
         
-        # Check if file path is within KH Rando folder
-        if self.kh_rando_exporter.is_file_path_in_kh_rando(str(file_path)):
-            # Extract category from path
-            for part in file_path.parts:
-                if part in self.kh_rando_exporter.MUSIC_CATEGORIES:
-                    return f" [KH: {part}]", True
-        
-        # Check if filename exists in any KH Rando category
-        kh_categories = self.kh_rando_exporter.is_file_in_kh_rando(filename)
-        if kh_categories:
-            if kh_categories == ['root']:
-                return f" [KH: root folder - misplaced]", False
-            else:
-                # Remove 'root' from display if it's also in proper categories
-                display_categories = [cat for cat in kh_categories if cat != 'root']
-                if display_categories:
-                    return f" [KH: {', '.join(display_categories)} - duplicate]", False
-                else:
-                    return f" [KH: root folder - misplaced]", False
-        
-        # Default case: file is not related to KH Rando
-        return "", False
-        
-    def _add_file_to_library(self, file_path: Path) -> None:
+    def _add_file_to_library(self, file_path: Path, kh_rando_path_obj: Path = None) -> None:
         """Add a single file to the library list"""
         try:
             if not file_path.exists():
@@ -148,52 +119,77 @@ class AudioLibrary:
             size = file_path.stat().st_size
             filename = file_path.name
             
-            # Get KH Rando status
-            kh_status, is_in_kh_rando = self._get_kh_status(file_path)
+            # Fast check if file is in KH Rando folder using pre-computed path
+            is_in_kh_rando = False
+            if kh_rando_path_obj:
+                try:
+                    # Use Path.is_relative_to() for cross-platform relative path checking
+                    # resolve() ensures both paths are absolute and normalized
+                    is_in_kh_rando = file_path.resolve().is_relative_to(kh_rando_path_obj)
+                except (ValueError, OSError):
+                    pass
+            
+            # If in KH Rando folder, categorize and return early
+            if is_in_kh_rando and self.kh_rando_file_list and self.kh_rando_exporter:
+                categories_to_check = self.kh_rando_exporter.get_categories()
+                
+                for part in file_path.parts:
+                    part_lower = part.lower()
+                    if part_lower in [cat.lower() for cat in categories_to_check.keys()]:
+                        # Find the correct category key
+                        for cat_key in categories_to_check.keys():
+                            if part_lower == cat_key.lower():
+                                # Ensure category exists in tracking dict
+                                if cat_key not in self.kh_rando_files_by_category:
+                                    self.kh_rando_files_by_category[cat_key] = []
+                                
+                                # Check if file already exists in this category (avoid duplicates)
+                                file_path_str = str(file_path)
+                                already_exists = any(fpath == file_path_str for fpath, _ in self.kh_rando_files_by_category[cat_key])
+                                
+                                if not already_exists:
+                                    # Add to category tracking
+                                    simple_display = f"{filename} ({format_file_size(size)})"
+                                    self.kh_rando_files_by_category[cat_key].append((file_path_str, simple_display))
+                                
+                                return  # Don't add to main list
+                        break
+                # File is in KH Rando but couldn't categorize - still don't add to main list
+                return
+            
+            # Get KH Rando status for regular files (duplicates)
+            kh_status = ""
+            if self.kh_rando_exporter and not is_in_kh_rando:
+                kh_categories = self.kh_rando_exporter.is_file_in_kh_rando(filename)
+                if kh_categories:
+                    if kh_categories == ['root']:
+                        kh_status = " [KH: root folder - misplaced]"
+                    else:
+                        display_categories = [cat for cat in kh_categories if cat != 'root']
+                        if display_categories:
+                            kh_status = f" [KH: {', '.join(display_categories)} - duplicate]"
             
             # Create list item
             display_text = f"{filename} ({format_file_size(size)}){kh_status}"
+            
+            # Check if file already exists in main library (avoid duplicates)
+            file_path_str = str(file_path)
+            for i in range(self.file_list.count()):
+                existing_item = self.file_list.item(i)
+                if existing_item:
+                    item_data = existing_item.data(Qt.UserRole)
+                    # Skip folder headers and check file path
+                    if item_data and not item_data.startswith("FOLDER_HEADER:") and item_data == file_path_str:
+                        # File already exists, don't add duplicate
+                        return
+            
             item = QListWidgetItem(display_text)
             item.setToolTip(str(file_path))
-            item.setData(Qt.UserRole, str(file_path))
+            item.setData(Qt.UserRole, file_path_str)
             
-            # Color code items that are in KH Rando
+            # Color code duplicates
             if kh_status:
-                if is_in_kh_rando:
-                    item.setForeground(QColor('lightgreen'))  # Green for files in KH Rando folder
-                else:
-                    item.setForeground(QColor('orange'))  # Orange for duplicates elsewhere
-            
-            # Check if this is a KH Rando file and should go in KH list
-            if self.kh_rando_file_list and self.kh_rando_exporter:
-                filename_base = filename
-                added_to_kh_display = False
-                
-                if self.kh_rando_exporter.is_file_path_in_kh_rando(str(file_path)):
-                    # File is in KH Rando folder - determine category from path
-                    for part in file_path.parts:
-                        if part.lower() in [cat.lower() for cat in self.kh_rando_exporter.MUSIC_CATEGORIES.keys()]:
-                            # Find the correct category key
-                            for cat_key in self.kh_rando_exporter.MUSIC_CATEGORIES.keys():
-                                if part.lower() == cat_key.lower():
-                                    if cat_key in self.kh_categories:
-                                        # Add to category tracking
-                                        simple_display = f"{filename} ({format_file_size(size)})"
-                                        self.kh_rando_files_by_category[cat_key].append((str(file_path), simple_display))
-                                        added_to_kh_display = True
-                                    break
-                            break
-                    
-                    # If file was added to KH display, don't add to regular list
-                    if added_to_kh_display:
-                        return
-                else:
-                    # Check if file exists in any KH Rando category (duplicates elsewhere)
-                    kh_categories = self.kh_rando_exporter.is_file_in_kh_rando(filename_base)
-                    if kh_categories:
-                        # This is a duplicate - don't show in KH Rando sections, only in regular list
-                        # The regular list will show the duplicate status in orange
-                        pass
+                item.setForeground(QColor('orange'))  # Orange for duplicates
             
             # Add to regular library list
             self.file_list.addItem(item)
@@ -229,3 +225,27 @@ class AudioLibrary:
             return playlist.index(file_path)
         except ValueError:
             return -1
+    
+    def _add_single_file(self, file_path: Path):
+        """Add a single file to the library without full rescan"""
+        if not file_path.exists() or not file_path.is_file():
+            return
+        
+        if not self._is_supported_file(file_path):
+            return
+        
+        try:
+            # Pre-compute KH Rando path for fast checking
+            kh_rando_path_obj = None
+            if self.kh_rando_exporter and self.kh_rando_exporter.kh_rando_path:
+                try:
+                    kh_rando_path_obj = Path(self.kh_rando_exporter.kh_rando_path).resolve()
+                except:
+                    pass
+            
+            # Use the existing _add_file_to_library method
+            self._add_file_to_library(file_path, kh_rando_path_obj)
+            logging.info(f"Added file to library: {file_path}")
+        except Exception as e:
+            logging.error(f"Error adding file {file_path}: {e}")
+

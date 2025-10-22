@@ -1071,7 +1071,10 @@ class LoopEditorDialog(QDialog):
         """Setup the user interface"""
         self.setWindowTitle("Loop Editor - Professional Audio Loop Point Editor")
         self.setMinimumSize(800, 650)
-        self.resize(1200, 750)
+        self.resize(1400, 800)
+        
+        # Enable maximize and minimize buttons
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint)
         
         # Apply professional dark theme styling
         self.setStyleSheet("""
