@@ -65,7 +65,6 @@ class HelpDialog(QDialog):
             ("Audio Analysis", "audio-analysis"),
             ("Volume Controls", "volume-controls"),
             ("KH Randomizer Setup", "kh-rando-setup"),
-            ("File Status Colors", "file-status"),
             ("Export Options", "export-options"),
             ("File Conversion", "file-conversion"),
             ("Library Management", "library-management"),
@@ -151,7 +150,19 @@ class HelpDialog(QDialog):
             
             <h2 id="getting-started">Getting Started</h2>
             <div class="section">
-                <p>SCDPlayer is designed for managing and playing SCD audio files, particularly for use with the Kingdom Hearts Randomizer. The application supports multiple audio formats and provides seamless conversion capabilities.</p>
+                <p>SCDPlayer is designed for managing and playing SCD audio files, particularly for use with the Kingdom Hearts Randomizer. The application supports multiple audio formats and provides seamless conversion capabilities with a modern, streamlined interface.</p>
+                
+                <h3>What's New in v{__version__}</h3>
+                <ul>
+                    <li><strong>Instant Performance:</strong> 2-3 second faster startup with optimized splash screen</li>
+                    <li><strong>Real-time Detection:</strong> New folders and files detected instantly without manual rescan</li>
+                    <li><strong>Context Menus:</strong> Right-click any track for quick access to common operations</li>
+                    <li><strong>Drag and Drop:</strong> Drag files directly to KH Rando folders with visual feedback</li>
+                    <li><strong>Modern UI:</strong> Custom rounded scrollbars and polished dark theme</li>
+                    <li><strong>Music List Editor:</strong> Quick access via J key or dedicated button</li>
+                    <li><strong>Folder Creation:</strong> Create new KH Rando categories on the fly during export</li>
+                    <li><strong>.NET 8.0 Support:</strong> Updated to latest .NET runtime for better compatibility</li>
+                </ul>
             </div>
             
             <h2 id="library-setup">Setting Up Your Library</h2>
@@ -161,7 +172,9 @@ class HelpDialog(QDialog):
                     <li><strong>Add Folder:</strong> Click "Add Folder" to scan directories for audio files</li>
                     <li><strong>Scan Subdirectories:</strong> Enable checkbox to include subfolders in scans</li>
                     <li><strong>Supported Formats:</strong> SCD, WAV, MP3, OGG, FLAC</li>
-                    <li><strong>Auto-Scan:</strong> Library refreshes automatically when folders change</li>
+                    <li><strong>Auto-Scan:</strong> Library refreshes automatically when folders change (instant detection)</li>
+                    <li><strong>Instant Updates:</strong> New files and folders appear immediately without manual rescan</li>
+                    <li><strong>Fast Loading:</strong> Optimized splash screen with per-file progress updates</li>
                     <li><strong>Remove Folders:</strong> Select folders in the list and click "Remove Folder"</li>
                 </ul>
             </div>
@@ -280,33 +293,16 @@ class HelpDialog(QDialog):
                 <h3>Setting Up KH Rando</h3>
                 <ul>
                     <li><strong>Select Folder:</strong> Click "Select KH Rando Folder" to choose your randomizer music directory</li>
-                    <li><strong>Valid Structure:</strong> Must contain at least 4 of these subfolders (case-insensitive): atlantica, battle, boss, cutscene, field, title, wild</li>
+                    <li><strong>Valid Structure:</strong> Must contain at least 4 category subfolders (case-insensitive)</li>
+                    <li><strong>Folder Status:</strong> Shows ✓ music when folder structure is valid</li>
+                    <li><strong>Musiclist Status:</strong> Shows ✓ musiclist.json if found, or ⚠ musiclist.json missing</li>
+                    <li><strong>Edit Music List:</strong> Click "Edit Music List (J)" button or press J key to edit musiclist.json</li>
                     <li><strong>Folder Case:</strong> Accepts mixed case folder names (e.g., "Atlantica", "BATTLE", "Boss")</li>
-                    <li><strong>Auto-Detection:</strong> Application attempts to find common KH Rando locations automatically</li>
+                    <li><strong>Auto-Detection:</strong> Detects existing category folders automatically</li>
+                    <li><strong>Dynamic Categories:</strong> Uses detected folders as export categories</li>
                     <li><strong>Status Indicators:</strong> Files show color coding based on KH Rando status</li>
                     <li><strong>Progress Tracking:</strong> Shows conversion progress when exporting multiple files</li>
-                </ul>
-            </div>
-            
-            <h2 id="file-status">File Status Colors</h2>
-            <div class="section">
-                <ul>
-                    <li><span class="status-green">Green Text:</span> File exists in KH Rando folder</li>
-                    <li><span class="status-orange">Orange Text:</span> Duplicate file (same name, different format)</li>
-                    <li><span class="status-white">White Text:</span> Not in KH Rando folder</li>
-                </ul>
-            </div>
-            
-            <h2 id="export-options">Export Options</h2>
-            <div class="section">
-                <h3>Export Methods</h3>
-                <ul>
-                    <li><strong>Export Selected:</strong> Export chosen files with individual category assignment</li>
-                    <li><strong>Export Missing:</strong> Bulk export all files not currently in KH Rando</li>
-                    <li><strong>Auto-Convert:</strong> Non-SCD files automatically converted during export</li>
-                    <li><strong>Category Assignment:</strong> Assign files to atlantica, battle, boss, cutscene, field, title, or wild</li>
-                    <li><strong>Progress Tracking:</strong> Visual progress bar shows conversion and export status</li>
-                    <li><strong>Background Processing:</strong> Exports run in background without freezing UI</li>
+                    <li><strong>Real-time Updates:</strong> KH Rando folder monitoring detects new folders instantly</li>
                 </ul>
             </div>
             
@@ -315,7 +311,9 @@ class HelpDialog(QDialog):
                 <h3>Supported Conversions</h3>
                 <ul>
                     <li><strong>To WAV:</strong> Convert SCD, MP3, OGG, FLAC files to WAV format</li>
-                    <li><strong>To SCD:</strong> Convert WAV files to pseudo-SCD format for KH compatibility</li>
+                    <li><strong>To SCD:</strong> Convert WAV files to pseudo-SCD format for KH compatibility (requires .NET)</li>
+                    <li><strong>.NET Runtime:</strong> Application checks for .NET 8.0 SDK at startup (required for SCD conversion only)</li>
+                    <li><strong>Automatic Install:</strong> Prompted to install .NET if not detected (one-time setup)</li>
                     <li><strong>Batch Conversion:</strong> Convert multiple selected files with progress tracking</li>
                     <li><strong>Automatic:</strong> Conversions happen automatically during KH Rando export</li>
                     <li><strong>Temporary Files:</strong> Conversion files cleaned up automatically</li>
@@ -327,12 +325,23 @@ class HelpDialog(QDialog):
             <div class="section">
                 <h3>Advanced Features</h3>
                 <ul>
-                    <li><strong>Delete Selected:</strong> Move files to Recycle Bin (DEL key shortcut)</li>
-                    <li><strong>Open File Location:</strong> Open the folder containing selected or currently playing file (Ctrl+L)</li>
+                    <li><strong>Context Menus:</strong> Right-click on any track for quick access to common operations</li>
+                    <li><strong>Drag and Drop:</strong> Drag tracks from library directly to KH Rando category folders
+                        <ul>
+                            <li>Semi-transparent drag preview shows file count</li>
+                            <li>Blue highlight indicates target folder during drag</li>
+                            <li>Auto-scrolling when dragging near list edges</li>
+                            <li>Instant export with quality selection only if conversion needed</li>
+                        </ul>
+                    </li>
+                    <li><strong>Delete Selected:</strong> Move files to Recycle Bin (DEL key or context menu)</li>
+                    <li><strong>Rename Files:</strong> Rename files directly from context menu</li>
+                    <li><strong>Open File Location:</strong> Open folder containing file (Ctrl+L or context menu)</li>
                     <li><strong>Convert Selected:</strong> Convert multiple files to WAV or SCD format with progress tracking</li>
                     <li><strong>Cross-Format Detection:</strong> Detects song.mp3 and song.scd as duplicates</li>
                     <li><strong>Root Folder Scanning:</strong> Finds misplaced files in main KH Rando directory</li>
-                    <li><strong>Rescan:</strong> Manually refresh library after moving files</li>
+                    <li><strong>Auto-Refresh:</strong> Library updates automatically when files are added or removed</li>
+                    <li><strong>Rescan:</strong> Manually refresh library (F5 key or button)</li>
                     <li><strong>Multi-Selection:</strong> Select multiple files for batch operations</li>
                 </ul>
             </div>
@@ -341,11 +350,19 @@ class HelpDialog(QDialog):
             <div class="section">
                 <h3>Main Window</h3>
                 <ul>
-                    <li><span class="shortcut">DEL</span> - Move selected files to Recycle Bin</li>
-                    <li><span class="shortcut">Ctrl+L</span> - Open file location in File Explorer (selected or currently playing file)</li>
+                    <li><span class="shortcut">Space</span> - Play/pause current track</li>
+                    <li><span class="shortcut">L</span> - Open Loop Editor for selected file</li>
+                    <li><span class="shortcut">E</span> - Export selected files to KH Rando</li>
+                    <li><span class="shortcut">M</span> - Export missing files to KH Rando</li>
+                    <li><span class="shortcut">W</span> - Convert selected files to WAV</li>
+                    <li><span class="shortcut">S</span> - Convert selected files to SCD</li>
+                    <li><span class="shortcut">J</span> - Open Music List Editor (musiclist.json)</li>
+                    <li><span class="shortcut">F5</span> - Rescan library</li>
+                    <li><span class="shortcut">DEL</span> - Delete selected files (moves to Recycle Bin)</li>
+                    <li><span class="shortcut">Ctrl+L</span> - Open file location in File Explorer</li>
                     <li><span class="shortcut">F1</span> - Show this help guide</li>
                     <li><span class="shortcut">Double-Click</span> - Load and play file from library</li>
-                    <li><span class="shortcut">Space</span> - Play/pause current track (when controls are focused)</li>
+                    <li><span class="shortcut">Right-Click</span> - Show context menu with quick actions</li>
                 </ul>
                 
                 <h3>Loop Editor</h3>
@@ -374,10 +391,22 @@ class HelpDialog(QDialog):
                 <h3>Using the Export Dialog</h3>
                 <ul>
                     <li><strong>Quick Assignment:</strong> Use category buttons to assign all files to the same category</li>
+                    <li><strong>Create New Folder:</strong> Click "+ Create New Folder" button to add new categories on the fly</li>
                     <li><strong>Individual Selection:</strong> Use dropdown menus to set specific categories per file</li>
+                    <li><strong>Create from Dropdown:</strong> Select "+ Create New Folder..." from any file's dropdown menu</li>
+                    <li><strong>Custom Categories:</strong> Create any folder name for custom organization</li>
                     <li><strong>Status Indicators:</strong> Files already in KH Rando are marked to avoid duplicates</li>
-                    <li><strong>Auto-Detection:</strong> Dialog attempts to find your KH Rando folder automatically</li>
-                    <li><strong>Manual Selection:</strong> Browse to select KH Rando folder if auto-detection fails</li>
+                    <li><strong>Auto-Detection:</strong> Dialog automatically detects existing category folders</li>
+                    <li><strong>Dynamic Updates:</strong> New folders appear in dropdowns immediately after creation</li>
+                </ul>
+                
+                <h3>Drag and Drop Export</h3>
+                <ul>
+                    <li><strong>Quick Export:</strong> Drag files from main library to KH Rando category folders</li>
+                    <li><strong>Visual Feedback:</strong> Target folder highlights in blue during drag</li>
+                    <li><strong>Auto-Scrolling:</strong> List scrolls automatically when dragging near edges</li>
+                    <li><strong>Instant Export:</strong> Files export immediately with minimal dialogs</li>
+                    <li><strong>Smart Conversion:</strong> Quality dialog only appears if format conversion needed</li>
                 </ul>
             </div>
             
@@ -401,13 +430,18 @@ class HelpDialog(QDialog):
                 <ul>
                     <li><strong>Files Won't Play:</strong> Check if file format is supported; try conversion</li>
                     <li><strong>Export Fails:</strong> Verify KH Rando folder structure and permissions</li>
-                    <li><strong>Missing Files:</strong> Use "Rescan" to refresh library after moving files</li>
+                    <li><strong>New Files Not Appearing:</strong> File watcher should detect changes instantly; if not, use F5 to rescan</li>
                     <li><strong>Slow Loading:</strong> Reduce library size or disable subdirectory scanning</li>
                     <li><strong>Conversion Errors:</strong> Ensure source files are not corrupted or in use</li>
                     <li><strong>KH Rando Not Detected:</strong> Manually browse to select the correct music folder</li>
+                    <li><strong>Musiclist.json Missing:</strong> Status indicator shows warning; use Edit Music List button to create one</li>
                     <li><strong>Case Sensitivity Issues:</strong> KH Rando validation now accepts mixed case folder names</li>
                     <li><strong>File Location Won't Open:</strong> Check file exists and you have permission to access the folder</li>
                     <li><strong>Progress Bars Stuck:</strong> Close and restart application if background tasks freeze</li>
+                    <li><strong>Drag and Drop Not Working:</strong> Ensure KH Rando folder is selected and valid</li>
+                    <li><strong>Context Menu Missing:</strong> Right-click on file items in the library, not empty space</li>
+                    <li><strong>.NET Conversion Fails:</strong> Ensure .NET 8.0 SDK is installed (checked at startup)</li>
+                    <li><strong>Folder Creation Fails:</strong> Check write permissions in KH Rando directory</li>
                 </ul>
                 
                 <h3>Loop Editor Issues</h3>

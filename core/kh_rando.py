@@ -1,6 +1,7 @@
 """Kingdom Hearts Randomizer music export functionality"""
 import os
 import shutil
+import logging
 from typing import Dict, List, Set, Optional
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QListWidget, QFileDialog, QMessageBox, QGroupBox, QCheckBox, QScrollArea, QWidget
 from PyQt5.QtCore import Qt
@@ -85,6 +86,12 @@ class KHRandoExporter:
         existing_files['root'] = root_files
         
         return existing_files
+    
+    def refresh_categories(self):
+        """Refresh the category cache by re-detecting folders"""
+        if self.kh_rando_path:
+            self._detected_categories = self.detect_folders(self.kh_rando_path)
+            self.existing_files = self.scan_existing_files(self.kh_rando_path)
     
     def detect_folders(self, kh_rando_path: str) -> Dict[str, str]:
         """Detect all folders in the KH Rando directory dynamically"""
@@ -331,6 +338,23 @@ class KHRandoExportDialog(QDialog):
             """)
             quick_layout.addWidget(btn)
         
+        # Add "Create New Folder" button
+        create_folder_btn = QPushButton("+ Create New Folder")
+        create_folder_btn.clicked.connect(self.create_new_folder)
+        create_folder_btn.setStyleSheet("""
+            QPushButton {
+                padding: 4px 8px;
+                font-size: 11px;
+                min-height: 20px;
+                border-radius: 4px;
+                background: #0078d4;
+            }
+            QPushButton:hover {
+                background: #106ebe;
+            }
+        """)
+        quick_layout.addWidget(create_folder_btn)
+        
         return quick_layout
     
     def create_file_assignment_row(self, file_path):
@@ -371,6 +395,9 @@ class KHRandoExportDialog(QDialog):
         for cat_key, cat_name in categories.items():
             category_combo.addItem(cat_name, cat_key)
         
+        # Add "Create New Folder..." option at the end
+        category_combo.addItem("+ Create New Folder...", "__create_new__")
+        
         category_combo.currentTextChanged.connect(
             lambda text, f=filename, combo=category_combo: self.set_file_category_dropdown(f, combo)
         )
@@ -402,6 +429,19 @@ class KHRandoExportDialog(QDialog):
         
     def set_file_category_dropdown(self, filename: str, combo: QComboBox):
         """Handle category selection from dropdown"""
+        # Check if "Create New Folder" was selected
+        if combo.currentData() == "__create_new__":
+            new_folder = self.create_new_folder()
+            if new_folder:
+                # Set the combo to the newly created folder
+                for i in range(combo.count()):
+                    if combo.itemData(i) == new_folder:
+                        combo.setCurrentIndex(i)
+                        break
+            else:
+                # Reset to "Select category..." if creation was cancelled
+                combo.setCurrentIndex(0)
+        
         self.update_export_button()
     
     def assign_all_category(self, category: str):
@@ -428,8 +468,11 @@ class KHRandoExportDialog(QDialog):
             for cat_key, cat_name in categories.items():
                 combo.addItem(cat_name, cat_key)
             
+            # Add "Create New Folder..." option at the end
+            combo.addItem("+ Create New Folder...", "__create_new__")
+            
             # Restore selection if it still exists
-            if current_selection:
+            if current_selection and current_selection != "__create_new__":
                 for i in range(combo.count()):
                     if combo.itemData(i) == current_selection:
                         combo.setCurrentIndex(i)
@@ -474,6 +517,78 @@ class KHRandoExportDialog(QDialog):
             
             # Refresh category dropdowns with detected folders
             self.refresh_category_dropdowns()
+    
+    def create_new_folder(self):
+        """Create a new category folder in the KH Rando directory"""
+        from PyQt5.QtWidgets import QInputDialog
+        
+        # Check if KH Rando path is set
+        if not self.exporter.kh_rando_path:
+            from ui.dialogs import show_themed_message
+            show_themed_message(
+                self, QMessageBox.Warning,
+                "No KH Rando Folder",
+                "Please select a KH Rando folder first."
+            )
+            return None
+        
+        # Ask for folder name
+        folder_name, ok = QInputDialog.getText(
+            self,
+            "Create New Folder",
+            "Enter folder name (will be created in KH Rando music directory):",
+            text=""
+        )
+        
+        if not ok or not folder_name:
+            return None
+        
+        # Sanitize folder name
+        folder_name = folder_name.strip().lower()
+        if not folder_name:
+            return None
+        
+        # Create the folder
+        new_folder_path = os.path.join(self.exporter.kh_rando_path, folder_name)
+        
+        try:
+            if os.path.exists(new_folder_path):
+                from ui.dialogs import show_themed_message
+                show_themed_message(
+                    self, QMessageBox.Information,
+                    "Folder Exists",
+                    f"The folder '{folder_name}' already exists."
+                )
+                # Return the folder name so it can still be selected
+                return folder_name
+            
+            os.makedirs(new_folder_path, exist_ok=True)
+            logging.info(f"Created new KH Rando category folder: {new_folder_path}")
+            
+            # Refresh the exporter's category cache
+            self.exporter.refresh_categories()
+            
+            # Refresh all dropdowns
+            self.refresh_category_dropdowns()
+            
+            from ui.dialogs import show_themed_message
+            show_themed_message(
+                self, QMessageBox.Information,
+                "Folder Created",
+                f"Successfully created folder: {folder_name}"
+            )
+            
+            return folder_name
+            
+        except Exception as e:
+            logging.error(f"Error creating folder: {e}")
+            from ui.dialogs import show_themed_message
+            show_themed_message(
+                self, QMessageBox.Warning,
+                "Error",
+                f"Failed to create folder: {str(e)}"
+            )
+            return None
             
             # Update existing file indicators
             self.update_existing_file_indicators()

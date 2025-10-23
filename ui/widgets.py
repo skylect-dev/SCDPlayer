@@ -166,20 +166,20 @@ class SplashScreen(QSplashScreen):
         painter.drawPixmap(center_x - icon_size // 2, center_y - icon_size // 2, icon_pixmap)
         
         # Draw static text (no animation)
-        # Modern, clean title with more vertical space
-        font = QFont("Segoe UI", 42, QFont.Bold)
+        # Modern, clean title with sufficient vertical space
+        font = QFont("Segoe UI", 38, QFont.Bold)  # Slightly smaller to prevent clipping
         painter.setFont(font)
         
         # Use gradient colors from the icon for title
         painter.setPen(QColor("#22d3ee"))  # Bright cyan
-        title_rect = QRect(0, height - 140, width, 60)  # More height for title
+        title_rect = QRect(0, height - 145, width, 70)  # More vertical space and padding
         painter.drawText(title_rect, Qt.AlignCenter, "SCDPlayer")
         
         # Version with emerald accent
         font = QFont("Segoe UI", 12, QFont.Normal)
         painter.setFont(font)
         painter.setPen(QColor("#34d399"))  # Emerald green
-        version_rect = QRect(0, height - 80, width, 25)
+        version_rect = QRect(0, height - 75, width, 25)
         painter.drawText(version_rect, Qt.AlignCenter, f"v{__version__}")
         
         # NOTE: Message text NOT drawn here - added separately in create_splash_with_message()

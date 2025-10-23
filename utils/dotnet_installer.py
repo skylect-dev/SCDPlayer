@@ -12,16 +12,17 @@ from utils.helpers import get_bundled_path
 
 
 class DotNetRuntimeChecker:
-    """Check for .NET 5.0 runtime availability"""
+    """Check for .NET 5.0+ runtime availability"""
     
-    REQUIRED_VERSION = "5.0"
-    DOWNLOAD_URL = "https://dotnet.microsoft.com/download/dotnet/thank-you/runtime-desktop-5.0.17-windows-x64-installer"
-    DIRECT_DOWNLOAD_URL = "https://download.visualstudio.microsoft.com/download/pr/c6a74d6b-576c-4ab0-bf55-d46d45610730/f70d2252c9f452c2eb679b8041846466/windowsdesktop-runtime-5.0.17-win-x64.exe"
+    REQUIRED_VERSION = "5.0"  # Minimum version, but will accept any 5.0+
+    RECOMMENDED_VERSION = "8.0"  # Current LTS
+    DOWNLOAD_URL = "https://dotnet.microsoft.com/download/dotnet/8.0"
+    DIRECT_DOWNLOAD_URL = "https://builds.dotnet.microsoft.com/dotnet/Sdk/8.0.121/dotnet-sdk-8.0.121-win-x64.exe"
     
     @staticmethod
     def check_dotnet_installed() -> Tuple[bool, Optional[str]]:
         """
-        Check if .NET 5.0 runtime is installed
+        Check if .NET 5.0+ runtime is installed
         
         Returns:
             Tuple of (is_installed, version_string)
@@ -40,17 +41,28 @@ class DotNetRuntimeChecker:
             
             if result.returncode == 0:
                 output = result.stdout
-                # Look for Microsoft.NETCore.App 5.x or Microsoft.WindowsDesktop.App 5.x
+                # Look for Microsoft.NETCore.App 5.x+ or Microsoft.WindowsDesktop.App 5.x+
+                # Accept any version 5.0 or higher (5.x, 6.x, 7.x, 8.x, etc.)
+                found_versions = []
                 for line in output.splitlines():
-                    if 'Microsoft.WindowsDesktop.App 5.' in line or 'Microsoft.NETCore.App 5.' in line:
-                        # Extract version
+                    if 'Microsoft.WindowsDesktop.App' in line or 'Microsoft.NETCore.App' in line:
                         parts = line.split()
                         if len(parts) >= 2:
                             version = parts[1]
-                            logging.info(f".NET 5.0 runtime found: {version}")
-                            return True, version
+                            try:
+                                major_version = int(version.split('.')[0])
+                                if major_version >= 5:
+                                    found_versions.append(version)
+                            except (ValueError, IndexError):
+                                continue
                 
-                logging.warning(".NET is installed but version 5.0 not found")
+                if found_versions:
+                    # Return the highest version found
+                    best_version = max(found_versions, key=lambda v: tuple(map(int, v.split('.')[:2])))
+                    logging.info(f".NET {best_version} runtime found (compatible with 5.0+ requirement)")
+                    return True, best_version
+                
+                logging.warning(".NET is installed but no compatible version (5.0+) found")
                 logging.debug(f"Available runtimes:\n{output}")
                 return False, None
             else:
@@ -138,7 +150,7 @@ class DotNetInstallerThread(QThread):
             is_installed, version = DotNetRuntimeChecker.check_dotnet_installed()
             
             if is_installed:
-                self.finished.emit(True, f".NET 5.0 runtime installed successfully (version {version})")
+                self.finished.emit(True, f".NET runtime installed successfully (version {version})")
             else:
                 self.finished.emit(False, "Installation completed but .NET runtime not detected. Please try installing manually.")
                 
@@ -214,16 +226,16 @@ def prompt_dotnet_install(parent_widget) -> bool:
     
     if bundled_installer:
         message = (
-            "🔧 .NET 5.0 Runtime Required\n\n"
-            "SCD file conversion requires the .NET 5.0 Desktop Runtime.\n\n"
+            "🔧 .NET Runtime Required\n\n"
+            "SCD file conversion requires the .NET Desktop Runtime (5.0 or higher).\n\n"
             "A bundled installer has been found. Would you like to install it now?\n\n"
             "This is a one-time setup and only takes a minute."
         )
     else:
         message = (
-            "🔧 .NET 5.0 Runtime Required\n\n"
-            "SCD file conversion requires the .NET 5.0 Desktop Runtime.\n\n"
-            "The installer will be downloaded (~50 MB) and installed automatically.\n\n"
+            "🔧 .NET Runtime Required\n\n"
+            "SCD file conversion requires the .NET Desktop Runtime (5.0 or higher).\n\n"
+            "The .NET 8.0 SDK installer will be downloaded (~200 MB) and installed automatically.\n\n"
             "This is a one-time setup and only takes a few minutes.\n\n"
             "Alternative: You can download it manually from:\n"
             f"{DotNetRuntimeChecker.DOWNLOAD_URL}"
@@ -308,6 +320,6 @@ def install_dotnet_runtime(parent_widget) -> bool:
             parent_widget,
             QMessageBox.Warning,
             "Installation Failed",
-            f"❌ {result[1]}\n\nYou can install .NET 5.0 manually from:\n{DotNetRuntimeChecker.DOWNLOAD_URL}\n\nAlternatively, you can use WAV files instead of SCD."
+            f"❌ {result[1]}\n\nYou can install .NET 8.0 (or 5.0+) manually from:\n{DotNetRuntimeChecker.DOWNLOAD_URL}\n\nAlternatively, you can use WAV files instead of SCD."
         )
         return False

@@ -56,6 +56,18 @@ def main():
     # Create main window with progress callback
     window = SCDPlayer(progress_callback=update_splash)
     
+    update_splash("Checking .NET runtime...")
+    # Check for .NET runtime availability (non-blocking)
+    try:
+        from utils.dotnet_installer import DotNetRuntimeChecker
+        is_available, version = DotNetRuntimeChecker.check_dotnet_installed()
+        if is_available:
+            logging.info(f".NET {version} detected - SCD conversion available")
+        else:
+            logging.info(".NET not detected - SCD conversion will prompt for installation")
+    except Exception as e:
+        logging.warning(f"Error checking .NET: {e}")
+    
     update_splash("Finalizing...")
     
     # Finalize splash

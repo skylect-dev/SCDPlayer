@@ -163,12 +163,10 @@ class SCDPlayer(QMainWindow):
         open_log_file_action.triggered.connect(self.open_log_file)
         log_menu.addAction(open_log_file_action)
         
-        # Tools menu
-        tools_menu = menubar.addMenu('&Tools')
-        
-        musiclist_editor_action = QAction('Edit Music List (musiclist.json)', self)
-        musiclist_editor_action.triggered.connect(self.show_musiclist_editor)
-        tools_menu.addAction(musiclist_editor_action)
+        # Ko-fi menu (last item)
+        kofi_action = menubar.addAction('Support on &Ko-fi ☕')
+        kofi_action.triggered.connect(self.open_kofi)
+
         
     def show_help_dialog(self):
         """Show the help dialog"""
@@ -189,6 +187,11 @@ class SCDPlayer(QMainWindow):
         """Open Discord server invite link"""
         import webbrowser
         webbrowser.open('https://discord.gg/FqePtT2BBM')
+    
+    def open_kofi(self):
+        """Open Ko-fi support page"""
+        import webbrowser
+        webbrowser.open('https://ko-fi.com/skylect')
     
     def show_log_viewer(self):
         """Show the log viewer dialog"""
@@ -398,7 +401,14 @@ class SCDPlayer(QMainWindow):
         
         self.kh_rando_path_label = QLabel('Not selected')
         self.kh_rando_path_label.setStyleSheet("color: gray; font-style: italic;")
+        self.kh_rando_path_label.setMinimumWidth(250)  # Ensure enough space for status text
         kh_rando_layout.addWidget(self.kh_rando_path_label)
+        
+        # Edit Music List button
+        self.edit_musiclist_btn = QPushButton('Edit Music List (J)')
+        self.edit_musiclist_btn.clicked.connect(self.show_musiclist_editor)
+        self.edit_musiclist_btn.setToolTip('Edit musiclist.json for KH Randomizer')
+        kh_rando_layout.addWidget(self.edit_musiclist_btn)
         
         self.select_kh_rando_btn = QPushButton('Select KH Rando Folder')
         self.select_kh_rando_btn.clicked.connect(self.select_kh_rando_folder)
@@ -775,6 +785,10 @@ class SCDPlayer(QMainWindow):
         play_pause_shortcut = QShortcut(QKeySequence(Qt.Key_Space), self)
         play_pause_shortcut.activated.connect(self.toggle_play_pause)
         
+        # J key shortcut for opening music list editor
+        musiclist_editor_shortcut = QShortcut(QKeySequence("J"), self)
+        musiclist_editor_shortcut.activated.connect(self.show_musiclist_editor)
+        
         
 
 
@@ -842,9 +856,21 @@ class SCDPlayer(QMainWindow):
             # Update categories from detected folders
             self._update_kh_rando_categories()
             
-            # Update UI
+            # Check for musiclist.json (it's in the parent directory of the music folder)
+            parent_dir = os.path.dirname(folder_path)
+            musiclist_path = os.path.join(parent_dir, "musiclist.json")
+            has_musiclist = os.path.exists(musiclist_path)
+            
+            # Update UI with folder name and indicators
             folder_name = os.path.basename(folder_path)
-            self.kh_rando_path_label.setText(f"✓ {folder_name}")
+            status_text = f"✓ {folder_name}"
+            if has_musiclist:
+                status_text += "  ✓ musiclist.json"
+            else:
+                status_text += "  ⚠ musiclist.json missing"
+            self.kh_rando_path_label.setText(status_text)
+            
+            # Folder is always green if valid, musiclist status is separate
             self.kh_rando_path_label.setStyleSheet("color: green;")
             
             # Enable the open folder button

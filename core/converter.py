@@ -17,16 +17,19 @@ class AudioConverter:
     
     def check_dotnet_available(self) -> bool:
         """
-        Check if .NET 5.0 runtime is available (cached result)
+        Check if .NET 5.0+ runtime is available (cached result)
         
         Returns:
-            True if .NET 5.0 is available
+            True if .NET 5.0+ is available
         """
         if not self._dotnet_checked:
             from utils.dotnet_installer import DotNetRuntimeChecker
-            self._dotnet_available, _ = DotNetRuntimeChecker.check_dotnet_installed()
+            self._dotnet_available, version = DotNetRuntimeChecker.check_dotnet_installed()
             self._dotnet_checked = True
-            logging.info(f".NET 5.0 availability: {self._dotnet_available}")
+            if self._dotnet_available:
+                logging.info(f".NET runtime available: {version}")
+            else:
+                logging.info(".NET 5.0+ runtime not found")
         
         return self._dotnet_available
     
