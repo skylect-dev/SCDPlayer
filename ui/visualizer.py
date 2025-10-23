@@ -83,8 +83,8 @@ class SpectrumBarsVisualizer(AudioVisualizer):
         font.setPointSize(9)
         painter.setFont(font)
 
-        # Frequencies to label (log scale, musically relevant)
-        freq_labels = [20, 100, 250, 500, 1000, 2500, 5000, 8000, 12000]
+        # Frequencies to label (clean, non-overlapping)
+        freq_labels = [20, 500, 1000, 2500, 5000, 8000, 12000]
         # Get bar positions for these frequencies using Mel scale math
         def hz_to_mel(hz):
             return 2595 * np.log10(1 + hz / 700)
@@ -102,9 +102,13 @@ class SpectrumBarsVisualizer(AudioVisualizer):
             # Find the closest bar edge to this frequency
             idx = np.argmin(np.abs(hz_points - freq))
             x = int(idx * bar_width)
-            label = f"{freq//1000}k" if freq >= 1000 else str(freq)
-            if freq == 1000:
-                label = "1k"
+            if freq >= 1000:
+                if freq % 1000 == 0:
+                    label = f"{freq//1000}k"
+                else:
+                    label = f"{freq/1000:.1f}k"
+            else:
+                label = str(freq)
             # Draw tick
             painter.drawLine(x, bar_area_height, x, bar_area_height + 10)
             # Draw label (move up so it's not cut off)
