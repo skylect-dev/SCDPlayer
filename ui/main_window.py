@@ -34,6 +34,26 @@ from utils.helpers import format_time, send_to_recycle_bin
 
 
 class SCDToolkit(QMainWindow):
+
+    def get_full_library_playlist(self):
+        """Return a list of all file paths in the library, in folder order, regardless of UI expansion."""
+        playlist = []
+        files_by_folder = getattr(self, '_files_by_folder_cache', None)
+        if files_by_folder:
+            for folder_name in sorted(files_by_folder.keys()):
+                # Sort files alphabetically by filename (case-insensitive)
+                sorted_files = sorted(files_by_folder[folder_name], key=lambda x: os.path.basename(x[1]).lower())
+                for _, file_path, _ in sorted_files:
+                    if file_path and file_path not in playlist:
+                        playlist.append(file_path)
+        else:
+            # Fallback to visible list
+            for i in range(self.file_list.count()):
+                item = self.file_list.item(i)
+                file_path = item.data(Qt.UserRole)
+                if file_path and not file_path.startswith("FOLDER_HEADER") and file_path not in playlist:
+                    playlist.append(file_path)
+        return playlist
     """Main SCDToolkit application window"""
     
     def __init__(self):
@@ -2577,16 +2597,26 @@ class SCDToolkit(QMainWindow):
             self.loop_btn.setStyleSheet("")  # Reset to default style
 
     def previous_track(self):
-        """Play previous track in playlist"""
-        if len(self.playlist) > 1 and self.current_playlist_index > 0:
-            self.current_playlist_index -= 1
-            self.load_file_path(self.playlist[self.current_playlist_index], auto_play=True)
+        """Play previous track in full library playlist (not just visible UI)"""
+        full_playlist = self.get_full_library_playlist()
+        if len(full_playlist) > 1 and self.current_file in full_playlist:
+            idx = full_playlist.index(self.current_file)
+            if idx > 0:
+                prev_idx = idx - 1
+                self.current_playlist_index = prev_idx
+                self.playlist = full_playlist
+                self.load_file_path(full_playlist[prev_idx], auto_play=True)
 
     def next_track(self):
-        """Play next track in playlist"""
-        if len(self.playlist) > 1 and self.current_playlist_index < len(self.playlist) - 1:
-            self.current_playlist_index += 1
-            self.load_file_path(self.playlist[self.current_playlist_index], auto_play=True)
+        """Play next track in full library playlist (not just visible UI)"""
+        full_playlist = self.get_full_library_playlist()
+        if len(full_playlist) > 1 and self.current_file in full_playlist:
+            idx = full_playlist.index(self.current_file)
+            if idx < len(full_playlist) - 1:
+                next_idx = idx + 1
+                self.current_playlist_index = next_idx
+                self.playlist = full_playlist
+                self.load_file_path(full_playlist[next_idx], auto_play=True)
 
     def on_scrub_start(self):
         """Called when user starts dragging the slider"""
