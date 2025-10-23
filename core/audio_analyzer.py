@@ -111,7 +111,7 @@ class AudioAnalyzer:
             
             # Normalize against a fixed reference level instead of per-frame max
             # This prevents everything from always appearing maxed out
-            min_db = -50  # Minimum threshold (very quiet)
+            min_db = -40  # Minimum threshold (raise to suppress weak bars)
             max_db = 80    # Maximum reference (full scale)
             
             # Clamp and normalize to 0-1 range
@@ -122,7 +122,7 @@ class AudioAnalyzer:
             spectrum = self._bin_fft_to_bars(fft_db)
             
             # Apply smoothing and boost for better visualization
-            spectrum = np.power(spectrum, 0.7)  # Compress dynamic range slightly
+            spectrum = np.power(spectrum, 0.5)  # Stronger compression: dominant bars stand out more
             
             # Apply temporal smoothing to reduce jitter
             # Mix 30% new data with 70% previous data
