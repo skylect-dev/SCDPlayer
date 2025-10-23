@@ -19,7 +19,7 @@ from PyQt5.QtGui import QIcon, QFont
 class UpdateWorker(QThread):
     """Worker thread to perform the actual update"""
     progress_updated = pyqtSignal(int, str)  # progress, message
-    update_complete = pyqtSignal(bool, str)  # success, message
+    update_complete = pyqtSignal(bool, str, str)  # success, message, exe_path
     
     def __init__(self, zip_path, install_dir, exe_path):
         super().__init__()
@@ -33,6 +33,39 @@ class UpdateWorker(QThread):
             # Wait a moment for SCDToolkit to fully close
             self.progress_updated.emit(5, "Waiting for SCDToolkit to close...")
             time.sleep(2)
+            
+            # Step 0.5: Check if we need to rename the folder from SCDPlayer to SCDToolkit
+            if self.install_dir.name == "SCDPlayer":
+                self.progress_updated.emit(10, "Detecting legacy SCDPlayer folder...")
+                new_install_dir = self.install_dir.parent / "SCDToolkit"
+                
+                # Check if target already exists
+                if new_install_dir.exists():
+                    # Target exists, we'll update in place instead
+                    self.progress_updated.emit(12, "SCDToolkit folder already exists - updating in place")
+                else:
+                    # Rename the folder
+                    self.progress_updated.emit(12, "Renaming SCDPlayer folder to SCDToolkit...")
+                    try:
+                        self.install_dir.rename(new_install_dir)
+                        self.install_dir = new_install_dir
+                        # Update exe path to match new location and new exe name
+                        if "SCDPlayer" in str(self.exe_path):
+                            self.exe_path = str(self.exe_path).replace("SCDPlayer", "SCDToolkit")
+                        # Also update if the exe name itself needs changing
+                        if self.exe_path.endswith("SCDPlayer.exe"):
+                            self.exe_path = self.exe_path.replace("SCDPlayer.exe", "SCDToolkit.exe")
+                        self.progress_updated.emit(14, "Folder renamed successfully!")
+                        time.sleep(0.3)
+                    except Exception as e:
+                        # If rename fails, continue with update in place
+                        self.progress_updated.emit(14, f"Could not rename folder, continuing: {str(e)}")
+            
+            # Also check if exe name needs updating even if folder name is already correct
+            if "SCDPlayer.exe" in str(self.exe_path):
+                old_exe_path = Path(self.exe_path)
+                new_exe_path = old_exe_path.parent / "SCDToolkit.exe"
+                self.exe_path = str(new_exe_path)
             
             # Step 1: Extract archive
             self.progress_updated.emit(15, "Extracting update archive...")
@@ -53,17 +86,18 @@ class UpdateWorker(QThread):
             self.progress_updated.emit(45, "Analyzing update structure...")
             
             # Check if we have a nested SCDToolkit folder (or legacy SCDPlayer folder)
+            # If found, we need to use its contents as the source
             nested_folder = temp_dir / "SCDToolkit"
             legacy_folder = temp_dir / "SCDPlayer"
-            if nested_folder.exists():
+            if nested_folder.exists() and nested_folder.is_dir():
                 source_dir = nested_folder
-                self.progress_updated.emit(50, "Found nested folder structure")
-            elif legacy_folder.exists():
+                self.progress_updated.emit(50, "Found nested SCDToolkit folder - using its contents")
+            elif legacy_folder.exists() and legacy_folder.is_dir():
                 source_dir = legacy_folder
-                self.progress_updated.emit(50, "Found legacy folder structure")
+                self.progress_updated.emit(50, "Found nested SCDPlayer folder - using its contents")
             else:
                 source_dir = temp_dir
-                self.progress_updated.emit(50, "Found direct structure")
+                self.progress_updated.emit(50, "Using direct structure")
             
             time.sleep(0.3)
             
@@ -118,10 +152,10 @@ class UpdateWorker(QThread):
             self.progress_updated.emit(100, "Update complete!")
             time.sleep(0.5)
             
-            self.update_complete.emit(True, "Update installed successfully!")
+            self.update_complete.emit(True, "Update installed successfully!", self.exe_path)
             
         except Exception as e:
-            self.update_complete.emit(False, f"Update failed: {str(e)}")
+            self.update_complete.emit(False, f"Update failed: {str(e)}", self.exe_path)
 
 
 class UpdateDialog(QDialog):
@@ -303,8 +337,11 @@ class UpdateDialog(QDialog):
         # Add to details log
         self.details_text.append(f"[{progress:3d}%] {message}")
         
-    def update_finished(self, success, message):
+    def update_finished(self, success, message, exe_path):
         """Handle update completion"""
+        # Update exe_path in case it changed (e.g., SCDPlayer.exe -> SCDToolkit.exe)
+        self.exe_path = exe_path
+        
         if success:
             self.status_label.setText("✓ " + message)
             self.progress_bar.setValue(100)
