@@ -111,8 +111,8 @@ class AudioAnalyzer:
             
             # Normalize against a fixed reference level instead of per-frame max
             # This prevents everything from always appearing maxed out
-            min_db = -40  # Minimum threshold (raise to suppress weak bars)
-            max_db = 80    # Maximum reference (full scale)
+            min_db = -20  # Minimum threshold (raise to suppress weak bars)
+            max_db = 0    # Maximum reference (full scale)
             
             # Clamp and normalize to 0-1 range
             fft_db = np.clip(fft_db, min_db, max_db)
