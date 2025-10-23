@@ -136,27 +136,40 @@ class AudioAnalyzer:
             return np.zeros(self.num_bars)
     
     def _bin_fft_to_bars(self, fft_data):
-        """Bin FFT data into frequency bars using improved logarithmic spacing"""
+        """Bin FFT data into frequency bars using Mel scale (perceptual spacing)"""
         num_fft_bins = len(fft_data)
         bars = np.zeros(self.num_bars)
 
-        # Improved log binning: more even spread, avoid crowding low end
-        min_bin = 1  # skip DC
-        max_bin = num_fft_bins - 1
-        log_min = np.log10(min_bin)
-        log_max = np.log10(max_bin)
-        log_bins = np.logspace(log_min, log_max, self.num_bars + 1).astype(int)
-        log_bins[0] = min_bin
-        log_bins[-1] = max_bin
+        # Mel scale binning
+        def hz_to_mel(hz):
+            return 2595 * np.log10(1 + hz / 700)
+
+        def mel_to_hz(mel):
+            return 700 * (10**(mel / 2595) - 1)
+
+        # FFT bin frequencies
+        nyquist = self.sample_rate / 2
+        bin_freqs = np.linspace(0, nyquist, num_fft_bins)
+
+        # Mel scale edges
+        min_hz = 0
+        max_hz = nyquist
+        min_mel = hz_to_mel(min_hz)
+        max_mel = hz_to_mel(max_hz)
+        mel_points = np.linspace(min_mel, max_mel, self.num_bars + 1)
+        hz_points = mel_to_hz(mel_points)
+        bin_edges = np.searchsorted(bin_freqs, hz_points)
+        bin_edges[0] = 1  # skip DC only
+        bin_edges[-1] = num_fft_bins - 1
 
         # Ensure strictly increasing (no duplicates)
-        for i in range(1, len(log_bins)):
-            if log_bins[i] <= log_bins[i-1]:
-                log_bins[i] = log_bins[i-1] + 1
+        for i in range(1, len(bin_edges)):
+            if bin_edges[i] <= bin_edges[i-1]:
+                bin_edges[i] = bin_edges[i-1] + 1
 
         for i in range(self.num_bars):
-            start_bin = log_bins[i]
-            end_bin = log_bins[i + 1]
+            start_bin = bin_edges[i]
+            end_bin = bin_edges[i + 1]
             if end_bin > start_bin:
                 bars[i] = np.mean(fft_data[start_bin:end_bin])
         return bars
