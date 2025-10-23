@@ -15,8 +15,8 @@ class AudioAnalyzer:
         self.channels = 2
         self.current_file = None
         self.fft_size = 2048
-        self.num_bars = 32  # Reduced from 64
-        self.prev_spectrum = np.zeros(32)  # For smoothing
+        self.num_bars = 64  # Increased for finer frequency detail
+        self.prev_spectrum = np.zeros(64)  # For smoothing
         self.smoothing_factor = 0.7  # 30% of new data, 70% of old data
         
     def load_file(self, file_path):
@@ -111,7 +111,7 @@ class AudioAnalyzer:
             
             # Normalize against a fixed reference level instead of per-frame max
             # This prevents everything from always appearing maxed out
-            min_db = -40  # Minimum threshold (raise to suppress weak bars)
+            min_db = -80  # Minimum threshold (raise to suppress weak bars)
             max_db = 80    # Maximum reference (full scale)
             
             # Clamp and normalize to 0-1 range
@@ -136,36 +136,29 @@ class AudioAnalyzer:
             return np.zeros(self.num_bars)
     
     def _bin_fft_to_bars(self, fft_data):
-        """Bin FFT data into frequency bars using logarithmic spacing"""
+        """Bin FFT data into frequency bars using improved logarithmic spacing"""
         num_fft_bins = len(fft_data)
-        
-        # Create logarithmic frequency bins with better low-frequency coverage
-        # Map bars to frequency ranges logarithmically, but ensure no empty bins
-        bars_array = np.arange(self.num_bars + 1)
-        # Use exponential mapping: each bar covers exponentially more frequency
-        log_bins = np.power(num_fft_bins / 10.0, bars_array / self.num_bars) * 10.0
-        log_bins = log_bins.astype(int)
-        log_bins[0] = 1  # Start from bin 1 (skip DC component)
-        log_bins[-1] = num_fft_bins  # Ensure we reach the end
-        
+        bars = np.zeros(self.num_bars)
+
+        # Improved log binning: more even spread, avoid crowding low end
+        min_bin = 1  # skip DC
+        max_bin = num_fft_bins - 1
+        log_min = np.log10(min_bin)
+        log_max = np.log10(max_bin)
+        log_bins = np.logspace(log_min, log_max, self.num_bars + 1).astype(int)
+        log_bins[0] = min_bin
+        log_bins[-1] = max_bin
+
         # Ensure strictly increasing (no duplicates)
         for i in range(1, len(log_bins)):
             if log_bins[i] <= log_bins[i-1]:
                 log_bins[i] = log_bins[i-1] + 1
-        
-        bars = np.zeros(self.num_bars)
-        
-        # Use min to avoid index out of bounds
-        num_bins_to_use = min(len(log_bins) - 1, self.num_bars)
-        
-        for i in range(num_bins_to_use):
+
+        for i in range(self.num_bars):
             start_bin = log_bins[i]
             end_bin = log_bins[i + 1]
-            
             if end_bin > start_bin:
-                # Average the FFT magnitudes in this frequency range
                 bars[i] = np.mean(fft_data[start_bin:end_bin])
-        
         return bars
     
     def get_volume_at_position(self, position_ms):

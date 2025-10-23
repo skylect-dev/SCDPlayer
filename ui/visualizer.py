@@ -11,7 +11,7 @@ class AudioVisualizer(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.audio_data = np.zeros(32)  # FFT data (reduced from 64)
+        self.audio_data = np.zeros(64)  # FFT data (now 64 bars)
         self.volume = 0.0
         self.position_ms = 0
         self.is_playing = False
@@ -31,7 +31,7 @@ class SpectrumBarsVisualizer(AudioVisualizer):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background-color: #000000;")
-        self.smoothed_data = np.zeros(32)
+        self.smoothed_data = np.zeros(64)
         self.smoothing_alpha = 0.5  # 0.0 = no smoothing, 1.0 = instant
 
     def update_audio_data(self, data, volume, position_ms, is_playing):
@@ -106,7 +106,7 @@ class CircularSpectrumVisualizer(AudioVisualizer):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background-color: #0a0a0a;")
-        self.smoothed_data = np.zeros(32)
+        self.smoothed_data = np.zeros(64)
         self.smoothing_alpha = 0.5
 
     def update_audio_data(self, data, volume, position_ms, is_playing):
@@ -149,7 +149,7 @@ class WaveformVisualizer(AudioVisualizer):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background-color: #0f0f0f;")
-        self.smoothed_data = np.zeros(32)
+        self.smoothed_data = np.zeros(64)
         self.smoothing_alpha = 0.5
 
     def update_audio_data(self, data, volume, position_ms, is_playing):
