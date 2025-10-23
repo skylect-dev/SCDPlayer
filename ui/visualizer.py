@@ -497,7 +497,7 @@ class VisualizerWidget(QWidget):
             self.current_visualizer.update_audio_data(data, volume, position, playing)
         elif self.current_visualizer and self.is_visible:
             # Dummy data for testing
-            data = np.random.rand(32) * 0.5
+            data = np.random.rand(64) * 0.5
             self.current_visualizer.update_audio_data(data, 0.3, 0, False)
     
     def set_audio_callback(self, callback):
