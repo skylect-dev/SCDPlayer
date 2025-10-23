@@ -38,27 +38,41 @@ class SpectrumBarsVisualizer(AudioVisualizer):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        
+
         w = self.width()
         h = self.height()
-        
+
         num_bars = len(self.audio_data)
         bar_width = w / num_bars
-        
+
         for i, value in enumerate(self.audio_data):
-            # Color gradient from green -> yellow -> red
-            if value < 0.5:
-                color = QColor(0, int(255 * value * 2), 0)
+            # Always green unless peaking, transition to yellow at 80%, red at 95%+
+            if value >= 0.95:
+                color = QColor(255, 0, 0)  # Red
+            elif value >= 0.8:
+                # Linear blend from yellow (255,255,0) to red (255,0,0)
+                t = (value - 0.8) / 0.15
+                t = min(max(t, 0.0), 1.0)
+                r = 255
+                g = int(255 * (1 - t))
+                b = 0
+                color = QColor(r, g, b)
             else:
-                color = QColor(int(255 * (value - 0.5) * 2), 255, 0)
-            
+                # Linear blend from green (0,255,0) to yellow (255,255,0) as value goes from 0 to 0.8
+                t = value / 0.8
+                t = min(max(t, 0.0), 1.0)
+                r = int(255 * t)
+                g = 255
+                b = 0
+                color = QColor(r, g, b)
+
             painter.setBrush(QBrush(color))
             painter.setPen(Qt.NoPen)
-            
+
             bar_height = value * h
             x = i * bar_width
             y = h - bar_height
-            
+
             painter.drawRect(int(x), int(y), int(bar_width - 1), int(bar_height))
 
 
