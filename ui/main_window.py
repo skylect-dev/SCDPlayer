@@ -1797,9 +1797,36 @@ class SCDToolkit(QMainWindow):
         source_description = ""
         
         if len(selected_items) == 1:
-            # Use selected file from library
-            file_path = selected_items[0].data(Qt.UserRole)
-            source_description = "selected file"
+            # Use selected file or folder from library
+            data = selected_items[0].data(Qt.UserRole)
+            if data and (data.startswith("FOLDER_HEADER:") or data.startswith("KH_CATEGORY_HEADER:")):
+                # It's a folder header, extract folder path
+                if data.startswith("FOLDER_HEADER:"):
+                    folder_name = data.replace("FOLDER_HEADER:", "")
+                    # Try to find the full path from config
+                    folder_path = None
+                    for folder in self.config.library_folders:
+                        if os.path.basename(folder) == folder_name or folder == folder_name:
+                            folder_path = folder
+                            break
+                    if folder_path and os.path.exists(folder_path):
+                        file_path = folder_path
+                        source_description = "selected folder"
+                    else:
+                        show_themed_message(self, QMessageBox.Warning, "Folder Not Found", f"The selected folder '{folder_name}' could not be found in your library folders.")
+                        return
+                elif data.startswith("KH_CATEGORY_HEADER:"):
+                    # For KH Rando categories, open the KH Rando folder
+                    kh_rando_folder = getattr(self.config, 'kh_rando_folder', None)
+                    if kh_rando_folder and os.path.exists(kh_rando_folder):
+                        file_path = kh_rando_folder
+                        source_description = "KH Rando folder"
+                    else:
+                        show_themed_message(self, QMessageBox.Warning, "KH Rando Folder Not Set", "The KH Rando folder is not set or does not exist.")
+                        return
+            else:
+                file_path = data
+                source_description = "selected file"
         elif len(selected_items) == 0 and self.current_file:
             # Use currently playing file if no selection
             file_path = self.current_file
