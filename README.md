@@ -3,9 +3,11 @@
 A Windows audio player and toolkit designed for game music files (SCD format) with Kingdom Hearts Randomizer integration. Also plays WAV, MP3, OGG, and FLAC files.
 
 ## Bugs
-When updating from a version named SCDPlayer (pre 3.3.1) the updater will not work properly.
-This is resolved in 3.3.1 and up. Please download the full package to update from this version. 
-**You may copy you scdplayer_config.json to the new folder and SCDToolkit will migrate it**
+- When updating from a version named SCDPlayer (pre 3.3.1) the updater will not work properly.
+- This is resolved in 3.3.1 and up. Please download the full package to update from this version. 
+- **You may copy you scdplayer_config.json to the new folder and SCDToolkit will migrate it**
+
+### SCDToolkit has a Discord now! https://discord.gg/FqePtT2BBM
 
 ## Features
 
