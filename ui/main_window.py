@@ -141,13 +141,10 @@ class SCDToolkit(QMainWindow):
         help_menu.addAction(help_action)
         
         help_menu.addSeparator()
-        
         check_updates_action = QAction('Check for &Updates', self)
         check_updates_action.triggered.connect(self.check_for_updates_manual)
         help_menu.addAction(check_updates_action)
-        
-    # (Removed Discord from Help menu; will add as direct button)
-        
+
         # Log menu
         log_menu = menubar.addMenu('&Log')
         
@@ -161,11 +158,11 @@ class SCDToolkit(QMainWindow):
         open_log_file_action.triggered.connect(self.open_log_file)
         log_menu.addAction(open_log_file_action)
         
-    # Ko-fi and Discord direct buttons (last items)
-    kofi_action = menubar.addAction('Support on &Ko-fi ☕')
-    kofi_action.triggered.connect(self.open_kofi)
-    discord_action = menubar.addAction('Join Discord')
-    discord_action.triggered.connect(self.open_discord)
+        # Ko-fi and Discord direct buttons (last items)
+        kofi_action = menubar.addAction('Support on &Ko-fi ☕')
+        kofi_action.triggered.connect(self.open_kofi)
+        discord_action = menubar.addAction('Join Discord')
+        discord_action.triggered.connect(self.open_discord)
 
         
     def show_help_dialog(self):
