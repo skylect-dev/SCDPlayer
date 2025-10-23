@@ -1604,99 +1604,26 @@ class SCDToolkit(QMainWindow):
                 self.file_list.takeItem(i)
 
     def update_library_selection(self, file_path):
-        """Update library list selection to highlight the currently playing track"""
-        if not hasattr(self, 'file_list') or not self.file_list:
+        """Update visual indicator for currently playing track (no highlight, just visualizer)"""
+        # Remove all existing mini visualizers
+        from PyQt5.QtWidgets import QWidget
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            widget = self.file_list.itemWidget(item)
+            if widget and widget.objectName() == "mini_bar_visualizer":
+                self.file_list.removeItemWidget(item)
+        # Add visualizer to the currently playing track
+        try:
+            from ui.mini_bar_visualizer import MiniBarVisualizer
+        except ImportError:
             return
-            
-        # Clear current selection first
-        self.file_list.clearSelection()
-        if hasattr(self, 'kh_rando_sections'):
-            for section in self.kh_rando_sections.values():
-                section.get_file_list().clearSelection()
-        
-        # Find and select the item with matching file path in regular library
         for i in range(self.file_list.count()):
             item = self.file_list.item(i)
             if item and item.data(Qt.UserRole) == file_path:
-                self.file_list.setCurrentItem(item)
-                self.file_list.scrollToItem(item)
-                return  # Found and selected, we're done
-        
-        # Check KH Rando sections
-        if hasattr(self, 'kh_rando_sections'):
-            for section in self.kh_rando_sections.values():
-                file_list = section.get_file_list()
-                for i in range(file_list.count()):
-                    item = file_list.item(i)
-                    if item and item.data(Qt.UserRole) == file_path:
-                        file_list.setCurrentItem(item)
-                        file_list.scrollToItem(item)
-                        return  # Found and selected, we're done
-        
-        # File not found in library - add it to the correct folder in the cache and visible list if needed
-        if hasattr(self, 'library') and self.library and os.path.exists(file_path):
-            from pathlib import Path
-            folder = os.path.dirname(file_path)
-            folder_name = os.path.basename(folder) if folder and folder != "." else "Files (No Folder)"
-            if not folder_name:
-                folder_name = folder
-
-            # Add to folder cache if not present
-            if not hasattr(self, '_files_by_folder_cache'):
-                self._files_by_folder_cache = {}
-            if folder_name not in self._files_by_folder_cache:
-                self._files_by_folder_cache[folder_name] = []
-
-            # Avoid duplicate in cache
-            already_in_cache = any(fpath == file_path for _, fpath, _ in self._files_by_folder_cache[folder_name])
-            if not already_in_cache:
-                from utils.helpers import format_file_size
-                size = Path(file_path).stat().st_size if Path(file_path).exists() else 0
-                display_text = f"{os.path.basename(file_path)} ({format_file_size(size)})"
-                self._files_by_folder_cache[folder_name].append((display_text, file_path, None))
-
-            # Only add to visible list if folder is expanded
-            is_expanded = True
-            if hasattr(self, '_folder_expanded_states'):
-                is_expanded = self._folder_expanded_states.get(folder_name, True)
-            if is_expanded:
-                # Find folder header
-                folder_header_index = -1
-                for i in range(self.file_list.count()):
-                    item = self.file_list.item(i)
-                    if item and item.data(Qt.UserRole) == f"FOLDER_HEADER:{folder_name}":
-                        folder_header_index = i
-                        break
-                if folder_header_index != -1:
-                    # Insert after header, keep alphabetical order
-                    insert_position = folder_header_index + 1
-                    # Find correct position
-                    inserted = False
-                    for i in range(folder_header_index + 1, self.file_list.count()):
-                        item = self.file_list.item(i)
-                        if item:
-                            data = item.data(Qt.UserRole)
-                            if data and data.startswith("FOLDER_HEADER:"):
-                                break
-                            # Compare file names
-                            if data and os.path.basename(file_path).lower() < os.path.basename(data).lower():
-                                file_item = QListWidgetItem(f"    {display_text}")
-                                file_item.setData(Qt.UserRole, file_path)
-                                self.file_list.insertItem(i, file_item)
-                                inserted = True
-                                break
-                    if not inserted:
-                        file_item = QListWidgetItem(f"    {display_text}")
-                        file_item.setData(Qt.UserRole, file_path)
-                        self.file_list.insertItem(insert_position, file_item)
-
-            # Now try to select it again (in regular library or KH Rando sections)
-            for i in range(self.file_list.count()):
-                item = self.file_list.item(i)
-                if item and item.data(Qt.UserRole) == file_path:
-                    self.file_list.setCurrentItem(item)
-                    self.file_list.scrollToItem(item)
-                    return  # Found and selected
+                visualizer = MiniBarVisualizer(self.file_list)
+                visualizer.setObjectName("mini_bar_visualizer")
+                self.file_list.setItemWidget(item, visualizer)
+                break
             # Check KH Rando sections again after adding
             if hasattr(self, 'kh_rando_sections'):
                 for section in self.kh_rando_sections.values():
