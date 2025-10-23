@@ -1422,6 +1422,9 @@ class SCDToolkit(QMainWindow):
         
         # Refresh the KH Rando list to reflect the change
         self._populate_kh_rando_list()
+        # Restore mini visualizer for currently playing track
+        if hasattr(self, 'current_file') and self.current_file:
+            self.update_library_selection(self.current_file)
 
     def add_kh_rando_folder(self):
         """Add a new folder to the KH Rando music directory"""
@@ -1540,6 +1543,9 @@ class SCDToolkit(QMainWindow):
                 item = self.kh_rando_file_list.item(i)
                 if item.data(Qt.UserRole) in selected_paths:
                     item.setSelected(True)
+        # Restore mini visualizer for currently playing track
+        if hasattr(self, 'current_file') and self.current_file:
+            self.update_library_selection(self.current_file)
 
     def _toggle_folder_expansion(self, folder_name):
         """Toggle the expansion state of a folder - optimized for instant response"""
