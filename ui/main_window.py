@@ -2870,7 +2870,7 @@ Path: {file_path}"""
             volume = volume * player_volume
         else:
             # Silent/stopped - return zeros
-            spectrum = np.zeros(32)
+            spectrum = np.zeros(64)
             volume = 0.0
         
         return spectrum, volume, position_ms, is_playing
