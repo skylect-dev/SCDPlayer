@@ -2305,12 +2305,35 @@ class SCDToolkit(QMainWindow):
                     status_dialog.update_status(f"Converting: {filename}")
                     QApplication.processEvents()
                     
-                    # Convert to SCD in temp directory
-                    temp_scd = os.path.join(tempfile.gettempdir(), 
-                                          f"{os.path.splitext(filename)[0]}.scd")
-                    
-                    success = self.converter.convert_to_scd(file_path, temp_scd, selected_quality)
-                    
+                    # Convert to SCD in temp directory (mimic ConversionWorker._convert_to_scd logic)
+                    file_ext = os.path.splitext(file_path)[1].lower()
+                    temp_scd = os.path.join(tempfile.gettempdir(), f"{os.path.splitext(filename)[0]}.scd")
+                    temp_wav = None
+                    source_file = file_path
+                    success = False
+                    try:
+                        if file_ext != '.wav':
+                            fd, temp_wav = tempfile.mkstemp(suffix='.wav', prefix='scdconv_')
+                            os.close(fd)
+                            success_ffmpeg = self.converter.convert_with_ffmpeg(file_path, temp_wav, 'wav')
+                            if not success_ffmpeg:
+                                if temp_wav:
+                                    try:
+                                        os.remove(temp_wav)
+                                    except:
+                                        pass
+                                logging.warning(f"FFmpeg conversion failed for: {filename}")
+                                raise Exception("FFmpeg conversion failed")
+                            source_file = temp_wav
+                        # If original file was SCD, use as template
+                        original_scd_template = file_path if file_ext == '.scd' else None
+                        success = self.converter.convert_wav_to_scd(source_file, temp_scd, original_scd_template, selected_quality)
+                    finally:
+                        if temp_wav:
+                            try:
+                                os.remove(temp_wav)
+                            except:
+                                pass
                     if success and os.path.exists(temp_scd):
                         final_files.append(temp_scd)
                         converted_files.append(temp_scd)
