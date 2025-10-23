@@ -42,8 +42,8 @@ class SpectrumBarsVisualizer(AudioVisualizer):
         w = self.width()
         h = self.height()
 
-    legend_height = 36  # More space for Hz legend
-    bar_area_height = h - legend_height
+        legend_height = 36  # More space for Hz legend
+        bar_area_height = h - legend_height
 
         num_bars = len(self.audio_data)
         bar_width = w / num_bars
@@ -109,7 +109,7 @@ class SpectrumBarsVisualizer(AudioVisualizer):
             # Draw tick
             painter.drawLine(x, bar_area_height, x, bar_area_height + 10)
             # Draw label (move up so it's not cut off)
-            painter.drawText(x - 18, bar_area_height + 14, 36, 16, Qt.AlignCenter, label)
+            painter.drawText(x - 18, bar_area_height + 18, 36, 16, Qt.AlignCenter, label)
 
 
 class OscilloscopeVisualizer(AudioVisualizer):
