@@ -1142,52 +1142,12 @@ class SCDToolkit(QMainWindow):
         # Collect all files with their paths from current list (don't rescan!)
         files_by_folder = {}
         
-        # IMPORTANT: Use cache if available to preserve collapsed folder contents
-        # Otherwise collapsed folders will disappear since their files aren't visible
-        use_cache = hasattr(self, '_files_by_folder_cache') and self._files_by_folder_cache
-        
-        if use_cache:
-            # Use existing cache - this preserves all files including those in collapsed folders
+        # Only use the existing cache; never rebuild from visible list
+        if hasattr(self, '_files_by_folder_cache') and self._files_by_folder_cache:
             files_by_folder = self._files_by_folder_cache.copy()
         else:
-            # Build cache from current list (first time only)
-            # Pre-compute KH Rando path for filtering
-            kh_rando_path_obj = None
-            if self.config.kh_rando_folder:
-                try:
-                    kh_rando_path_obj = Path(self.config.kh_rando_folder).resolve()
-                except:
-                    pass
-            
-            for i in range(self.file_list.count()):
-                    item = self.file_list.item(i)
-                    file_path = item.data(Qt.UserRole)
-                    if file_path and not file_path.startswith("FOLDER_HEADER"):
-                        # Skip KH Rando files (they should only appear in KH Rando list)
-                        if kh_rando_path_obj:
-                            try:
-                                if Path(file_path).resolve().is_relative_to(kh_rando_path_obj):
-                                    continue
-                            except:
-                                pass
-                        
-                        folder = os.path.dirname(file_path)
-                    
-                        # Better folder name handling
-                        if folder and folder != ".":
-                            folder_name = os.path.basename(folder)
-                            # Handle empty folder names
-                            if not folder_name:
-                                folder_name = folder  # Use full path if basename is empty
-                        else:
-                            folder_name = "Files (No Folder)"  # Better name than "Root"
-                            
-                        if folder_name not in files_by_folder:
-                            files_by_folder[folder_name] = []
-                        files_by_folder[folder_name].append((item.text(), file_path, item.foreground()))
-            
-            # Cache the files data for instant expansion
-            self._files_by_folder_cache = files_by_folder
+            # No cache: do nothing (or could trigger a full rescan if desired)
+            return
         
         # Clear and repopulate with folder organization
         self.file_list.clear()
