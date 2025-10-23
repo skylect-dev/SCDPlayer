@@ -1,1 +1,1 @@
-# Utils package for SCDPlayer
+# Utils package for SCDToolkit

@@ -1,4 +1,4 @@
-"""Path and file utilities for SCDPlayer"""
+"""Path and file utilities for SCDToolkit"""
 import sys
 import os
 import logging
@@ -29,7 +29,7 @@ def create_temp_wav() -> str:
     """Create a temporary WAV file path"""
     fd, wav_path = tempfile.mkstemp(
         suffix='.wav', 
-        prefix='scdplayer_', 
+        prefix='scdtoolkit_', 
         dir=tempfile.gettempdir()
     )
     # Close the file descriptor immediately since we only need the path

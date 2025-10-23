@@ -1,6 +1,6 @@
-# SCDPlayer
+# SCDToolkit
 
-A Windows audio player designed for game music files (SCD format) with Kingdom Hearts Randomizer integration. Also plays WAV, MP3, OGG, and FLAC files.
+A Windows audio player and toolkit designed for game music files (SCD format) with Kingdom Hearts Randomizer integration. Also plays WAV, MP3, OGG, and FLAC files.
 
 ## Features
 
@@ -15,21 +15,21 @@ A Windows audio player designed for game music files (SCD format) with Kingdom H
 ## Installation
 
 **Download & Run (Recommended):**
-1. Get the latest version from [Releases](https://github.com/skylect-dev/SCDPlayer/releases)
-2. Extract `SCDPlayer-vX.X.X.zip`
-3. Run `SCDPlayer.exe`
+1. Get the latest version from [Releases](https://github.com/skylect-dev/SCDToolkit/releases)
+2. Extract `SCDToolkit-vX.X.X.zip`
+3. Run `SCDToolkit.exe`
 
 Everything needed is included - no additional setup required.
 
 **Note for SCD Conversion:**
 - Converting files **to** SCD format requires .NET Desktop Runtime (5.0 or higher)
-- SCDPlayer will automatically prompt to install it when needed (one-time setup)
+- SCDToolkit will automatically prompt to install it when needed (one-time setup)
 - Recommended: [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (current LTS)
 - All other features work without .NET
 
 ## Quick Start
 
-1. Launch SCDPlayer
+1. Launch SCDToolkit
 2. Click "Add Folder" to add your music folders
 3. Double-click any file to play
 4. Use the search box to find specific tracks
@@ -46,10 +46,10 @@ Your library and settings are automatically saved.
 
 **Build:**
 ```bash
-git clone https://github.com/skylect-dev/SCDPlayer.git
-cd SCDPlayer
+git clone https://github.com/skylect-dev/SCDToolkit.git
+cd SCDToolkit
 pip install -r requirements.txt
-pyinstaller SCDPlayer.spec
+pyinstaller SCDToolkit.spec
 ```
 
 ## Acknowledgments

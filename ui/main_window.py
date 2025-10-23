@@ -1,4 +1,4 @@
-"""Streamlined main application window for SCDPlayer"""
+"""Streamlined main application window for SCDToolkit"""
 import os
 import logging
 import tempfile
@@ -32,27 +32,18 @@ from utils.helpers import format_time, send_to_recycle_bin
 from utils.updater import AutoUpdater
 
 
-class SCDPlayer(QMainWindow):
-    """Main SCDPlayer application window"""
+class SCDToolkit(QMainWindow):
+    """Main SCDToolkit application window"""
     
-    def __init__(self, progress_callback=None):
+    def __init__(self):
         super().__init__()
-        self.setWindowTitle(f'SCDPlayer v{__version__}')
+        self.setWindowTitle(f'SCDToolkit v{__version__}')
         self.setGeometry(100, 100, 1400, 850)
         
-        # Store progress callback for startup reporting
-        self._startup_progress = progress_callback
-        
         # Initialize components
-        if self._startup_progress:
-            self._startup_progress("Loading configuration...")
-        
         self.config = Config()
         # Load settings early, before UI setup
         self.config.load_settings()
-        
-        if self._startup_progress:
-            self._startup_progress("Initializing converters...")
         
         self.converter = AudioConverter()
         self.kh_rando_exporter = KHRandoExporter(self)
@@ -71,28 +62,14 @@ class SCDPlayer(QMainWindow):
         self._loop_marker_retry_count = 0  # For handling loop marker timing
         
         # Initialize UI components
-        if self._startup_progress:
-            self._startup_progress("Creating menu bar...")
-        
         self.setup_menu_bar()
-        
-        if self._startup_progress:
-            self._startup_progress("Building interface...")
-        
         self.setup_ui()
-        
-        if self._startup_progress:
-            self._startup_progress("Initializing audio player...")
-        
         self.setup_media_player()
         
         # Create scan overlay (must be after setup_ui so it has a parent)
         self.scan_overlay = ScanOverlay(self.centralWidget())
         
         # Initialize managers after UI is created
-        if self._startup_progress:
-            self._startup_progress("Loading managers...")
-        
         self.conversion_manager = ConversionManager(self)
         self.kh_rando_manager = KHRandoManager(self)
         self.loop_manager = HybridLoopManager()
@@ -107,21 +84,12 @@ class SCDPlayer(QMainWindow):
             self.visualizer.set_audio_callback(self.get_visualizer_audio_data)
         
         # Setup keyboard shortcuts
-        if self._startup_progress:
-            self._startup_progress("Configuring shortcuts...")
-        
         self.setup_shortcuts()
         
         # Set window icon and style
-        if self._startup_progress:
-            self._startup_progress("Applying theme...")
-        
         self.setWindowIcon(create_app_icon())
         self.setup_title_bar_theming()
         self.setStyleSheet(DARK_THEME)
-        
-        # Clear progress callback reference
-        self._startup_progress = None
         
         # Threading components
         self.file_load_thread = None
@@ -210,7 +178,7 @@ class SCDPlayer(QMainWindow):
         """Open the log file in default text editor"""
         import os
         import subprocess
-        log_path = os.path.abspath('scdplayer_debug.log')
+        log_path = os.path.abspath('scdtoolkit_debug.log')
         
         # Check if file exists
         if os.path.exists(log_path):
@@ -656,38 +624,20 @@ class SCDPlayer(QMainWindow):
         if self.config.kh_rando_folder:
             self.set_kh_rando_folder(self.config.kh_rando_folder)
         
-        # Initial scan to populate file list
-        if self._startup_progress:
-            self._startup_progress("Scanning audio library... (This may take a moment for large libraries)")
-        
         # Update KH Rando categories from detected folders BEFORE scanning
         # This ensures the library knows which categories to populate
         if self.config.kh_rando_folder:
             self.kh_rando_exporter.set_kh_rando_path(self.config.kh_rando_folder)
             self._update_kh_rando_categories()
         
-        # Set up progress callback for library scan
-        if self._startup_progress:
-            def on_scan_progress(current, total, filename):
-                # With optimized splash screen, we can update on every file
-                self._startup_progress(f"Scanning library... {current} files found")
-            
-            self.library.set_progress_callback(on_scan_progress)
-        
+        # Initial scan to populate file list
         self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
         
-        # Clear the progress callback after scan
-        self.library.set_progress_callback(None)
-        
         # Start file watcher after initial scan
-        if self._startup_progress:
-            self._startup_progress("Starting file watcher...")
         self._start_file_watcher()
         
         # Apply folder organization since it's checked by default
         if self.organize_by_folder_cb.isChecked():
-            if self._startup_progress:
-                self._startup_progress("Organizing library by folder...")
             self._organize_files_by_folder()
         
         # Delay KH Rando section count update to ensure UI is ready
@@ -2285,7 +2235,7 @@ class SCDPlayer(QMainWindow):
         filename = os.path.basename(file_path)
         
         self.label.setText(filename)
-        self.setWindowTitle(f'SCDPlayer v{__version__} - {filename}')
+        self.setWindowTitle(f'SCDToolkit v{__version__} - {filename}')
         
         # Extract and display metadata
         self.display_file_metadata(file_path)

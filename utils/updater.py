@@ -1,4 +1,4 @@
-"""Auto-update system for SCDPlayer"""
+"""Auto-update system for SCDToolkit"""
 import os
 import sys
 import json
@@ -30,11 +30,11 @@ class UpdateChecker(QThread):
         """Check GitHub releases for updates"""
         try:
             # GitHub API endpoint for latest release
-            api_url = "https://api.github.com/repos/skylect-dev/SCDPlayer/releases/latest"
+            api_url = "https://api.github.com/repos/skylect-dev/SCDToolkit/releases/latest"
             
             # Create request with user agent
             request = urllib.request.Request(api_url)
-            request.add_header('User-Agent', f'SCDPlayer/{__version__}')
+            request.add_header('User-Agent', f'SCDToolkit/{__version__}')
             
             # Get latest release info
             with urllib.request.urlopen(request, timeout=10) as response:
@@ -91,9 +91,9 @@ class UpdateDownloader(QThread):
             # Create temporary file
             temp_dir = tempfile.gettempdir()
             if self.update_type == 'exe':
-                self.temp_path = os.path.join(temp_dir, 'SCDPlayer_update.exe')
+                self.temp_path = os.path.join(temp_dir, 'SCDToolkit_update.exe')
             else:
-                self.temp_path = os.path.join(temp_dir, 'SCDPlayer_update.zip')
+                self.temp_path = os.path.join(temp_dir, 'SCDToolkit_update.zip')
             
             # Download with progress tracking
             def progress_hook(block_count, block_size, total_size):
@@ -132,7 +132,7 @@ class AutoUpdater:
         version = update_info['version']
         notes = update_info['release_notes'][:500] + "..." if len(update_info['release_notes']) > 500 else update_info['release_notes']
         
-        msg = f"SCDPlayer {version} is available!\n\n"
+        msg = f"SCDToolkit {version} is available!\n\n"
         msg += f"Current version: v{__version__.split(' ')[0]}\n"
         msg += f"New version: {version}\n\n"
         msg += "Release notes:\n" + notes + "\n\n"
@@ -175,14 +175,14 @@ class AutoUpdater:
                 self.parent,
                 QMessageBox.Information,
                 "No Updates",
-                "You are running the latest version of SCDPlayer."
+                "You are running the latest version of SCDToolkit."
             )
     
     def download_update(self, download_url: str, update_type: str = 'exe'):
         """Download the update"""
         # Create progress dialog
         progress = QProgressDialog("Downloading update...", "Cancel", 0, 100, self.parent)
-        progress.setWindowTitle("SCDPlayer Update")
+        progress.setWindowTitle("SCDToolkit Update")
         progress.setModal(True)
         apply_title_bar_theming(progress)
         progress.show()
@@ -234,7 +234,7 @@ class AutoUpdater:
             # For EXE updates, just run the script directly without extra dialogs
             # since this method shouldn't be used in production builds
             script_content = f'''@echo off
-echo Installing SCDPlayer update...
+echo Installing SCDToolkit update...
 timeout /t 2 /nobreak >nul
 move "{exe_path}" "{current_exe}"
 start "" "{current_exe}"
@@ -267,7 +267,7 @@ del "%~f0"
             
             msg = "Update downloaded successfully!\n\n"
             msg += "The update will be extracted to replace the current installation.\n"
-            msg += "SCDPlayer will close and the updater will handle the installation.\n\n"
+            msg += "SCDToolkit will close and the updater will handle the installation.\n\n"
             msg += "Click OK to proceed."
             
             reply = show_themed_message(
@@ -287,7 +287,7 @@ del "%~f0"
                         self.parent,
                         QMessageBox.Critical,
                         "Updater Missing",
-                        f"Updater executable not found at:\n{updater_exe}\n\nPlease download the complete SCDPlayer package."
+                        f"Updater executable not found at:\n{updater_exe}\n\nPlease download the complete SCDToolkit package."
                     )
                     return
                 

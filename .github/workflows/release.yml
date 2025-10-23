@@ -1,4 +1,4 @@
-name: Build and Release SCDPlayer
+name: Build and Release SCDToolkit
 
 on:
   push:
@@ -56,22 +56,22 @@ jobs:
         }
         
         # Build main application with encrypted PyInstaller
-        Write-Host "Building main SCDPlayer application..."
-        python -m PyInstaller SCDPlayer.spec --noconfirm
+        Write-Host "Building main SCDToolkit application..."
+        python -m PyInstaller SCDToolkit.spec --noconfirm
         
         # Verify the main build worked
-        if (-not (Test-Path "dist\SCDPlayer\SCDPlayer.exe")) {
+        if (-not (Test-Path "dist\SCDToolkit\SCDToolkit.exe")) {
             Write-Host "Main application build failed, executable not found"
             exit 1
         }
         
-        # Copy updater.exe into the SCDPlayer distribution folder
-        Write-Host "Copying updater.exe to SCDPlayer folder..."
-        Copy-Item "dist\updater.exe" "dist\SCDPlayer\updater.exe" -Force
+        # Copy updater.exe into the SCDToolkit distribution folder
+        Write-Host "Copying updater.exe to SCDToolkit folder..."
+        Copy-Item "dist\updater.exe" "dist\SCDToolkit\updater.exe" -Force
         
         # Verify updater was copied
-        if (-not (Test-Path "dist\SCDPlayer\updater.exe")) {
-            Write-Host "Failed to copy updater.exe to SCDPlayer folder"
+        if (-not (Test-Path "dist\SCDToolkit\updater.exe")) {
+            Write-Host "Failed to copy updater.exe to SCDToolkit folder"
             exit 1
         }
         
@@ -81,15 +81,15 @@ jobs:
       run: |
         Write-Host "Build completed successfully!"
         Write-Host "Checking build output structure:"
-        if (Test-Path "dist\SCDPlayer") {
+        if (Test-Path "dist\SCDToolkit") {
             Write-Host "Main application files:"
-            Get-ChildItem "dist\SCDPlayer" | ForEach-Object { Write-Host "  $_" }
+            Get-ChildItem "dist\SCDToolkit" | ForEach-Object { Write-Host "  $_" }
             Write-Host ""
             
             # Verify critical files exist
-            $criticalFiles = @("SCDPlayer.exe", "updater.exe")
+            $criticalFiles = @("SCDToolkit.exe", "updater.exe")
             foreach ($file in $criticalFiles) {
-                if (Test-Path "dist\SCDPlayer\$file") {
+                if (Test-Path "dist\SCDToolkit\$file") {
                     Write-Host "✓ $file found"
                 } else {
                     Write-Host "✗ $file MISSING!"
@@ -99,7 +99,7 @@ jobs:
             
             Write-Host ""
             Write-Host "Build size information:"
-            $totalSize = (Get-ChildItem "dist\SCDPlayer" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+            $totalSize = (Get-ChildItem "dist\SCDToolkit" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
             Write-Host "Total build size: $([math]::Round($totalSize, 2)) MB"
         } else {
             Write-Host "ERROR: Build output directory not found!"
@@ -109,10 +109,10 @@ jobs:
     - name: Create release package
       run: |
         # Create release directory with clean name
-        mkdir SCDPlayer
+        mkdir SCDToolkit
         
         # Copy the entire PyInstaller onedir output
-        Copy-Item -Path "dist\SCDPlayer\*" -Destination "SCDPlayer\" -Recurse -Force
+        Copy-Item -Path "dist\SCDToolkit\*" -Destination "SCDToolkit\" -Recurse -Force
         
     - name: Set version for naming
       id: set_version
@@ -129,20 +129,20 @@ jobs:
     - name: Archive Release
       run: |
         # Create ZIP file with clean name (no version number)
-        Compress-Archive -Path "SCDPlayer" -DestinationPath "SCDPlayer-Windows.zip"
+        Compress-Archive -Path "SCDToolkit" -DestinationPath "SCDToolkit-Windows.zip"
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: SCDPlayer-${{ env.RELEASE_VERSION }}-Windows
-        path: SCDPlayer-Windows.zip
+        name: SCDToolkit-${{ env.RELEASE_VERSION }}-Windows
+        path: SCDToolkit-Windows.zip
         retention-days: 30
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: SCDPlayer-Windows.zip
+        files: SCDToolkit-Windows.zip
         draft: false
         prerelease: false
         generate_release_notes: true

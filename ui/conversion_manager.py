@@ -1,4 +1,4 @@
-"""Conversion features for SCDPlayer"""
+"""Conversion features for SCDToolkit"""
 import os
 import tempfile
 from PyQt5.QtWidgets import QMessageBox, QLabel, QDialog, QVBoxLayout, QApplication, QSlider, QPushButton, QHBoxLayout

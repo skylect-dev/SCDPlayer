@@ -1,4 +1,4 @@
-"""Configuration management for SCDPlayer"""
+"""Configuration management for SCDToolkit"""
 import json
 import logging
 from pathlib import Path
@@ -8,7 +8,7 @@ from typing import Dict, List, Any
 class Config:
     """Handle loading and saving application configuration"""
     
-    def __init__(self, config_file: str = 'scdplayer_config.json'):
+    def __init__(self, config_file: str = 'scdtoolkit_config.json'):
         self.config_file = Path(config_file)
         self.library_folders: List[str] = []
         self.scan_subdirs: bool = True

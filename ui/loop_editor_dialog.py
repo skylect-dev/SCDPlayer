@@ -2052,7 +2052,7 @@ class LoopEditorDialog(QDialog):
                 self._original_wav_path = original_path
             
             # Create temporary file in system temp directory instead of project root
-            temp_fd, temp_path = tempfile.mkstemp(suffix='_volume_temp.wav', prefix='scdplayer_')
+            temp_fd, temp_path = tempfile.mkstemp(suffix='_volume_temp.wav', prefix='scdtoolkit_')
             os.close(temp_fd)  # Close the file descriptor
             
             # Copy original file to temporary location

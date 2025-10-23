@@ -1,4 +1,4 @@
-"""KH Rando management features for SCDPlayer"""
+"""KH Rando management features for SCDToolkit"""
 import os
 import tempfile
 import logging

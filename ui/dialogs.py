@@ -1,4 +1,4 @@
-"""Dialog utilities and themed dialogs for SCDPlayer"""
+"""Dialog utilities and themed dialogs for SCDToolkit"""
 import sys
 import ctypes
 import logging
@@ -98,7 +98,7 @@ class LogViewerDialog(QMessageBox):
         
         # Create as a proper dialog instead of message box
         self.dialog = QDialog(parent)
-        self.dialog.setWindowTitle("SCDPlayer Log Viewer")
+        self.dialog.setWindowTitle("SCDToolkit Log Viewer")
         self.dialog.resize(800, 600)
         self.dialog.setWindowFlags(Qt.Window)  # Make it a non-modal window
         
@@ -201,7 +201,7 @@ class LogViewerDialog(QMessageBox):
     def load_log(self):
         """Load and display log file content"""
         import os
-        log_path = 'scdplayer_debug.log'
+        log_path = 'scdtoolkit_debug.log'
         
         try:
             if os.path.exists(log_path):
@@ -219,7 +219,7 @@ class LogViewerDialog(QMessageBox):
     def clear_log(self):
         """Clear the log file"""
         import os
-        log_path = 'scdplayer_debug.log'
+        log_path = 'scdtoolkit_debug.log'
         
         try:
             if os.path.exists(log_path):

@@ -1,5 +1,5 @@
 """
-Audio Analysis Module for SCDPlayer
+Audio Analysis Module for SCDToolkit
 Provides comprehensive audio level analysis including peak, RMS, LUFS, and dynamic range
 Also includes auto volume adjustment and normalization features
 """

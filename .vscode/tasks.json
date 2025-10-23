@@ -2,16 +2,16 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Run SCDPlayer",
+            "label": "Run SCDToolkit",
             "type": "shell",
             "command": "C:/Python313/python.exe main.py",
             "group": "build",
             "problemMatcher": []
         },
         {
-            "label": "Build ALL then copy updater.exe to SCDPlayer folder",
+            "label": "Build ALL then copy updater.exe to SCDToolkit folder",
             "type": "shell",
-            "command": "Get-Process -Name 'SCDPlayer','updater' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue ; Remove-Item -Path 'dist' -Recurse -Force -ErrorAction SilentlyContinue ; C:/Python313/python.exe -m PyInstaller updater.spec --noconfirm ; C:/Python313/python.exe -m PyInstaller SCDPlayer.spec --noconfirm ; Copy-Item 'dist\\updater.exe' 'dist\\SCDPlayer\\updater.exe' -Force",
+            "command": "Get-Process -Name 'SCDToolkit','updater' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue ; Remove-Item -Path 'dist' -Recurse -Force -ErrorAction SilentlyContinue ; C:/Python313/python.exe -m PyInstaller updater.spec --noconfirm ; C:/Python313/python.exe -m PyInstaller SCDToolkit.spec --noconfirm ; Copy-Item 'dist\\updater.exe' 'dist\\SCDToolkit\\updater.exe' -Force",
             "group": "build",
             "problemMatcher": []
         }

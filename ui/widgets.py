@@ -1,4 +1,4 @@
-"""Custom UI widgets for SCDPlayer"""
+"""Custom UI widgets for SCDToolkit"""
 import math
 import logging
 from PyQt5.QtWidgets import QLabel, QSplashScreen, QSlider
@@ -75,10 +75,10 @@ class ScrollingLabel(QLabel):
 
 
 class SplashScreen(QSplashScreen):
-    """Custom splash screen for SCDPlayer"""
+    """Custom splash screen for SCDToolkit"""
     def __init__(self):
         # Initialize properties first
-        self._message = "Loading SCDPlayer..."
+        self._message = "Loading SCDToolkit..."
         
         # Create base splash screen pixmap ONCE (cached)
         self._base_pixmap = self.create_base_pixmap()
@@ -173,7 +173,7 @@ class SplashScreen(QSplashScreen):
         # Use gradient colors from the icon for title
         painter.setPen(QColor("#22d3ee"))  # Bright cyan
         title_rect = QRect(0, height - 145, width, 70)  # More vertical space and padding
-        painter.drawText(title_rect, Qt.AlignCenter, "SCDPlayer")
+        painter.drawText(title_rect, Qt.AlignCenter, "SCDToolkit")
         
         # Version with emerald accent
         font = QFont("Segoe UI", 12, QFont.Normal)

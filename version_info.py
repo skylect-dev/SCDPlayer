@@ -30,13 +30,13 @@ StringFileInfo(
   StringTable(
     u'040904B0',
     [StringStruct(u'CompanyName', u'skylect-dev'),
-    StringStruct(u'FileDescription', u'SCDPlayer - Audio Player for Game Music Files'),
-    StringStruct(u'FileVersion', u'3.0.1'),
-    StringStruct(u'InternalName', u'SCDPlayer'),
+    StringStruct(u'FileDescription', u'SCDToolkit - Audio Player and Toolkit for Game Music Files'),
+    StringStruct(u'FileVersion', u'3.3.0'),
+    StringStruct(u'InternalName', u'SCDToolkit'),
     StringStruct(u'LegalCopyright', u'Copyright (C) 2025 skylect-dev'),
-    StringStruct(u'OriginalFilename', u'SCDPlayer.exe'),
-    StringStruct(u'ProductName', u'SCDPlayer'),
-    StringStruct(u'ProductVersion', u'3.0.1')])
+    StringStruct(u'OriginalFilename', u'SCDToolkit.exe'),
+    StringStruct(u'ProductName', u'SCDToolkit'),
+    StringStruct(u'ProductVersion', u'3.3.0')])
   ]), 
 VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
   ]

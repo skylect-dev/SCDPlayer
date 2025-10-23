@@ -1,1 +1,1 @@
-# Core package for SCDPlayer
+# Core package for SCDToolkit

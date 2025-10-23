@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-SCDPlayer Standalone Updater
-A separate executable that handles SCDPlayer updates with a proper GUI
+SCDToolkit Standalone Updater
+A separate executable that handles SCDToolkit updates with a proper GUI
 """
 import sys
 import os
@@ -30,8 +30,8 @@ class UpdateWorker(QThread):
     def run(self):
         """Perform the update process"""
         try:
-            # Wait a moment for SCDPlayer to fully close
-            self.progress_updated.emit(5, "Waiting for SCDPlayer to close...")
+            # Wait a moment for SCDToolkit to fully close
+            self.progress_updated.emit(5, "Waiting for SCDToolkit to close...")
             time.sleep(2)
             
             # Step 1: Extract archive
@@ -52,11 +52,15 @@ class UpdateWorker(QThread):
             # Step 2: Determine source directory
             self.progress_updated.emit(45, "Analyzing update structure...")
             
-            # Check if we have a nested SCDPlayer folder
-            nested_folder = temp_dir / "SCDPlayer"
+            # Check if we have a nested SCDToolkit folder (or legacy SCDPlayer folder)
+            nested_folder = temp_dir / "SCDToolkit"
+            legacy_folder = temp_dir / "SCDPlayer"
             if nested_folder.exists():
                 source_dir = nested_folder
                 self.progress_updated.emit(50, "Found nested folder structure")
+            elif legacy_folder.exists():
+                source_dir = legacy_folder
+                self.progress_updated.emit(50, "Found legacy folder structure")
             else:
                 source_dir = temp_dir
                 self.progress_updated.emit(50, "Found direct structure")
@@ -80,6 +84,16 @@ class UpdateWorker(QThread):
                 # Skip the updater itself to avoid conflicts
                 if dest_path.name in ['updater.exe', 'updater_standalone.exe']:
                     continue
+                
+                # Delete legacy SCDPlayer.exe if it exists
+                if dest_path.name == 'SCDPlayer.exe':
+                    legacy_exe = self.install_dir / 'SCDPlayer.exe'
+                    if legacy_exe.exists():
+                        try:
+                            legacy_exe.unlink()
+                            self.progress_updated.emit(file_progress, "Removed legacy SCDPlayer.exe")
+                        except:
+                            pass
                 
                 # Create parent directories if needed
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -125,7 +139,7 @@ class UpdateDialog(QDialog):
         
     def init_ui(self):
         """Initialize the user interface"""
-        self.setWindowTitle("SCDPlayer Update")
+        self.setWindowTitle("SCDToolkit Update")
         self.setFixedSize(500, 280)
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowStaysOnTopHint)
         
@@ -143,7 +157,7 @@ class UpdateDialog(QDialog):
         layout.setContentsMargins(30, 30, 30, 30)
         
         # Title
-        title = QLabel("Updating SCDPlayer")
+        title = QLabel("Updating SCDToolkit")
         title.setAlignment(Qt.AlignCenter)
         title_font = QFont()
         title_font.setPointSize(16)
@@ -314,18 +328,18 @@ class UpdateDialog(QDialog):
     def update_close_button_countdown(self, seconds):
         """Update close button with countdown"""
         if seconds > 0:
-            self.close_btn.setText(f"Restart SCDPlayer ({seconds})")
+            self.close_btn.setText(f"Restart SCDToolkit ({seconds})")
             QTimer.singleShot(1000, lambda: self.update_close_button_countdown(seconds - 1))
         else:
-            self.close_btn.setText("Restart SCDPlayer")
+            self.close_btn.setText("Restart SCDToolkit")
             
     def close_and_restart(self):
-        """Close dialog and restart SCDPlayer"""
+        """Close dialog and restart SCDToolkit"""
         try:
-            # Start SCDPlayer
+            # Start SCDToolkit
             subprocess.Popen([self.exe_path], shell=False)
         except Exception as e:
-            print(f"Failed to restart SCDPlayer: {e}")
+            print(f"Failed to restart SCDToolkit: {e}")
         
         self.close()
 
@@ -355,7 +369,7 @@ def main():
     app.setQuitOnLastWindowClosed(True)
     
     # Set application properties
-    app.setApplicationName("SCDPlayer Updater")
+    app.setApplicationName("SCDToolkit Updater")
     app.setApplicationVersion("1.0")
     
     # Create and show dialog

@@ -1,4 +1,4 @@
-"""Audio conversion functionality for SCDPlayer"""
+"""Audio conversion functionality for SCDToolkit"""
 import logging
 import subprocess
 import tempfile
@@ -49,7 +49,7 @@ class AudioConverter:
         """Create a temporary WAV file and track it for cleanup"""
         fd, wav_path = tempfile.mkstemp(
             suffix='.wav', 
-            prefix='scdplayer_', 
+            prefix='scdtoolkit_', 
             dir=tempfile.gettempdir()
         )
         # Close file descriptor immediately

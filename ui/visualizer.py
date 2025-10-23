@@ -1,4 +1,4 @@
-"""Audio visualizers for SCDPlayer - retro and modern effects"""
+"""Audio visualizers for SCDToolkit - retro and modern effects"""
 import numpy as np
 from PyQt5.QtWidgets import QWidget, QPushButton, QLabel
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QPropertyAnimation, QEasingCurve

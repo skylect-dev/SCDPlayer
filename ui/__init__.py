@@ -1,1 +1,1 @@
-# UI package for SCDPlayer
+# UI package for SCDToolkit

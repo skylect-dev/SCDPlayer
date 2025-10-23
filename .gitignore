@@ -44,11 +44,11 @@ ENV/
 Thumbs.db
 *.tmp
 
-# SCDPlayer specific
-SCDPlayer.exe
+# SCDToolkit specific
+SCDToolkit.exe
 vgmstream/
 ffmpeg/
-scdplayer_config.json
+scdtoolkit_config.json
 CHANGELOG*.md
 temp_*
 *.wav.tmp

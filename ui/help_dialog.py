@@ -1,4 +1,4 @@
-"""Help dialog for SCDPlayer"""
+"""Help dialog for SCDToolkit"""
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QTextEdit, QPushButton, QHBoxLayout, 
                             QSplitter, QListWidget, QListWidgetItem)
 from PyQt5.QtCore import Qt
@@ -11,7 +11,7 @@ class HelpDialog(QDialog):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"SCDPlayer v{__version__} - Help Guide")
+        self.setWindowTitle(f"SCDToolkit v{__version__} - Help Guide")
         self.setModal(True)
         self.resize(1000, 700)
         
@@ -145,12 +145,12 @@ class HelpDialog(QDialog):
             </style>
         </head>
         <body>
-            <h1 id="top">SCDPlayer v{__version__} User Guide</h1>
+            <h1 id="top">SCDToolkit v{__version__} User Guide</h1>
             <p><strong>Professional audio player for SCD files with Kingdom Hearts Randomizer integration.</strong></p>
             
             <h2 id="getting-started">Getting Started</h2>
             <div class="section">
-                <p>SCDPlayer is designed for managing and playing SCD audio files, particularly for use with the Kingdom Hearts Randomizer. The application supports multiple audio formats and provides seamless conversion capabilities with a modern, streamlined interface.</p>
+                <p>SCDToolkit is designed for managing and playing SCD audio files, particularly for use with the Kingdom Hearts Randomizer. The application supports multiple audio formats and provides seamless conversion capabilities with a modern, streamlined interface.</p>
                 
                 <h3>What's New in v{__version__}</h3>
                 <ul>
@@ -467,7 +467,7 @@ class HelpDialog(QDialog):
             </div>
             
             <div class="version">
-                <strong>SCDPlayer v{__version__}</strong><br>
+                <strong>SCDToolkit v{__version__}</strong><br>
                 Developed by skylect-dev<br>
                 Powered by vgmstream & FFmpeg
             </div>

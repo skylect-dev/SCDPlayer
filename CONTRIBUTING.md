@@ -1,13 +1,13 @@
-# Contributing to SCDPlayer
+# Contributing to SCDToolkit
 
-Thank you for contributing to SCDPlayer! This guide will help you get started with development.
+Thank you for contributing to SCDToolkit! This guide will help you get started with development.
 
 ## Development Setup
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/skylect-dev/SCDPlayer.git
-   cd SCDPlayer
+   git clone https://github.com/skylect-dev/SCDToolkit.git
+   cd SCDToolkit
    ```
 
 2. **Install Python dependencies:**
@@ -31,11 +31,11 @@ Thank you for contributing to SCDPlayer! This guide will help you get started wi
 ## Project Structure
 
 ```
-SCDPlayer/
+SCDToolkit/
 ├── main.py                 # Main application with GUI
 ├── version.py              # Version information  
 ├── DEVELOPMENT.txt         # Detailed setup guide
-├── SCDPlayer.spec          # PyInstaller build config
+├── SCDToolkit.spec         # PyInstaller build config
 ├── build.bat/.ps1          # Build scripts
 ├── .github/workflows/      # Automated CI/CD
 ├── vgmstream/             # SCD conversion tools (not in git)
@@ -78,18 +78,18 @@ SCDPlayer/
 pip install pyinstaller
 
 # Build executable
-pyinstaller SCDPlayer.spec
+pyinstaller SCDToolkit.spec
 
-# Executable will be in dist/SCDPlayer/
+# Executable will be in dist/SCDToolkit/
 ```
 
 **File Structure Required:**
 ```
-SCDPlayer/
+SCDToolkit/
 ├── assets/
 ├── ffmpeg/bin/ffmpeg.exe
 ├── vgmstream/vgmstream.exe
-└── dist/SCDPlayer/ (after build)
+└── dist/SCDToolkit/ (after build)
 ```
 
 ## Testing
