@@ -432,7 +432,7 @@ class SCDToolkit(QMainWindow):
         header_layout.addWidget(QLabel('Scan Folders:'))
         self.folder_list = QListWidget()
         self.folder_list.setVerticalScrollMode(self.folder_list.ScrollPerPixel)
-    self.folder_list.verticalScrollBar().setSingleStep(8)
+        self.folder_list.verticalScrollBar().setSingleStep(8)
         self.folder_list.setMaximumHeight(100)
         self.folder_list.itemSelectionChanged.connect(self.on_folder_selection_changed)
         # Populate folder list with saved folders on initial load
@@ -563,7 +563,7 @@ class SCDToolkit(QMainWindow):
         regular_files_layout.addWidget(QLabel('Audio Files (SCD, WAV, MP3, OGG, FLAC):'))
         self.file_list = QListWidget()
         self.file_list.setVerticalScrollMode(self.file_list.ScrollPerPixel)
-    self.file_list.verticalScrollBar().setSingleStep(8)
+        self.file_list.verticalScrollBar().setSingleStep(8)
         self.file_list.setSelectionMode(QListWidget.ExtendedSelection)  # Allow multiple selection
         self.file_list.itemDoubleClicked.connect(self.load_from_library)
         self.file_list.itemClicked.connect(self.on_library_item_clicked)  # Handle single clicks
@@ -605,7 +605,7 @@ class SCDToolkit(QMainWindow):
         # Create KH Rando file list - identical to main library structure
         self.kh_rando_file_list = QListWidget()
         self.kh_rando_file_list.setVerticalScrollMode(self.kh_rando_file_list.ScrollPerPixel)
-    self.kh_rando_file_list.verticalScrollBar().setSingleStep(8)
+        self.kh_rando_file_list.verticalScrollBar().setSingleStep(8)
         self.kh_rando_file_list.setSelectionMode(QListWidget.ExtendedSelection)
         self.kh_rando_file_list.itemDoubleClicked.connect(self.load_from_library)
         self.kh_rando_file_list.itemClicked.connect(self.on_kh_rando_item_clicked)
