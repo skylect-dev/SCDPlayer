@@ -54,7 +54,8 @@ pyinstaller SCDToolkit.spec
 
 ## Acknowledgments
 
-Thanks to the KHRando Discord community for feedback and suggestions!
+Thanks to the KHReFined, KHRando, and OpenKH Discord communities for feedback and suggestions!
+Special thanks to TopazTK support and suggestions!
 
 ## License
 
