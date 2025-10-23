@@ -122,7 +122,7 @@ class AudioAnalyzer:
             spectrum = self._bin_fft_to_bars(fft_db)
             
             # Apply smoothing and boost for better visualization
-            spectrum = np.power(spectrum, 1.0)  # Stronger compression: dominant bars stand out more
+            spectrum = np.power(spectrum, 0.5)  # Stronger compression: dominant bars stand out more
             
             # Apply temporal smoothing to reduce jitter
             # Mix 30% new data with 70% previous data
