@@ -1250,6 +1250,10 @@ class SCDToolkit(QMainWindow):
             self.search_input.setText(current_search)
             self.filter_library_files()
 
+        # Restore mini visualizer for currently playing track
+        if hasattr(self, 'current_file') and self.current_file:
+            self.update_library_selection(self.current_file)
+
     def on_kh_rando_item_clicked(self, item):
         """Handle single clicks on KH Rando items (for category expansion and selection)"""
         file_path = item.data(Qt.UserRole)
@@ -1585,6 +1589,9 @@ class SCDToolkit(QMainWindow):
                         file_item.setForeground(file_color)
                     self.file_list.insertItem(insert_position, file_item)
                     insert_position += 1
+            # Restore mini visualizer for currently playing track
+            if hasattr(self, 'current_file') and self.current_file:
+                self.update_library_selection(self.current_file)
         else:
             # Collapsing - remove all files under this folder
             items_to_remove = []
