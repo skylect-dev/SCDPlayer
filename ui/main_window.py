@@ -1612,25 +1612,33 @@ class SCDToolkit(QMainWindow):
 
     def update_library_selection(self, file_path):
         """Update visual indicator for currently playing track (no highlight, just visualizer)"""
-        # Remove all existing mini visualizers
+        # Remove all existing mini visualizers from both lists
         from PyQt5.QtWidgets import QWidget
-        for i in range(self.file_list.count()):
-            item = self.file_list.item(i)
-            widget = self.file_list.itemWidget(item)
-            if widget and widget.objectName() == "mini_bar_visualizer":
-                self.file_list.removeItemWidget(item)
-        # Add visualizer to the currently playing track
         try:
             from ui.mini_bar_visualizer import MiniBarVisualizer
         except ImportError:
             return
-        for i in range(self.file_list.count()):
-            item = self.file_list.item(i)
-            if item and item.data(Qt.UserRole) == file_path:
-                visualizer = MiniBarVisualizer(self.file_list)
-                visualizer.setObjectName("mini_bar_visualizer")
-                self.file_list.setItemWidget(item, visualizer)
-                break
+        # Helper to clear and set visualizer in a list widget
+        def update_list_widget(list_widget):
+            for i in range(list_widget.count()):
+                item = list_widget.item(i)
+                widget = list_widget.itemWidget(item)
+                if widget and widget.objectName() == "mini_bar_visualizer":
+                    list_widget.removeItemWidget(item)
+            for i in range(list_widget.count()):
+                item = list_widget.item(i)
+                if item and item.data(Qt.UserRole) == file_path:
+                    visualizer = MiniBarVisualizer(list_widget)
+                    visualizer.setObjectName("mini_bar_visualizer")
+                    list_widget.setItemWidget(item, visualizer)
+                    break
+        update_list_widget(self.file_list)
+        # KH Rando file list(s)
+        if hasattr(self, 'kh_rando_file_list') and self.kh_rando_file_list:
+            update_list_widget(self.kh_rando_file_list)
+        if hasattr(self, 'kh_rando_sections'):
+            for section in self.kh_rando_sections.values():
+                update_list_widget(section.get_file_list())
             # Check KH Rando sections again after adding
             if hasattr(self, 'kh_rando_sections'):
                 for section in self.kh_rando_sections.values():
