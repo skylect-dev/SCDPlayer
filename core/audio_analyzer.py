@@ -140,7 +140,8 @@ class AudioAnalyzer:
         num_fft_bins = len(fft_data)
         bars = np.zeros(self.num_bars)
 
-        # Mel scale binning
+
+        # Mel scale binning (20Hz–12kHz)
         def hz_to_mel(hz):
             return 2595 * np.log10(1 + hz / 700)
 
@@ -151,9 +152,9 @@ class AudioAnalyzer:
         nyquist = self.sample_rate / 2
         bin_freqs = np.linspace(0, nyquist, num_fft_bins)
 
-        # Mel scale edges
-        min_hz = 0
-        max_hz = nyquist
+        # Mel scale edges for 20Hz–12kHz
+        min_hz = 20
+        max_hz = 12000
         min_mel = hz_to_mel(min_hz)
         max_mel = hz_to_mel(max_hz)
         mel_points = np.linspace(min_mel, max_mel, self.num_bars + 1)

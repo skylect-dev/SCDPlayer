@@ -84,16 +84,15 @@ class SpectrumBarsVisualizer(AudioVisualizer):
         painter.setFont(font)
 
         # Frequencies to label (log scale, musically relevant)
-        freq_labels = [20, 100, 250, 500, 1000, 2500, 5000, 10000, 20000]
+        freq_labels = [20, 100, 250, 500, 1000, 2500, 5000, 8000, 12000]
         # Get bar positions for these frequencies using Mel scale math
         def hz_to_mel(hz):
             return 2595 * np.log10(1 + hz / 700)
         def mel_to_hz(mel):
             return 700 * (10**(mel / 2595) - 1)
         sample_rate = 44100  # Assume standard, or could be passed in
-        nyquist = sample_rate / 2
-        min_hz = 0
-        max_hz = nyquist
+        min_hz = 20
+        max_hz = 12000
         min_mel = hz_to_mel(min_hz)
         max_mel = hz_to_mel(max_hz)
         mel_points = np.linspace(min_mel, max_mel, num_bars + 1)
