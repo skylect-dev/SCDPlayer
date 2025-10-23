@@ -98,7 +98,7 @@ class SpectrumBarsVisualizer(AudioVisualizer):
         mel_points = np.linspace(min_mel, max_mel, num_bars + 1)
         hz_points = mel_to_hz(mel_points)
 
-        for freq in freq_labels:
+        for i, freq in enumerate(freq_labels):
             # Find the closest bar edge to this frequency
             idx = np.argmin(np.abs(hz_points - freq))
             x = int(idx * bar_width)
@@ -109,10 +109,14 @@ class SpectrumBarsVisualizer(AudioVisualizer):
                     label = f"{freq/1000:.1f}k"
             else:
                 label = str(freq)
+            # Clamp last label to stay inside widget
+            label_width = 36
+            if i == len(freq_labels) - 1:
+                x = min(x, w - label_width // 2 - 2)
             # Draw tick
             painter.drawLine(x, bar_area_height, x, bar_area_height + 10)
             # Draw label (move up so it's not cut off)
-            painter.drawText(x - 18, bar_area_height + 18, 36, 16, Qt.AlignCenter, label)
+            painter.drawText(x - label_width // 2, bar_area_height + 18, label_width, 16, Qt.AlignCenter, label)
 
 
 class OscilloscopeVisualizer(AudioVisualizer):
