@@ -164,7 +164,6 @@ class SCDToolkit(QMainWindow):
     # Ko-fi and Discord direct buttons (last items)
     kofi_action = menubar.addAction('Support on &Ko-fi ☕')
     kofi_action.triggered.connect(self.open_kofi)
-
     discord_action = menubar.addAction('Join Discord')
     discord_action.triggered.connect(self.open_discord)
 
