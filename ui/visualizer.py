@@ -42,15 +42,18 @@ class SpectrumBarsVisualizer(AudioVisualizer):
         w = self.width()
         h = self.height()
 
+        legend_height = 24  # Space for Hz legend
+        bar_area_height = h - legend_height
+
         num_bars = len(self.audio_data)
         bar_width = w / num_bars
 
+        # Draw bars
         for i, value in enumerate(self.audio_data):
             # Always green unless peaking, transition to yellow at 80%, red at 95%+
             if value >= 0.95:
                 color = QColor(255, 0, 0)  # Red
             elif value >= 0.8:
-                # Linear blend from yellow (255,255,0) to red (255,0,0)
                 t = (value - 0.8) / 0.15
                 t = min(max(t, 0.0), 1.0)
                 r = 255
@@ -58,7 +61,6 @@ class SpectrumBarsVisualizer(AudioVisualizer):
                 b = 0
                 color = QColor(r, g, b)
             else:
-                # Linear blend from green (0,255,0) to yellow (255,255,0) as value goes from 0 to 0.8
                 t = value / 0.8
                 t = min(max(t, 0.0), 1.0)
                 r = int(255 * t)
@@ -69,11 +71,45 @@ class SpectrumBarsVisualizer(AudioVisualizer):
             painter.setBrush(QBrush(color))
             painter.setPen(Qt.NoPen)
 
-            bar_height = value * h
+            bar_height = value * bar_area_height
             x = i * bar_width
-            y = h - bar_height
+            y = bar_area_height - bar_height
 
             painter.drawRect(int(x), int(y), int(bar_width - 1), int(bar_height))
+
+        # Draw Hz legend below bars
+        painter.setPen(QPen(QColor(180, 255, 180), 1))
+        font = painter.font()
+        font.setPointSize(9)
+        painter.setFont(font)
+
+        # Frequencies to label (log scale, musically relevant)
+        freq_labels = [20, 100, 250, 500, 1000, 2500, 5000, 10000, 20000]
+        # Get bar positions for these frequencies using Mel scale math
+        def hz_to_mel(hz):
+            return 2595 * np.log10(1 + hz / 700)
+        def mel_to_hz(mel):
+            return 700 * (10**(mel / 2595) - 1)
+        sample_rate = 44100  # Assume standard, or could be passed in
+        nyquist = sample_rate / 2
+        min_hz = 0
+        max_hz = nyquist
+        min_mel = hz_to_mel(min_hz)
+        max_mel = hz_to_mel(max_hz)
+        mel_points = np.linspace(min_mel, max_mel, num_bars + 1)
+        hz_points = mel_to_hz(mel_points)
+
+        for freq in freq_labels:
+            # Find the closest bar edge to this frequency
+            idx = np.argmin(np.abs(hz_points - freq))
+            x = int(idx * bar_width)
+            label = f"{freq//1000}k" if freq >= 1000 else str(freq)
+            if freq == 1000:
+                label = "1k"
+            # Draw tick
+            painter.drawLine(x, bar_area_height, x, bar_area_height + 6)
+            # Draw label
+            painter.drawText(x - 12, bar_area_height + 18, 24, 12, Qt.AlignCenter, label)
 
 
 class OscilloscopeVisualizer(AudioVisualizer):
