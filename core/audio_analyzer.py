@@ -14,7 +14,7 @@ class AudioAnalyzer:
         self.sample_rate = 44100
         self.channels = 2
         self.current_file = None
-        self.fft_size = 2048
+        self.fft_size = 4096  # Increased for better frequency resolution
         self.num_bars = 64  # Increased for finer frequency detail
         self.prev_spectrum = np.zeros(64)  # For smoothing
         self.smoothing_factor = 0.7  # 30% of new data, 70% of old data
