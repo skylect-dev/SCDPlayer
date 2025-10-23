@@ -260,7 +260,6 @@ class VisualizerWidget(QWidget):
     VISUALIZERS = [
         ("Off", None),
         ("Spectrum Bars", SpectrumBarsVisualizer),
-        ("Oscilloscope", OscilloscopeVisualizer),
         ("Circular Spectrum", CircularSpectrumVisualizer),
         ("Waveform", WaveformVisualizer),
         ("Particles", ParticleVisualizer),
@@ -327,7 +326,7 @@ class VisualizerWidget(QWidget):
         """)
         self.prev_button.setToolTip("Previous Visualizer")
         self.prev_button.clicked.connect(self.previous_visualizer)
-        self.prev_button.hide()  # Hidden by default
+        self.prev_button.hide()  # Hidden until visualizer is active
         
         # Next button (navigate visualizers)
         self.next_button = QPushButton("▶", self)
@@ -351,28 +350,23 @@ class VisualizerWidget(QWidget):
         """)
         self.next_button.setToolTip("Next Visualizer")
         self.next_button.clicked.connect(self.next_visualizer)
-        self.next_button.hide()  # Hidden by default
+        self.next_button.hide()  # Hidden until visualizer is active
         
-        # Name label (shows visualizer name when changed)
-        self.name_label = QLabel(self)
+        # Name label (shows current visualizer name, always visible when active)
+        self.name_label = QLabel("Off", self)
         self.name_label.setAlignment(Qt.AlignCenter)
         self.name_label.setStyleSheet("""
             QLabel {
-                background-color: rgba(0, 0, 0, 180);
+                background-color: rgba(13, 115, 119, 150);
                 color: #14ffec;
                 border: 2px solid #0d7377;
-                border-radius: 8px;
-                padding: 10px 20px;
-                font-size: 16px;
+                border-radius: 5px;
+                padding: 4px 8px;
+                font-size: 11px;
                 font-weight: bold;
             }
         """)
-        self.name_label.hide()
-        
-        # Timer to hide name label
-        self.name_timer = QTimer()
-        self.name_timer.setSingleShot(True)
-        self.name_timer.timeout.connect(self.hide_name_label)
+        self.name_label.hide()  # Hidden until visualizer is active
         
         # Update timer
         self.update_timer = QTimer()
@@ -394,6 +388,10 @@ class VisualizerWidget(QWidget):
             if self.current_index == 0:  # If "Off", switch to first visualizer
                 self.current_index = 1
             self.switch_visualizer(self.current_index)
+            # Show arrow buttons and name label
+            self.prev_button.show()
+            self.next_button.show()
+            self.name_label.show()
         else:
             # Hide visualizer
             self.toggle_button.setText("▶")
@@ -402,6 +400,7 @@ class VisualizerWidget(QWidget):
                 self.current_visualizer.hide()
             self.prev_button.hide()
             self.next_button.hide()
+            self.name_label.hide()
     
     def previous_visualizer(self):
         """Switch to previous visualizer"""
@@ -440,8 +439,9 @@ class VisualizerWidget(QWidget):
             self.current_visualizer.show()
             self.current_visualizer.lower()  # Put behind buttons
         
-        # Show name briefly
-        self.show_visualizer_name(name)
+        # Update name label
+        self.name_label.setText(name)
+        self.name_label.adjustSize()
         
         # Raise all controls
         self.toggle_button.raise_()
@@ -451,43 +451,6 @@ class VisualizerWidget(QWidget):
         
         self.visualizer_changed.emit(name)
     
-    def show_visualizer_name(self, name):
-        """Show visualizer name for 2 seconds"""
-        self.name_label.setText(name)
-        
-        # Center the label in visualizer area (not including button bar)
-        button_bar_height = 40
-        visualizer_height = self.height() - button_bar_height
-        
-        self.name_label.adjustSize()
-        x = (self.width() - self.name_label.width()) // 2
-        y = (visualizer_height - self.name_label.height()) // 2
-        self.name_label.move(x, y)
-        
-        self.name_label.show()
-        self.name_label.raise_()
-        
-        # Hide after 2 seconds
-        self.name_timer.stop()
-        self.name_timer.start(2000)
-    
-    def hide_name_label(self):
-        """Hide the name label"""
-        self.name_label.hide()
-    
-    def enterEvent(self, event):
-        """Show navigation arrows on hover"""
-        if self.is_visible:
-            self.prev_button.show()
-            self.next_button.show()
-        super().enterEvent(event)
-    
-    def leaveEvent(self, event):
-        """Hide navigation arrows when mouse leaves"""
-        self.prev_button.hide()
-        self.next_button.hide()
-        super().leaveEvent(event)
-        
     def resizeEvent(self, event):
         """Keep visualizer and buttons sized correctly"""
         # Leave 40px at the bottom for buttons
@@ -504,11 +467,8 @@ class VisualizerWidget(QWidget):
         self.prev_button.move(40, button_y)
         self.next_button.move(75, button_y)
         
-        # Reposition name label if visible
-        if self.name_label.isVisible():
-            x = (self.width() - self.name_label.width()) // 2
-            y = (visualizer_height - self.name_label.height()) // 2
-            self.name_label.move(x, y)
+        # Position name label next to the next button
+        self.name_label.move(110, button_y + 3)  # Slight vertical adjustment for alignment
         
     def update_visualizer(self):
         """Update visualizer with audio data"""

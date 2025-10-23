@@ -34,22 +34,25 @@ def main():
     # Create main window (no progress callback needed without splash)
     window = SCDToolkit()
     
-    # Check for .NET runtime availability (non-blocking)
-    try:
-        from utils.dotnet_installer import DotNetRuntimeChecker
-        is_available, version = DotNetRuntimeChecker.check_dotnet_installed()
-        if is_available:
-            logging.info(f".NET {version} detected - SCD conversion available")
-        else:
-            logging.info(".NET not detected - SCD conversion will prompt for installation")
-    except Exception as e:
-        logging.warning(f"Error checking .NET: {e}")
-    
-    # Show main window
+    # Show main window immediately
     window.show()
     
-    # Check for updates after UI is loaded
-    window.check_for_updates_startup()
+    # Check for .NET runtime availability (non-blocking, deferred)
+    def check_dotnet():
+        try:
+            from utils.dotnet_installer import DotNetRuntimeChecker
+            is_available, version = DotNetRuntimeChecker.check_dotnet_installed()
+            if is_available:
+                logging.info(f".NET {version} detected - SCD conversion available")
+            else:
+                logging.info(".NET not detected - SCD conversion will prompt for installation")
+        except Exception as e:
+            logging.warning(f"Error checking .NET: {e}")
+    
+    from PyQt5.QtCore import QTimer
+    QTimer.singleShot(200, check_dotnet)
+    
+    # Check for updates is already deferred in the window initialization
     
     sys.exit(app.exec_())
 

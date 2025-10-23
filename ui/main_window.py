@@ -19,8 +19,9 @@ from ui.styles import DARK_THEME
 from ui.dialogs import show_themed_message, show_themed_file_dialog, apply_title_bar_theming
 from ui.conversion_manager import ConversionManager
 from ui.kh_rando_manager import KHRandoManager
-from ui.help_dialog import HelpDialog
-from ui.loop_editor_dialog import LoopEditorDialog
+# Lazy imports for faster startup:
+# from ui.help_dialog import HelpDialog  # Imported when needed
+# from ui.loop_editor_dialog import LoopEditorDialog  # Imported when needed
 from ui.scan_overlay import ScanOverlay
 from core.loop_manager import HybridLoopManager
 from core.converter import AudioConverter
@@ -29,7 +30,7 @@ from core.library import AudioLibrary
 from core.kh_rando import KHRandoExporter
 from utils.config import Config
 from utils.helpers import format_time, send_to_recycle_bin
-from utils.updater import AutoUpdater
+# from utils.updater import AutoUpdater  # Lazy loaded after UI is shown
 
 
 class SCDToolkit(QMainWindow):
@@ -40,51 +41,30 @@ class SCDToolkit(QMainWindow):
         self.setWindowTitle(f'SCDToolkit v{__version__}')
         self.setGeometry(100, 100, 1400, 850)
         
-        # Initialize components
+        # Initialize minimal components needed for UI
         self.config = Config()
         # Load settings early, before UI setup
         self.config.load_settings()
         
-        self.converter = AudioConverter()
+        # These are needed during UI setup
         self.kh_rando_exporter = KHRandoExporter(self)
         
-        # Initialize file watcher
-        from core.file_watcher import LibraryFileWatcher
-        self.file_watcher = LibraryFileWatcher(self)
-        self.file_watcher.file_added.connect(self._on_file_added)
-        self.file_watcher.file_removed.connect(self._on_file_removed)
-        self.file_watcher.file_modified.connect(self._on_file_modified)
-        self.file_watcher.directory_added.connect(self._on_directory_added)
+        # Defer heavy initializations
+        self.converter = None
+        self.file_watcher = None
         
         self.current_file = None
         self.current_playlist_index = -1
         self.playlist = []
         self._loop_marker_retry_count = 0  # For handling loop marker timing
         
-        # Initialize UI components
+        # Initialize UI components (minimal)
         self.setup_menu_bar()
         self.setup_ui()
         self.setup_media_player()
         
         # Create scan overlay (must be after setup_ui so it has a parent)
         self.scan_overlay = ScanOverlay(self.centralWidget())
-        
-        # Initialize managers after UI is created
-        self.conversion_manager = ConversionManager(self)
-        self.kh_rando_manager = KHRandoManager(self)
-        self.loop_manager = HybridLoopManager()
-        self.auto_updater = AutoUpdater(self)
-        
-        # Initialize audio analyzer for visualizer
-        from core.audio_analyzer import AudioAnalyzer
-        self.audio_analyzer = AudioAnalyzer()
-        
-        # Connect visualizer to audio data
-        if hasattr(self, 'visualizer'):
-            self.visualizer.set_audio_callback(self.get_visualizer_audio_data)
-        
-        # Setup keyboard shortcuts
-        self.setup_shortcuts()
         
         # Set window icon and style
         self.setWindowIcon(create_app_icon())
@@ -93,6 +73,40 @@ class SCDToolkit(QMainWindow):
         
         # Threading components
         self.file_load_thread = None
+        
+        # Defer all heavy initializations to after window is shown
+        QTimer.singleShot(0, self._initialize_components)
+    
+    def _initialize_components(self):
+        """Initialize heavy components after window is shown"""
+        # Initialize converter
+        self.converter = AudioConverter()
+        
+        # Initialize file watcher
+        from core.file_watcher import LibraryFileWatcher
+        self.file_watcher = LibraryFileWatcher(self)
+        self.file_watcher.file_added.connect(self._on_file_added)
+        self.file_watcher.file_removed.connect(self._on_file_removed)
+        self.file_watcher.file_modified.connect(self._on_file_modified)
+        self.file_watcher.directory_added.connect(self._on_directory_added)
+        self.file_watcher.directory_removed.connect(self._on_directory_removed)
+        
+        # Start file watcher immediately after creation
+        QTimer.singleShot(0, self._start_file_watcher)
+        
+        # Initialize managers
+        self.conversion_manager = ConversionManager(self)
+        self.kh_rando_manager = KHRandoManager(self)
+        self.loop_manager = HybridLoopManager()
+        
+        # Setup keyboard shortcuts
+        self.setup_shortcuts()
+        
+        # Initialize other components with minimal delay
+        QTimer.singleShot(10, self._initialize_audio_analyzer)
+        QTimer.singleShot(100, self._initialize_auto_updater)
+        
+        logging.info("Component initialization complete")
     
     def setup_menu_bar(self):
         """Setup the application menu bar"""
@@ -138,9 +152,66 @@ class SCDToolkit(QMainWindow):
         
     def show_help_dialog(self):
         """Show the help dialog"""
+        from ui.help_dialog import HelpDialog
         help_dialog = HelpDialog(self)
         help_dialog.exec_()
         
+    def _initialize_audio_analyzer(self):
+        """Initialize audio analyzer for visualizer after UI is shown"""
+        from core.audio_analyzer import AudioAnalyzer
+        self.audio_analyzer = AudioAnalyzer()
+        
+        # Connect visualizer to audio data if it exists
+        if hasattr(self, 'visualizer') and self.visualizer:
+            self.visualizer.set_audio_callback(self.get_visualizer_audio_data)
+    
+    def _create_visualizer(self):
+        """Create the audio visualizer widget after UI is shown"""
+        if not hasattr(self, 'player_panel'):
+            return
+        
+        from ui.visualizer import VisualizerWidget
+        # Parent visualizer to player_panel for absolute positioning
+        self.visualizer = VisualizerWidget(self.player_panel)
+        self.visualizer.visualizer_changed.connect(self.on_visualizer_changed)
+        
+        # Show the visualizer
+        self.visualizer.show()
+        
+        # Position visualizer absolutely at bottom-left corner (10px from edges)
+        # Use a small delay to ensure the widget is properly sized
+        QTimer.singleShot(10, self._position_visualizer)
+        
+        # Connect resize event to keep visualizer positioned correctly
+        original_resize = self.player_panel.resizeEvent
+        def new_resize_event(event):
+            if original_resize:
+                original_resize(event)
+            self._on_player_panel_resize(event)
+        self.player_panel.resizeEvent = new_resize_event
+        
+        # Connect to audio analyzer if it's ready
+        if hasattr(self, 'audio_analyzer') and self.audio_analyzer:
+            self.visualizer.set_audio_callback(self.get_visualizer_audio_data)
+    
+    def _position_visualizer(self):
+        """Position the visualizer at the bottom-left corner"""
+        if hasattr(self, 'visualizer') and self.visualizer:
+            y_pos = self.player_panel.height() - self.visualizer.height() - 0
+            self.visualizer.move(0, y_pos)
+            self.visualizer.raise_()  # Bring to front
+    
+    def _on_player_panel_resize(self, event):
+        """Keep visualizer positioned at bottom-left on resize"""
+        self._position_visualizer()
+    
+    def _initialize_auto_updater(self):
+        """Initialize the auto updater after UI is shown"""
+        from utils.updater import AutoUpdater
+        self.auto_updater = AutoUpdater(self)
+        # Check for updates after initializing (reduced delay)
+        QTimer.singleShot(100, self.check_for_updates_startup)
+    
     def check_for_updates_startup(self):
         """Check for updates silently on startup"""
         if hasattr(self, 'auto_updater'):
@@ -202,8 +273,8 @@ class SCDToolkit(QMainWindow):
         splitter = QSplitter(Qt.Horizontal)
         
         # Left panel - Player controls
-        player_panel = self.create_player_panel()
-        splitter.addWidget(player_panel)
+        self.player_panel = self.create_player_panel()
+        splitter.addWidget(self.player_panel)
         
         # Right panel - Library
         library_panel = self.create_library_panel()
@@ -214,13 +285,11 @@ class SCDToolkit(QMainWindow):
         main_layout.addWidget(splitter)
         main_widget.setLayout(main_layout)
         
-        # Audio visualizer (bottom left corner of entire window)
-        from ui.visualizer import VisualizerWidget
-        self.visualizer = VisualizerWidget(main_widget)
-        # Size is set in VisualizerWidget itself
-        self.visualizer.visualizer_changed.connect(self.on_visualizer_changed)
-        # Position will be set in resizeEvent
-        main_widget.setLayout(main_layout)
+        # Store main_widget for later visualizer creation
+        self._main_widget = main_widget
+        
+        # Defer visualizer creation for faster startup
+        QTimer.singleShot(20, self._create_visualizer)
     
     def create_player_panel(self):
         """Create the left player controls panel"""
@@ -630,19 +699,11 @@ class SCDToolkit(QMainWindow):
             self.kh_rando_exporter.set_kh_rando_path(self.config.kh_rando_folder)
             self._update_kh_rando_categories()
         
-        # Initial scan to populate file list
-        self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
-        
-        # Start file watcher after initial scan
-        self._start_file_watcher()
-        
-        # Apply folder organization since it's checked by default
-        if self.organize_by_folder_cb.isChecked():
-            self._organize_files_by_folder()
+        # Defer initial scan until after UI is shown for faster startup
+        QTimer.singleShot(10, self._perform_initial_scan)
         
         # Delay KH Rando section count update to ensure UI is ready
-        from PyQt5.QtCore import QTimer
-        QTimer.singleShot(100, self._update_kh_rando_section_counts)
+        QTimer.singleShot(50, self._update_kh_rando_section_counts)
 
         library_panel.setLayout(library_layout)
         return library_panel
@@ -908,6 +969,9 @@ class SCDToolkit(QMainWindow):
             
             # Apply organization if needed
             if organize_by_folder:
+                # Invalidate cache since we rescanned
+                if hasattr(self, '_files_by_folder_cache'):
+                    del self._files_by_folder_cache
                 self._organize_files_by_folder()
             
             # Restore search filter if it was active
@@ -1001,6 +1065,9 @@ class SCDToolkit(QMainWindow):
         organize_by_folder = self.organize_by_folder_cb.isChecked()
         
         if organize_by_folder:
+            # Build cache from current flat list, then organize
+            if hasattr(self, '_files_by_folder_cache'):
+                del self._files_by_folder_cache
             self._organize_files_by_folder()
         else:
             # Clear folder states when switching to flat view
@@ -1009,8 +1076,55 @@ class SCDToolkit(QMainWindow):
             # Rescan to get flat view
             self.rescan_library()
     
+    def _get_expanded_folder_items(self):
+        """Get list of currently expanded folder names"""
+        if not hasattr(self, '_folder_expanded_states'):
+            return []
+        return [folder for folder, expanded in self._folder_expanded_states.items() if expanded]
+    
+    def _restore_expanded_folder_items(self, expanded_folders):
+        """Restore expansion state for specified folders"""
+        if not hasattr(self, '_folder_expanded_states'):
+            self._folder_expanded_states = {}
+        # Update states to match the provided list
+        for folder in self._folder_expanded_states.keys():
+            self._folder_expanded_states[folder] = folder in expanded_folders
+    
+    def _add_file_to_folder_cache(self, file_path: str, display_text: str, color):
+        """Add a file to the folder cache"""
+        if not hasattr(self, '_files_by_folder_cache'):
+            self._files_by_folder_cache = {}
+        
+        folder = os.path.dirname(file_path)
+        if folder and folder != ".":
+            folder_name = os.path.basename(folder)
+            if not folder_name:
+                folder_name = folder
+        else:
+            folder_name = "Files (No Folder)"
+        
+        if folder_name not in self._files_by_folder_cache:
+            self._files_by_folder_cache[folder_name] = []
+        self._files_by_folder_cache[folder_name].append((display_text, file_path, color))
+    
+    def _remove_file_from_folder_cache(self, file_path: str):
+        """Remove a file from the folder cache"""
+        if not hasattr(self, '_files_by_folder_cache'):
+            return
+        
+        for folder_name in list(self._files_by_folder_cache.keys()):
+            self._files_by_folder_cache[folder_name] = [
+                (text, fpath, color) for text, fpath, color in self._files_by_folder_cache[folder_name]
+                if fpath != file_path
+            ]
+            # Remove empty folders from cache
+            if not self._files_by_folder_cache[folder_name]:
+                del self._files_by_folder_cache[folder_name]
+    
     def _organize_files_by_folder(self):
         """Reorganize files by their originating folder with collapsible headers"""
+        from pathlib import Path
+        
         if not hasattr(self, 'library') or not self.library:
             return
             
@@ -1028,28 +1142,52 @@ class SCDToolkit(QMainWindow):
         # Collect all files with their paths from current list (don't rescan!)
         files_by_folder = {}
         
-        # Get all items from the current list
-        for i in range(self.file_list.count()):
-            item = self.file_list.item(i)
-            file_path = item.data(Qt.UserRole)
-            if file_path and not file_path.startswith("FOLDER_HEADER"):
-                folder = os.path.dirname(file_path)
-                
-                # Better folder name handling
-                if folder and folder != ".":
-                    folder_name = os.path.basename(folder)
-                    # Handle empty folder names
-                    if not folder_name:
-                        folder_name = folder  # Use full path if basename is empty
-                else:
-                    folder_name = "Files (No Folder)"  # Better name than "Root"
-                    
-                if folder_name not in files_by_folder:
-                    files_by_folder[folder_name] = []
-                files_by_folder[folder_name].append((item.text(), file_path, item.foreground()))
+        # IMPORTANT: Use cache if available to preserve collapsed folder contents
+        # Otherwise collapsed folders will disappear since their files aren't visible
+        use_cache = hasattr(self, '_files_by_folder_cache') and self._files_by_folder_cache
         
-        # Cache the files data for instant expansion
-        self._files_by_folder_cache = files_by_folder
+        if use_cache:
+            # Use existing cache - this preserves all files including those in collapsed folders
+            files_by_folder = self._files_by_folder_cache.copy()
+        else:
+            # Build cache from current list (first time only)
+            # Pre-compute KH Rando path for filtering
+            kh_rando_path_obj = None
+            if self.config.kh_rando_folder:
+                try:
+                    kh_rando_path_obj = Path(self.config.kh_rando_folder).resolve()
+                except:
+                    pass
+            
+            for i in range(self.file_list.count()):
+                    item = self.file_list.item(i)
+                    file_path = item.data(Qt.UserRole)
+                    if file_path and not file_path.startswith("FOLDER_HEADER"):
+                        # Skip KH Rando files (they should only appear in KH Rando list)
+                        if kh_rando_path_obj:
+                            try:
+                                if Path(file_path).resolve().is_relative_to(kh_rando_path_obj):
+                                    continue
+                            except:
+                                pass
+                        
+                        folder = os.path.dirname(file_path)
+                    
+                        # Better folder name handling
+                        if folder and folder != ".":
+                            folder_name = os.path.basename(folder)
+                            # Handle empty folder names
+                            if not folder_name:
+                                folder_name = folder  # Use full path if basename is empty
+                        else:
+                            folder_name = "Files (No Folder)"  # Better name than "Root"
+                            
+                        if folder_name not in files_by_folder:
+                            files_by_folder[folder_name] = []
+                        files_by_folder[folder_name].append((item.text(), file_path, item.foreground()))
+            
+            # Cache the files data for instant expansion
+            self._files_by_folder_cache = files_by_folder
         
         # Clear and repopulate with folder organization
         self.file_list.clear()
@@ -1747,6 +1885,7 @@ class SCDToolkit(QMainWindow):
             loading_dialog.update_status("Initializing loop editor...")
             
             # Create and show the loop editor dialog
+            from ui.loop_editor_dialog import LoopEditorDialog
             loop_editor = LoopEditorDialog(self.loop_manager, self)
             loading_dialog.close_dialog()
             loop_editor.exec_()
@@ -2716,9 +2855,33 @@ Path: {file_path}"""
         event.accept()
     
     # File Watcher Methods
+    def _perform_initial_scan(self):
+        """Perform initial library scan after UI is shown"""
+        if not hasattr(self, 'library'):
+            return
+        
+        # Show the scan overlay
+        if hasattr(self, 'scan_overlay'):
+            self.scan_overlay.show()
+        
+        # Scan folders
+        self.library.scan_folders(self.config.library_folders, self.config.scan_subdirs, self.config.kh_rando_folder)
+        
+        # Apply folder organization if enabled
+        if self.organize_by_folder_cb.isChecked():
+            self._organize_files_by_folder()
+        
+        # Hide the scan overlay
+        if hasattr(self, 'scan_overlay'):
+            self.scan_overlay.hide()
+        
+        logging.info("Initial library scan completed")
+    
     def _start_file_watcher(self):
         """Start watching library folders for changes"""
-        if not hasattr(self, 'file_watcher'):
+        if not hasattr(self, 'file_watcher') or self.file_watcher is None:
+            # File watcher not initialized yet, retry later
+            QTimer.singleShot(50, self._start_file_watcher)
             return
         
         # Add library folders to watch
@@ -2728,11 +2891,11 @@ Path: {file_path}"""
         if self.config.kh_rando_folder:
             folders_to_watch.append(self.config.kh_rando_folder)
         
-        # Scan initial files for tracking
-        self.file_watcher.scan_initial_files(folders_to_watch, self.config.scan_subdirs)
-        
-        # Start watching
+        # Start watching immediately (don't block on initial scan)
         self.file_watcher.add_watch_paths(folders_to_watch, self.config.scan_subdirs)
+        
+        # Scan initial files for tracking in the background (async, start immediately)
+        QTimer.singleShot(0, lambda: self.file_watcher.scan_initial_files_async(folders_to_watch, self.config.scan_subdirs))
         
         logging.info(f"File watcher started for {len(folders_to_watch)} folders")
     
@@ -2748,9 +2911,59 @@ Path: {file_path}"""
         # Add single file to library without full rescan
         self.library._add_single_file(Path(file_path))
         
+        # Check if file is in a watched library folder (but not in KH Rando folder)
+        is_in_library = False
+        is_in_kh_rando = False
+        try:
+            file_path_obj = Path(file_path).resolve()
+            
+            # Check if in KH Rando folder first
+            if self.config.kh_rando_folder:
+                kh_rando_path = Path(self.config.kh_rando_folder).resolve()
+                if file_path_obj.is_relative_to(kh_rando_path):
+                    is_in_kh_rando = True
+            
+            # Only check library folders if not in KH Rando
+            if not is_in_kh_rando:
+                for folder in self.config.library_folders:
+                    folder_path = Path(folder).resolve()
+                    if file_path_obj.is_relative_to(folder_path):
+                        is_in_library = True
+                        break
+        except:
+            pass
+        
         # Update displays
-        if self.organize_by_folder_cb.isChecked():
-            self._organize_files_by_folder()
+        if is_in_library:
+            # Add to folder cache if organize by folder is enabled
+            if self.organize_by_folder_cb.isChecked() and not is_in_kh_rando:
+                # Add to cache incrementally (don't rebuild!)
+                folder = os.path.dirname(file_path)
+                if folder and folder != ".":
+                    folder_name = os.path.basename(folder)
+                    if not folder_name:
+                        folder_name = folder
+                else:
+                    folder_name = "Files (No Folder)"
+                
+                if not hasattr(self, '_files_by_folder_cache'):
+                    self._files_by_folder_cache = {}
+                if folder_name not in self._files_by_folder_cache:
+                    self._files_by_folder_cache[folder_name] = []
+                
+                # Get display text from the file list item that was just added
+                display_text = os.path.basename(file_path)
+                size = Path(file_path).stat().st_size if Path(file_path).exists() else 0
+                from utils.helpers import format_file_size
+                display_text = f"{display_text} ({format_file_size(size)})"
+                
+                self._files_by_folder_cache[folder_name].append((display_text, file_path, None))
+                
+                # Now reorganize using the updated cache
+                self._organize_files_by_folder()
+            else:
+                # Just filter to update the display with new file
+                self.filter_library_files()
         
         # Refresh KH Rando list in case file was added to KH Rando folder
         self._populate_kh_rando_list()
@@ -2761,16 +2974,40 @@ Path: {file_path}"""
     
     def _on_file_removed(self, file_path: str):
         """Handle file removed event"""
+        from pathlib import Path
         logging.info(f"File removed: {file_path}")
+        
         # Remove file from display
         self._remove_file_from_display(file_path)
         
         # Refresh KH Rando list in case file was removed from KH Rando folder
         self._populate_kh_rando_list()
         
-        # Update displays
+        # Update displays - but preserve folder expansion state
         if self.organize_by_folder_cb.isChecked():
+            # Save expansion state before reorganizing
+            expanded_folders = self._get_expanded_folder_items()
+            
+            # Remove from cache incrementally (don't rebuild!)
+            if hasattr(self, '_files_by_folder_cache'):
+                for folder_name in list(self._files_by_folder_cache.keys()):
+                    self._files_by_folder_cache[folder_name] = [
+                        (text, fpath, color) for text, fpath, color in self._files_by_folder_cache[folder_name]
+                        if fpath != file_path
+                    ]
+                    # Remove empty folders from cache
+                    if not self._files_by_folder_cache[folder_name]:
+                        del self._files_by_folder_cache[folder_name]
+            
+            # Now reorganize using the updated cache
             self._organize_files_by_folder()
+            
+            # Restore expansion state
+            self._restore_expanded_folder_items(expanded_folders)
+        else:
+            # Just filter to update the display
+            self.filter_library_files()
+            
         self._update_kh_rando_section_counts()
         
         # Refresh duplicate status for main library files
@@ -2780,6 +3017,24 @@ Path: {file_path}"""
         """Handle new directory added event (for KH Rando folder detection)"""
         from pathlib import Path
         logging.info(f"Directory added: {directory_path}")
+        
+        # Check if this directory is under a watched library folder
+        is_in_library = False
+        try:
+            dir_path_obj = Path(directory_path).resolve()
+            for folder in self.config.library_folders:
+                folder_path = Path(folder).resolve()
+                if dir_path_obj.is_relative_to(folder_path):
+                    is_in_library = True
+                    break
+        except:
+            pass
+        
+        # If it's in a library folder, the file_added signals will handle the files
+        # We just need to make sure the display updates correctly
+        # The individual file_added handlers will update the cache, just delay the final reorganize
+        if is_in_library and self.organize_by_folder_cb.isChecked():
+            QTimer.singleShot(200, self._organize_files_by_folder)
         
         # Check if this directory is under the KH Rando folder
         if self.config.kh_rando_folder:
@@ -2793,12 +3048,42 @@ Path: {file_path}"""
                     if self.library.kh_rando_exporter:
                         self.library.kh_rando_exporter.refresh_existing_files()
                     
-                    # Update categories and repopulate list
-                    self._update_kh_rando_categories()
-                    self._populate_kh_rando_list()
-                    self._update_kh_rando_section_counts()
+                    # Update categories and repopulate list with a delay
+                    QTimer.singleShot(200, lambda: (
+                        self._update_kh_rando_categories(),
+                        self._populate_kh_rando_list(),
+                        self._update_kh_rando_section_counts()
+                    ))
                     
                     logging.info(f"KH Rando categories updated for new directory: {directory_path}")
+            except (ValueError, OSError) as e:
+                logging.warning(f"Error checking directory path: {e}")
+    
+    def _on_directory_removed(self, directory_path: str):
+        """Handle directory removed event (for KH Rando folder detection)"""
+        from pathlib import Path
+        logging.info(f"Directory removed: {directory_path}")
+        
+        # Check if this directory is under the KH Rando folder
+        if self.config.kh_rando_folder:
+            try:
+                dir_path = Path(directory_path).resolve()
+                kh_rando_path = Path(self.config.kh_rando_folder).resolve()
+                
+                # If the removed directory is under KH Rando folder, refresh categories
+                if dir_path.is_relative_to(kh_rando_path) or str(dir_path) == str(kh_rando_path):
+                    # Refresh KH Rando exporter to detect folder removal
+                    if self.library.kh_rando_exporter:
+                        self.library.kh_rando_exporter.refresh_existing_files()
+                    
+                    # Update categories and repopulate list with a delay
+                    QTimer.singleShot(200, lambda: (
+                        self._update_kh_rando_categories(),
+                        self._populate_kh_rando_list(),
+                        self._update_kh_rando_section_counts()
+                    ))
+                    
+                    logging.info(f"KH Rando categories updated for removed directory: {directory_path}")
             except (ValueError, OSError) as e:
                 logging.warning(f"Error checking directory path: {e}")
     
