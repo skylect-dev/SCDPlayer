@@ -3,12 +3,12 @@ from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QPainter, QColor
 
 class MiniBarVisualizer(QWidget):
-    def __init__(self, parent=None, bar_count=4, bar_color=QColor(0, 120, 212)):
+    def __init__(self, parent=None, bar_count=4, bar_color=QColor(255, 255, 255)):
         super().__init__(parent)
         self.bar_count = bar_count
         self.bar_color = bar_color
         self.anim_phase = 0
-        self.setFixedSize(14, 14)
+        self.setFixedSize(18, 18)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_animation)
         self.timer.start(100)
