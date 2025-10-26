@@ -20,7 +20,7 @@ class MusicListEditor(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("KH Randomizer Music List Editor")
-        self.resize(1000, 700)
+        self.resize(1200, 800)
         apply_title_bar_theming(self)
         
         self.musiclist_data = []
@@ -29,7 +29,7 @@ class MusicListEditor(QDialog):
         self.modified = False
         self.available_folders = []
         self.kh_rando_folder = None
-        self.current_song = None
+        self.current_song_index = None  # Store index instead of song object
         
         self.setup_ui()
         self.load_musiclist()
@@ -280,10 +280,6 @@ class MusicListEditor(QDialog):
                 
                 self.available_folders.sort()
                 
-                # Update dropdown
-                self.folder_dropdown.clear()
-                self.folder_dropdown.addItems(self.available_folders)
-                
                 logging.info(f"Detected {len(self.available_folders)} folders in KH Rando music directory")
             except Exception as e:
                 logging.error(f"Failed to detect folders: {e}")
@@ -345,7 +341,7 @@ class MusicListEditor(QDialog):
         """Populate the song list"""
         self.song_list.clear()
         
-        for song in self.musiclist_data:
+        for index, song in enumerate(self.musiclist_data):
             title = song.get('title', 'Unknown')
             filename = song.get('filename', '')
             dmca = song.get('dmca', False)
@@ -356,7 +352,8 @@ class MusicListEditor(QDialog):
                 display_text += " ⚠️"
             
             item = QListWidgetItem(display_text)
-            item.setData(Qt.UserRole, song)  # Store song data
+            # Store the INDEX instead of the song dict to avoid reference issues
+            item.setData(Qt.UserRole, index)
             
             self.song_list.addItem(item)
     
@@ -364,7 +361,8 @@ class MusicListEditor(QDialog):
         """Filter song list by search text"""
         for i in range(self.song_list.count()):
             item = self.song_list.item(i)
-            song = item.data(Qt.UserRole)
+            song_index = item.data(Qt.UserRole)
+            song = self.musiclist_data[song_index]
             
             if not text:
                 item.setHidden(False)
@@ -377,16 +375,17 @@ class MusicListEditor(QDialog):
     def on_song_selected(self):
         """When a song is selected, show its weight sliders"""
         # Save current sliders to previously selected song before switching
-        if hasattr(self, 'current_song') and self.current_song and self.folder_sliders:
-            self.update_song_from_sliders(self.current_song)
+        if hasattr(self, 'current_song_index') and self.current_song_index is not None and self.folder_sliders:
+            self.update_song_from_sliders(self.musiclist_data[self.current_song_index])
         
         current_item = self.song_list.currentItem()
         if not current_item:
             return
         
-        song = current_item.data(Qt.UserRole)
-        if song:
-            self.current_song = song
+        song_index = current_item.data(Qt.UserRole)
+        if song_index is not None:
+            self.current_song_index = song_index
+            song = self.musiclist_data[song_index]
             
             # Update song info
             title = song.get('title', 'Unknown')
@@ -414,19 +413,50 @@ class MusicListEditor(QDialog):
             folder_lower = folder.lower()
             folder_counts[folder_lower] = folder_counts.get(folder_lower, 0) + 1
         
-        # Create slider for each available folder
-        for folder in self.available_folders:
+        # Combine available folders with folders from song type that don't exist
+        # This ensures we show sliders for missing folders with warnings
+        all_folders_set = set(f.lower() for f in self.available_folders)
+        missing_folders = []
+        for folder_lower in folder_counts.keys():
+            if folder_lower not in all_folders_set:
+                missing_folders.append(folder_lower)
+        
+        # Create sliders: first available folders, then missing ones
+        folders_to_show = list(self.available_folders) + missing_folders
+        
+        # Create slider for each folder
+        for folder in folders_to_show:
+            folder_lower = folder.lower()
+            is_missing = folder_lower not in all_folders_set
+            
             slider_container = QWidget()
             slider_layout = QHBoxLayout()
             slider_layout.setContentsMargins(10, 5, 10, 5)
             slider_container.setLayout(slider_layout)
-            slider_container.setStyleSheet("QWidget { background-color: #333; border-radius: 3px; }")
+            
+            # Change background color if folder is missing
+            if is_missing:
+                slider_container.setStyleSheet("QWidget#sliderContainer { background-color: #3d2a2a; border-radius: 3px; border-left: 3px solid #d32f2f; }")
+                slider_container.setObjectName("sliderContainer")
+            else:
+                slider_container.setStyleSheet("QWidget { background-color: #333; border-radius: 3px; }")
+            
+            # Warning icon for missing folders
+            if is_missing:
+                warning_label = QLabel("⚠️")
+                warning_label.setFixedWidth(25)
+                warning_label.setStyleSheet("QLabel { color: #ff9800; font-size: 14pt; background: transparent; }")
+                warning_label.setToolTip(f"Folder '{folder}' does not exist in the KH Randomizer music directory.\nMoving the slider will create it automatically.")
+                slider_layout.addWidget(warning_label)
             
             # Folder name label (capitalize first letter for display)
             display_name = folder[0].upper() + folder[1:] if folder else folder
             folder_label = QLabel(display_name)
-            folder_label.setFixedWidth(120)
-            folder_label.setStyleSheet("QLabel { color: #e0e0e0; font-size: 10pt; }")
+            folder_label.setFixedWidth(120 if not is_missing else 95)
+            if is_missing:
+                folder_label.setStyleSheet("QLabel { color: #ff9800; font-size: 10pt; font-weight: bold; background: transparent; }")
+            else:
+                folder_label.setStyleSheet("QLabel { color: #e0e0e0; font-size: 10pt; background: transparent; }")
             slider_layout.addWidget(folder_label)
             
             # Slider
@@ -435,44 +465,96 @@ class MusicListEditor(QDialog):
             slider.setMaximum(10)
             # Get count using lowercase folder name
             slider.setValue(folder_counts.get(folder.lower(), 0))
-            slider.setStyleSheet("""
-                QSlider::groove:horizontal {
-                    background: #2a2a2a;
-                    height: 8px;
-                    border-radius: 4px;
-                }
-                QSlider::handle:horizontal {
-                    background: #888;
-                    width: 16px;
-                    margin: -4px 0;
-                    border-radius: 8px;
-                }
-                QSlider::handle:horizontal:hover {
-                    background: #aaa;
-                }
-                QSlider::sub-page:horizontal {
-                    background: #666;
-                    border-radius: 4px;
-                }
-            """)
+            
+            # For missing folders, use transparent backgrounds to show red container
+            if is_missing:
+                slider.setStyleSheet("""
+                    QSlider {
+                        background: transparent;
+                    }
+                    QSlider::groove:horizontal {
+                        background: #2a2a2a;
+                        height: 8px;
+                        border-radius: 4px;
+                    }
+                    QSlider::handle:horizontal {
+                        background: #888;
+                        width: 16px;
+                        margin: -4px 0;
+                        border-radius: 8px;
+                    }
+                    QSlider::handle:horizontal:hover {
+                        background: #aaa;
+                    }
+                    QSlider::sub-page:horizontal {
+                        background: #666;
+                        border-radius: 4px;
+                    }
+                """)
+            else:
+                slider.setStyleSheet("""
+                    QSlider::groove:horizontal {
+                        background: #2a2a2a;
+                        height: 8px;
+                        border-radius: 4px;
+                    }
+                    QSlider::handle:horizontal {
+                        background: #888;
+                        width: 16px;
+                        margin: -4px 0;
+                        border-radius: 8px;
+                    }
+                    QSlider::handle:horizontal:hover {
+                        background: #aaa;
+                    }
+                    QSlider::sub-page:horizontal {
+                        background: #666;
+                        border-radius: 4px;
+                    }
+                """)
             slider_layout.addWidget(slider, 1)
             
             # Value label (use lowercase for lookup)
             value_label = QLabel(str(folder_counts.get(folder.lower(), 0)))
             value_label.setFixedWidth(30)
             value_label.setAlignment(Qt.AlignCenter)
-            value_label.setStyleSheet("QLabel { color: #e0e0e0; font-size: 10pt; font-weight: bold; }")
+            value_label.setStyleSheet("QLabel { color: #e0e0e0; font-size: 10pt; font-weight: bold; background: transparent; }")
             slider_layout.addWidget(value_label)
             
             # Connect slider to update label and mark as modified
             slider.valueChanged.connect(lambda val, lbl=value_label: lbl.setText(str(val)))
             slider.valueChanged.connect(lambda: setattr(self, 'modified', True))
+            slider.valueChanged.connect(self.on_slider_changed)
+            
+            # If folder is missing and slider moved, create the folder
+            if is_missing:
+                slider.valueChanged.connect(lambda val, f=folder: self.create_missing_folder_if_needed(f, val))
             
             self.sliders_layout.addWidget(slider_container)
             self.folder_sliders[folder] = slider
         
         # Add stretch at the end
         self.sliders_layout.addStretch()
+    
+    def create_missing_folder_if_needed(self, folder_name, slider_value):
+        """Create folder if it doesn't exist when slider is moved"""
+        if slider_value > 0 and self.kh_rando_folder:
+            folder_path = os.path.join(self.kh_rando_folder, folder_name)
+            if not os.path.exists(folder_path):
+                try:
+                    os.makedirs(folder_path)
+                    logging.info(f"Auto-created missing folder: {folder_path}")
+                    
+                    # Re-detect folders and refresh sliders
+                    self.detect_folders()
+                    current_item = self.song_list.currentItem()
+                    if current_item:
+                        song_index = current_item.data(Qt.UserRole)
+                        if song_index is not None:
+                            song = self.musiclist_data[song_index]
+                            self.create_sliders(song)
+                except Exception as e:
+                    logging.error(f"Failed to auto-create folder {folder_name}: {e}")
     
     def update_song_from_sliders(self, song_data):
         """Update song's type array based on slider values"""
@@ -487,6 +569,12 @@ class MusicListEditor(QDialog):
         
         song_data['type'] = new_types
         logging.info(f"Updated categories for {song_data.get('title')}: {new_types}")
+        logging.info(f"Song data object id: {id(song_data)}, is in musiclist_data: {song_data in self.musiclist_data}")
+    
+    def on_slider_changed(self):
+        """Handle slider value change - update current song immediately"""
+        if hasattr(self, 'current_song_index') and self.current_song_index is not None:
+            self.update_song_from_sliders(self.musiclist_data[self.current_song_index])
     
     def add_new_folder(self):
         """Add a new folder to the KH Rando music directory"""
@@ -535,8 +623,9 @@ class MusicListEditor(QDialog):
                 # Refresh the current song's sliders if one is selected
                 current_item = self.song_list.currentItem()
                 if current_item:
-                    song = current_item.data(Qt.UserRole)
-                    if song:
+                    song_index = current_item.data(Qt.UserRole)
+                    if song_index is not None:
+                        song = self.musiclist_data[song_index]
                         self.create_sliders(song)
                 
                 QMessageBox.information(
@@ -561,9 +650,40 @@ class MusicListEditor(QDialog):
         # Update current song from sliders if one is selected
         current_item = self.song_list.currentItem()
         if current_item:
-            song = current_item.data(Qt.UserRole)
-            if song and self.folder_sliders:
+            song_index = current_item.data(Qt.UserRole)
+            if song_index is not None and self.folder_sliders:
+                song = self.musiclist_data[song_index]
                 self.update_song_from_sliders(song)
+                logging.info(f"Final save - updated song from sliders: {song.get('title')} -> {song.get('type')}")
+        
+        # Create any missing folders referenced in the musiclist
+        if self.kh_rando_folder:
+            missing_folders_created = []
+            all_folders_lower = set(f.lower() for f in self.available_folders)
+            
+            for song in self.musiclist_data:
+                for folder_name in song.get('type', []):
+                    folder_lower = folder_name.lower()
+                    if folder_lower not in all_folders_lower:
+                        folder_path = os.path.join(self.kh_rando_folder, folder_name)
+                        if not os.path.exists(folder_path):
+                            try:
+                                os.makedirs(folder_path)
+                                missing_folders_created.append(folder_name)
+                                all_folders_lower.add(folder_lower)
+                                logging.info(f"Auto-created missing folder during save: {folder_path}")
+                            except Exception as e:
+                                logging.error(f"Failed to create folder {folder_name} during save: {e}")
+            
+            # Re-detect folders if any were created
+            if missing_folders_created:
+                self.detect_folders()
+                logging.info(f"Created {len(missing_folders_created)} missing folders: {', '.join(missing_folders_created)}")
+        
+        # Debug: Log first few songs to see their type values
+        logging.info(f"About to save {len(self.musiclist_data)} songs")
+        for i, song in enumerate(self.musiclist_data[:3]):
+            logging.info(f"Song {i}: {song.get('title')} has type: {song.get('type')}")
         
         try:
             # Backup original
@@ -575,6 +695,8 @@ class MusicListEditor(QDialog):
             # Save new version
             with open(self.musiclist_path, 'w', encoding='utf-8') as f:
                 json.dump(self.musiclist_data, f, indent=4, ensure_ascii=False)
+            
+            logging.info(f"Successfully wrote musiclist.json to {self.musiclist_path}")
             
             self.modified = False
             QMessageBox.information(self, "Saved", f"Music list saved successfully!\n\nBackup created: {backup_path}")
@@ -593,12 +715,33 @@ class MusicListEditor(QDialog):
         
         if reply == QMessageBox.Yes:
             try:
+                # First, clear selection and sliders to prevent any updates during reset
+                self.song_list.clearSelection()
+                self.song_list.setCurrentItem(None)  # Explicitly clear current item
+                self.current_song_index = None
+                
+                # Remove all slider widgets from the UI
+                for i in reversed(range(self.sliders_layout.count())):
+                    widget = self.sliders_layout.itemAt(i).widget()
+                    if widget:
+                        widget.deleteLater()
+                
+                self.folder_sliders.clear()  # Clear slider dictionary
+                
+                # Update song info label to show nothing is selected
+                self.song_info_label.setText("Select a song to edit categories")
+                
+                # NOW load default musiclist from khpc_tools
                 with open(self.default_musiclist_path, 'r', encoding='utf-8') as f:
                     self.musiclist_data = json.load(f)
+                
+                # Save the defaults to the actual file
+                self.save_musiclist()
+                
+                # Refresh UI to show defaults
                 self.populate_list()
-                self.modified = True
-                QMessageBox.information(self, "Reset", "Music list reset to defaults.")
-                logging.info("Reset musiclist to defaults")
+                
+                logging.info("Reset musiclist to defaults and saved")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load defaults:\n{e}")
                 logging.error(f"Failed to load default musiclist: {e}")
