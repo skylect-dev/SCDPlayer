@@ -75,7 +75,7 @@ class AudioConverter:
         
         try:
             subprocess.run(
-                [str(vgmstream_file), '-o', wav_path, scd_path], 
+                [str(vgmstream_file), '-i', '-o', wav_path, scd_path], 
                 check=True, 
                 startupinfo=self._create_subprocess_startupinfo(),
                 creationflags=subprocess.CREATE_NO_WINDOW

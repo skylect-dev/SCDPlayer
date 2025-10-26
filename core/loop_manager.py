@@ -198,6 +198,7 @@ class HybridLoopManager:
             
             result = subprocess.run([
                 str(vgmstream_path),
+                '-i',  # Ignore loop, play once
                 '-o', temp_wav_path,
                 scd_path
             ], capture_output=True, text=True, encoding='utf-8', errors='replace',

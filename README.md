@@ -62,7 +62,8 @@ pyinstaller SCDToolkit.spec
 ## Acknowledgments
 
 Thanks to the KHReFined, KHRando, and OpenKH Discord communities for feedback and suggestions!
-Special thanks to TopazTK support and suggestions!
+Special thanks to TopazTK for support and suggestions!
+Special thanks to PunningLinguist for identifying the vgmstream loop rendering issue!
 
 ## License
 
