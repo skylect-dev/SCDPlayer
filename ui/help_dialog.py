@@ -161,7 +161,7 @@ class HelpDialog(QDialog):
                     <li><strong>Modern UI:</strong> Custom rounded scrollbars and polished dark theme</li>
                     <li><strong>Music List Editor:</strong> Quick access via J key or dedicated button</li>
                     <li><strong>Folder Creation:</strong> Create new KH Rando categories on the fly during export</li>
-                    <li><strong>.NET 8.0 Support:</strong> Updated to latest .NET runtime for better compatibility</li>
+                    <li><strong>.NET 5.0 Runtime:</strong> MusicEncoder requires .NET 5.0 Desktop Runtime (bundled installer included)</li>
                 </ul>
             </div>
             
@@ -311,9 +311,9 @@ class HelpDialog(QDialog):
                 <h3>Supported Conversions</h3>
                 <ul>
                     <li><strong>To WAV:</strong> Convert SCD, MP3, OGG, FLAC files to WAV format</li>
-                    <li><strong>To SCD:</strong> Convert WAV files to pseudo-SCD format for KH compatibility (requires .NET)</li>
-                    <li><strong>.NET Runtime:</strong> Application checks for .NET 8.0 SDK at startup (required for SCD conversion only)</li>
-                    <li><strong>Automatic Install:</strong> Prompted to install .NET if not detected (one-time setup)</li>
+                    <li><strong>To SCD:</strong> Convert WAV files to pseudo-SCD format for KH compatibility (requires .NET 5.0)</li>
+                    <li><strong>.NET Runtime:</strong> Application checks for .NET 5.0 Desktop Runtime at startup (required for SCD conversion only)</li>
+                    <li><strong>Automatic Install:</strong> Prompted to install .NET 5.0 if not detected (bundled installer included, one-time setup)</li>
                     <li><strong>Batch Conversion:</strong> Convert multiple selected files with progress tracking</li>
                     <li><strong>Automatic:</strong> Conversions happen automatically during KH Rando export</li>
                     <li><strong>Temporary Files:</strong> Conversion files cleaned up automatically</li>
@@ -440,7 +440,7 @@ class HelpDialog(QDialog):
                     <li><strong>Progress Bars Stuck:</strong> Close and restart application if background tasks freeze</li>
                     <li><strong>Drag and Drop Not Working:</strong> Ensure KH Rando folder is selected and valid</li>
                     <li><strong>Context Menu Missing:</strong> Right-click on file items in the library, not empty space</li>
-                    <li><strong>.NET Conversion Fails:</strong> Ensure .NET 8.0 SDK is installed (checked at startup)</li>
+                    <li><strong>.NET Conversion Fails:</strong> Ensure .NET 5.0 Desktop Runtime is installed (checked at startup, bundled installer available)</li>
                     <li><strong>Folder Creation Fails:</strong> Check write permissions in KH Rando directory</li>
                 </ul>
                 

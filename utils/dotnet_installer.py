@@ -12,17 +12,17 @@ from utils.helpers import get_bundled_path
 
 
 class DotNetRuntimeChecker:
-    """Check for .NET 5.0+ runtime availability"""
+    """Check for .NET 5.0 runtime availability (required for MusicEncoder)"""
     
-    REQUIRED_VERSION = "5.0"  # Minimum version, but will accept any 5.0+
-    RECOMMENDED_VERSION = "8.0"  # Current LTS
-    DOWNLOAD_URL = "https://dotnet.microsoft.com/download/dotnet/8.0"
-    DIRECT_DOWNLOAD_URL = "https://builds.dotnet.microsoft.com/dotnet/Sdk/8.0.121/dotnet-sdk-8.0.121-win-x64.exe"
+    REQUIRED_VERSION = "5.0"  # Exact version required by MusicEncoder (SingleEncoder.runtimeconfig.json)
+    DOWNLOAD_URL = "https://dotnet.microsoft.com/download/dotnet/5.0"
+    # Direct link to .NET 5.0 Desktop Runtime installer (Windows x64)
+    DIRECT_DOWNLOAD_URL = "https://download.visualstudio.microsoft.com/download/pr/7ab0bc25-5b00-42c3-b7cc-bb8e08f05135/91528a790a28c1f0e05daaf1d0e8c4e8/windowsdesktop-runtime-5.0.17-win-x64.exe"
     
     @staticmethod
     def check_dotnet_installed() -> Tuple[bool, Optional[str]]:
         """
-        Check if .NET 5.0+ runtime is installed
+        Check if .NET 5.0 runtime is installed (required for MusicEncoder)
         
         Returns:
             Tuple of (is_installed, version_string)
@@ -41,28 +41,29 @@ class DotNetRuntimeChecker:
             
             if result.returncode == 0:
                 output = result.stdout
-                # Look for Microsoft.NETCore.App 5.x+ or Microsoft.WindowsDesktop.App 5.x+
-                # Accept any version 5.0 or higher (5.x, 6.x, 7.x, 8.x, etc.)
+                # Look specifically for .NET 5.0.x runtime (required by MusicEncoder)
+                # Check for Microsoft.NETCore.App 5.0.x (required for MusicEncoder.exe)
                 found_versions = []
                 for line in output.splitlines():
-                    if 'Microsoft.WindowsDesktop.App' in line or 'Microsoft.NETCore.App' in line:
+                    if 'Microsoft.NETCore.App' in line:
                         parts = line.split()
                         if len(parts) >= 2:
                             version = parts[1]
                             try:
+                                # Check if major version is 5
                                 major_version = int(version.split('.')[0])
-                                if major_version >= 5:
+                                if major_version == 5:
                                     found_versions.append(version)
                             except (ValueError, IndexError):
                                 continue
                 
                 if found_versions:
-                    # Return the highest version found
-                    best_version = max(found_versions, key=lambda v: tuple(map(int, v.split('.')[:2])))
-                    logging.info(f".NET {best_version} runtime found (compatible with 5.0+ requirement)")
+                    # Return the highest 5.x version found
+                    best_version = max(found_versions, key=lambda v: tuple(map(int, v.split('.')[:3])))
+                    logging.info(f".NET {best_version} runtime found (required for MusicEncoder)")
                     return True, best_version
                 
-                logging.warning(".NET is installed but no compatible version (5.0+) found")
+                logging.warning(".NET 5.0 runtime not found (required for MusicEncoder)")
                 logging.debug(f"Available runtimes:\n{output}")
                 return False, None
             else:
@@ -83,6 +84,13 @@ class DotNetRuntimeChecker:
     def check_bundled_installer() -> Optional[Path]:
         """Check if .NET installer is bundled with the app"""
         try:
+            # First check in redist folder (for bundled .NET 5.0 runtime)
+            redist_dir = Path(__file__).parent.parent / 'redist'
+            if redist_dir.exists():
+                for installer in redist_dir.glob('windowsdesktop-runtime-*.exe'):
+                    logging.info(f"Found bundled .NET installer in redist: {installer}")
+                    return installer
+            
             # Check in the bundled dotnet_installer directory
             installer_dir = Path(get_bundled_path('dotnet_installer'))
             if installer_dir.exists():
@@ -226,16 +234,16 @@ def prompt_dotnet_install(parent_widget) -> bool:
     
     if bundled_installer:
         message = (
-            "🔧 .NET Runtime Required\n\n"
-            "SCD file conversion requires the .NET Desktop Runtime (5.0 or higher).\n\n"
+            "🔧 .NET 5.0 Runtime Required\n\n"
+            "SCD file conversion requires the .NET 5.0 Desktop Runtime.\n\n"
             "A bundled installer has been found. Would you like to install it now?\n\n"
             "This is a one-time setup and only takes a minute."
         )
     else:
         message = (
-            "🔧 .NET Runtime Required\n\n"
-            "SCD file conversion requires the .NET Desktop Runtime (5.0 or higher).\n\n"
-            "The .NET 8.0 SDK installer will be downloaded (~200 MB) and installed automatically.\n\n"
+            "🔧 .NET 5.0 Runtime Required\n\n"
+            "SCD file conversion requires the .NET 5.0 Desktop Runtime.\n\n"
+            "The .NET 5.0 Desktop Runtime installer will be downloaded (~50 MB) and installed automatically.\n\n"
             "This is a one-time setup and only takes a few minutes.\n\n"
             "Alternative: You can download it manually from:\n"
             f"{DotNetRuntimeChecker.DOWNLOAD_URL}"
@@ -320,6 +328,6 @@ def install_dotnet_runtime(parent_widget) -> bool:
             parent_widget,
             QMessageBox.Warning,
             "Installation Failed",
-            f"❌ {result[1]}\n\nYou can install .NET 8.0 (or 5.0+) manually from:\n{DotNetRuntimeChecker.DOWNLOAD_URL}\n\nAlternatively, you can use WAV files instead of SCD."
+            f"❌ {result[1]}\n\nYou can install .NET 5.0 manually from:\n{DotNetRuntimeChecker.DOWNLOAD_URL}\n\nAlternatively, you can use WAV files instead of SCD."
         )
         return False

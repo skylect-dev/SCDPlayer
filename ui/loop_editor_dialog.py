@@ -739,9 +739,11 @@ class WaveformWidget(QWidget):
                     base_pos = getattr(self, '_fine_base_start', self.loop_start)
                     if base_pos is None:
                         base_pos = self.loop_start
-                    
-                delta = (event.x() - getattr(self, '_drag_start_x', event.x())) * (self.samples_per_pixel // 20)
-                self.loop_start = max(0, min(base_pos + delta, self.loop_end - 1))
+                
+                # Use max of 1 or samples_per_pixel // 20 to ensure minimum movement
+                fine_step = max(1, self.samples_per_pixel // 20)
+                delta = (event.x() - getattr(self, '_drag_start_x', event.x())) * fine_step
+                self.loop_start = max(0, min(int(base_pos + delta), self.loop_end - 1))
                 self._fine_base_start = base_pos
             else:
                 # Normal control: direct position
@@ -767,9 +769,11 @@ class WaveformWidget(QWidget):
                     base_pos = getattr(self, '_fine_base_end', self.loop_end)
                     if base_pos is None:
                         base_pos = self.loop_end
-                    
-                delta = (event.x() - getattr(self, '_drag_start_x', event.x())) * (self.samples_per_pixel // 20)
-                self.loop_end = max(self.loop_start + 1, min(base_pos + delta, self.total_samples))
+                
+                # Use max of 1 or samples_per_pixel // 20 to ensure minimum movement
+                fine_step = max(1, self.samples_per_pixel // 20)
+                delta = (event.x() - getattr(self, '_drag_start_x', event.x())) * fine_step
+                self.loop_end = max(self.loop_start + 1, min(int(base_pos + delta), self.total_samples))
                 self._fine_base_end = base_pos
             else:
                 # Normal control: direct position
@@ -795,9 +799,11 @@ class WaveformWidget(QWidget):
                     base_pos = getattr(self, '_fine_base_cursor', self.current_position)
                     if base_pos is None:
                         base_pos = self.current_position
-                    
-                delta = (event.x() - getattr(self, '_drag_start_x', event.x())) * (self.samples_per_pixel // 20)
-                self.current_position = max(0, min(base_pos + delta, self.total_samples))
+                
+                # Use max of 1 or samples_per_pixel // 20 to ensure minimum movement
+                fine_step = max(1, self.samples_per_pixel // 20)
+                delta = (event.x() - getattr(self, '_drag_start_x', event.x())) * fine_step
+                self.current_position = max(0, min(int(base_pos + delta), self.total_samples))
                 self._fine_base_cursor = base_pos
             else:
                 # Normal control: direct position

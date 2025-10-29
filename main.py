@@ -37,15 +37,17 @@ def main():
     # Show main window immediately
     window.show()
     
-    # Check for .NET runtime availability (non-blocking, deferred)
+    # Check for .NET runtime availability and prompt for installation if missing
     def check_dotnet():
         try:
-            from utils.dotnet_installer import DotNetRuntimeChecker
+            from utils.dotnet_installer import DotNetRuntimeChecker, prompt_dotnet_install
             is_available, version = DotNetRuntimeChecker.check_dotnet_installed()
             if is_available:
                 logging.info(f".NET {version} detected - SCD conversion available")
             else:
-                logging.info(".NET not detected - SCD conversion will prompt for installation")
+                logging.warning(".NET 5.0 not detected - prompting for installation")
+                # Prompt user to install .NET immediately
+                prompt_dotnet_install(window)
         except Exception as e:
             logging.warning(f"Error checking .NET: {e}")
     

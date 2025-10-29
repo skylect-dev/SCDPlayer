@@ -80,7 +80,7 @@ def send_to_recycle_bin(file_path: str) -> bool:
     try:
         # First try using send2trash library if available
         try:
-            import send2trash
+            import send2trash  # type: ignore
             send2trash.send2trash(file_path)
             return True
         except ImportError:

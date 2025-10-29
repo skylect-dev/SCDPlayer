@@ -29,9 +29,9 @@ A Windows audio player and toolkit designed for game music files (SCD format) wi
 Everything needed is included - no additional setup required.
 
 **Note for SCD Conversion:**
-- Converting files **to** SCD format requires .NET Desktop Runtime (5.0 or higher)
+- Converting files **to** SCD format requires .NET 5.0 Desktop Runtime
 - SCDToolkit will automatically prompt to install it when needed (one-time setup)
-- Recommended: [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (current LTS)
+- .NET 5.0 Desktop Runtime installer is bundled with SCDToolkit
 - All other features work without .NET
 
 ## Quick Start
