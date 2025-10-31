@@ -3,14 +3,10 @@
 # For more details about fixed file info 'ffi' see:
 # http://msdn.microsoft.com/en-us/library/ms646997.aspx
 
-# PyInstaller version info structures
-from PyInstaller.utils.win32.versioninfo import (
-    VSVersionInfo, FixedFileInfo, StringFileInfo, StringTable,
-    StringStruct, VarFileInfo, VarStruct
-)
-
-VSVersionInfo(
-  ffi=FixedFileInfo(
+# type: ignore - This file is evaluated by PyInstaller, not executed directly
+# pyright: reportUndefinedVariable=false
+VSVersionInfo(  # type: ignore
+  ffi=FixedFileInfo(  # type: ignore
 # filevers and prodvers should be always a tuple with four items: (1, 2, 3, 4)
 # Set not needed items to zero 0.
 filevers=(3,0,1,0),
