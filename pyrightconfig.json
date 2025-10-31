@@ -1,0 +1,8 @@
+{
+  "exclude": [
+    "version_info.py"
+  ],
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "pythonVersion": "3.13"
+}
