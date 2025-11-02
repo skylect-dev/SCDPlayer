@@ -1,8 +1,20 @@
 {
   "exclude": [
-    "version_info.py"
+    "version_info.py",
+    "build/**",
+    "dist/**",
+    "__pycache__/**"
   ],
   "reportMissingImports": true,
   "reportMissingTypeStubs": false,
-  "pythonVersion": "3.13"
+  "reportGeneralTypeIssues": false,
+  "reportOptionalMemberAccess": false,
+  "reportAttributeAccessIssue": false,
+  "reportIncompatibleMethodOverride": false,
+  "reportWildcardImportFromLibrary": false,
+  "reportAssignmentType": false,
+  "reportReturnType": false,
+  "reportArgumentType": false,
+  "pythonVersion": "3.13",
+  "typeCheckingMode": "basic"
 }

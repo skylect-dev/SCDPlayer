@@ -2740,40 +2740,6 @@ class LoopEditorDialog(QDialog):
             
             logging.info("Volume reset to original levels")
     
-    def reset_volume_adjustment(self):
-        """Reset audio to original volume levels"""
-        if self._original_audio_data is None:
-            QMessageBox.information(self, "No Changes", "No original audio data to restore")
-            return
-        
-        reply = QMessageBox.question(
-            self, 
-            "Reset Volume", 
-            "This will reset the audio to its original volume levels.\n\nContinue?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes
-        )
-        
-        if reply == QMessageBox.Yes:
-            # Restore original audio data
-            self.waveform.audio_data = self._original_audio_data.copy()
-            self._volume_adjusted = False
-            
-            # Reset window title
-            self.setWindowTitle("Loop Editor - Professional Audio Loop Point Editor")
-            
-            # Update waveform display
-            self.waveform.update_waveform()
-            self.waveform.update()
-            
-            # Disable reset button
-            self.reset_volume_btn.setEnabled(False)
-            
-            # Re-analyze audio
-            QTimer.singleShot(100, self.analyze_audio)
-            
-            QMessageBox.information(self, "Volume Reset", "Audio volume has been reset to original levels.")
-    
     def _apply_volume_adjustment(self, method: str):
         """Apply volume adjustment using the specified method"""
         if self.waveform.audio_data is None or len(self.waveform.audio_data) == 0:
