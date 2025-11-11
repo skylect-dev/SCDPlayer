@@ -1244,6 +1244,14 @@ class LoopEditorDialog(QDialog):
         
         playback_layout.addStretch()
         
+        # Add volume control inline with playback controls
+        from ui.volume_control import VolumeControl
+        self.volume_control = VolumeControl()
+        self.volume_control.setVolume(70)  # Default volume
+        self.volume_control.volumeChanged.connect(self.on_volume_changed)
+        playback_layout.addWidget(self.volume_control)
+        playback_layout.addSpacing(10)
+        
         self.position_label = QLabel("0:00 / 0:00")
         self.position_label.setStyleSheet("color: #ccc; font-family: monospace;")
         playback_layout.addWidget(self.position_label)
@@ -2469,6 +2477,12 @@ class LoopEditorDialog(QDialog):
         self.waveform.samples_per_pixel = max(1, self.waveform.total_samples / self.waveform.width())
         self.waveform.scroll_position = 0
         self.waveform.is_focused_on_position = False
+        self.waveform.update()
+    
+    def on_volume_changed(self, value: int):
+        """Handle volume control changes."""
+        if hasattr(self, 'media_player'):
+            self.media_player.setVolume(int(value))
         
         # Update display
         self.waveform.update()

@@ -94,15 +94,53 @@ class SCDToolkit(QMainWindow):
         # Threading components
         self.file_load_thread = None
         
-        # Defer all heavy initializations to after window is shown
-        QTimer.singleShot(0, self._initialize_components)
+        # Begin staged initialization immediately (overlay appears right away)
+        self._begin_startup_initialization()
     
     def _initialize_components(self):
         """Initialize heavy components after window is shown"""
-        # Initialize converter
+        # This method now called stepwise via overlay workflow
+        pass
+
+    def _begin_startup_initialization(self):
+        """Show startup overlay and perform staged initialization with progress updates."""
+        from ui.startup_overlay import StartupOverlay
+        # Parent overlay to player panel so it only occupies left side
+        self._startup_overlay = StartupOverlay(self.player_panel)
+        self._startup_overlay.start()
+        self._init_stage = 0
+        self._perform_next_init_stage()
+
+    def _perform_next_init_stage(self):
+        stages = [
+            ("Initializing audio converter", self._init_converter),
+            ("Setting up file watcher", self._init_file_watcher),
+            ("Creating managers", self._init_managers),
+            ("Registering shortcuts", self._init_shortcuts),
+            ("Preparing audio analyzer", self._init_audio_analyzer_deferred),
+            ("Starting update checker", self._init_updater_deferred),
+        ]
+        total = len(stages)
+        if self._init_stage < total:
+            desc, func = stages[self._init_stage]
+            percent = int((self._init_stage / total) * 100)
+            if hasattr(self, '_startup_overlay'):
+                self._startup_overlay.update_progress(percent, desc)
+            # Run stage function (can schedule async parts)
+            func()
+            self._init_stage += 1
+            # Schedule next stage quickly
+            QTimer.singleShot(10, self._perform_next_init_stage)
+        else:
+            if hasattr(self, '_startup_overlay'):
+                self._startup_overlay.update_progress(100, "Ready")
+                QTimer.singleShot(300, self._startup_overlay.complete)
+            logging.info("Component initialization complete")
+
+    def _init_converter(self):
         self.converter = AudioConverter()
-        
-        # Initialize file watcher
+
+    def _init_file_watcher(self):
         from core.file_watcher import LibraryFileWatcher
         self.file_watcher = LibraryFileWatcher(self)
         self.file_watcher.file_added.connect(self._on_file_added)
@@ -110,23 +148,21 @@ class SCDToolkit(QMainWindow):
         self.file_watcher.file_modified.connect(self._on_file_modified)
         self.file_watcher.directory_added.connect(self._on_directory_added)
         self.file_watcher.directory_removed.connect(self._on_directory_removed)
-        
-        # Start file watcher immediately after creation
         QTimer.singleShot(0, self._start_file_watcher)
-        
-        # Initialize managers
+
+    def _init_managers(self):
         self.conversion_manager = ConversionManager(self)
         self.kh_rando_manager = KHRandoManager(self)
         self.loop_manager = HybridLoopManager()
-        
-        # Setup keyboard shortcuts
+
+    def _init_shortcuts(self):
         self.setup_shortcuts()
-        
-        # Initialize other components with minimal delay
+
+    def _init_audio_analyzer_deferred(self):
         QTimer.singleShot(10, self._initialize_audio_analyzer)
+
+    def _init_updater_deferred(self):
         QTimer.singleShot(100, self._initialize_auto_updater)
-        
-        logging.info("Component initialization complete")
     
     def setup_menu_bar(self):
         """Setup the application menu bar"""
@@ -219,6 +255,8 @@ class SCDToolkit(QMainWindow):
     def _on_player_panel_resize(self, event):
         """Keep visualizer positioned at bottom-left on resize"""
         self._position_visualizer()
+        if hasattr(self, '_startup_overlay') and self._startup_overlay and self._startup_overlay.isVisible():
+            self._startup_overlay.reposition()
     
     def _initialize_auto_updater(self):
         """Initialize the auto updater after UI is shown"""
@@ -360,9 +398,16 @@ class SCDToolkit(QMainWindow):
         for btn in [self.prev_btn, self.play_pause_btn, self.next_btn, self.loop_btn]:
             controls_layout.addWidget(btn)
         
+        # Add volume control inline with playback controls
+        from ui.volume_control import VolumeControl
+        self.volume_control = VolumeControl()
+        self.volume_control.setVolume(getattr(self.config, 'volume', 70))
+        self.volume_control.volumeChanged.connect(self.on_volume_changed)
+        controls_layout.addSpacing(10)
+        controls_layout.addWidget(self.volume_control)
+        
         # Add the controls container to the player layout
         player_layout.addWidget(controls_container, alignment=Qt.AlignCenter)
-        player_layout.addSpacing(15)
 
         # Load controls
         load_layout = QHBoxLayout()
@@ -435,6 +480,8 @@ class SCDToolkit(QMainWindow):
         self.folder_list.verticalScrollBar().setSingleStep(8)
         self.folder_list.setMaximumHeight(100)
         self.folder_list.itemSelectionChanged.connect(self.on_folder_selection_changed)
+        # Remove dotted focus rectangles
+        self.folder_list.setStyleSheet("QListWidget::item:selected{outline:0;} QListWidget::item:focus{outline:0;}")
         # Populate folder list with saved folders on initial load
         for folder in self.config.library_folders:
             self.folder_list.addItem(folder)
@@ -568,6 +615,7 @@ class SCDToolkit(QMainWindow):
         self.file_list.itemDoubleClicked.connect(self.load_from_library)
         self.file_list.itemClicked.connect(self.on_library_item_clicked)  # Handle single clicks
         self.file_list.itemSelectionChanged.connect(self.on_library_selection_changed)
+        self.file_list.setStyleSheet("QListWidget::item:selected{outline:0;} QListWidget::item:focus{outline:0;} QListWidget{border:1px solid #333;}")
         
         # Enable drag with custom transparency
         self.file_list.setDragEnabled(True)
@@ -593,7 +641,7 @@ class SCDToolkit(QMainWindow):
         kh_header_layout.addWidget(QLabel('KH Randomizer Files:'))
         kh_header_layout.addStretch()
         
-        add_folder_btn = QPushButton('+')
+        add_folder_btn = QPushButton('Create New Folder')
         add_folder_btn.clicked.connect(self.add_kh_rando_folder)
         add_folder_btn.setMaximumWidth(30)
         add_folder_btn.setMaximumHeight(25)
@@ -610,6 +658,7 @@ class SCDToolkit(QMainWindow):
         self.kh_rando_file_list.itemDoubleClicked.connect(self.load_from_library)
         self.kh_rando_file_list.itemClicked.connect(self.on_kh_rando_item_clicked)
         self.kh_rando_file_list.itemSelectionChanged.connect(self.on_kh_rando_selection_changed)
+        self.kh_rando_file_list.setStyleSheet("QListWidget::item:selected{outline:0;} QListWidget::item:focus{outline:0;} QListWidget{border:1px solid #333;}")
         
         # Enable drag-and-drop for KH Rando file list (accept drops)
         self.kh_rando_file_list.setAcceptDrops(True)
@@ -774,6 +823,14 @@ class SCDToolkit(QMainWindow):
         self.loop_timer.setInterval(1)  # 1ms = maximum precision possible
         self.loop_timer.timeout.connect(self.check_loop_position)
         self.loop_timer.start()  # Always running when player exists
+        # Apply stored volume to player
+        try:
+            initial_vol = getattr(self.config, 'volume', 70)
+            if hasattr(self, 'volume_slider'):
+                self.volume_slider.setValue(int(initial_vol))
+            self.player.setVolume(int(initial_vol))
+        except Exception:
+            pass
 
     def setup_title_bar_theming(self):
         """Setup title bar to respect OS dark mode on Windows 11"""
@@ -821,7 +878,19 @@ class SCDToolkit(QMainWindow):
         musiclist_editor_shortcut = QShortcut(QKeySequence("J"), self)
         musiclist_editor_shortcut.activated.connect(self.show_musiclist_editor)
         
-        
+    def on_volume_changed(self, value: int):
+        """Handle volume control changes and persist setting."""
+        if hasattr(self, 'player') and self.player:
+            try:
+                self.player.setVolume(int(value))
+            except Exception:
+                pass
+        if hasattr(self, 'config'):
+            self.config.volume = int(value)
+            try:
+                self.config.save_settings()
+            except Exception:
+                logging.warning("Failed to persist volume setting")
 
 
     # === Library Management ===

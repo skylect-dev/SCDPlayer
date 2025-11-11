@@ -14,6 +14,8 @@ class Config:
         self.library_folders: List[str] = []
         self.scan_subdirs: bool = True
         self.kh_rando_folder: str = ""
+        # User-adjustable playback volume (0-100, Qt Multimedia convention)
+        self.volume: int = 70
         
     def load_settings(self) -> None:
         """Load settings from config file (with fallback to legacy scdplayer_config.json)"""
@@ -34,6 +36,7 @@ class Config:
                     self.library_folders = config.get('library_folders', [])
                     self.scan_subdirs = config.get('scan_subdirs', True)
                     self.kh_rando_folder = config.get('kh_rando_folder', "")
+                    self.volume = int(config.get('volume', 70))
                 
                 # If we loaded from legacy file, save to new file and optionally remove old one
                 if config_to_load == self.legacy_config_file:
@@ -49,7 +52,8 @@ class Config:
             config = {
                 'library_folders': self.library_folders,
                 'scan_subdirs': self.scan_subdirs,
-                'kh_rando_folder': self.kh_rando_folder
+                'kh_rando_folder': self.kh_rando_folder,
+                'volume': self.volume
             }
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
