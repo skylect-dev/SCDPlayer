@@ -16,6 +16,8 @@ a = Analysis(
         ('README.md', '.'),
         ('assets/icon.svg', 'assets'),
         ('assets/icon.ico', 'assets'),
+        ('redist/*', 'redist'),
+        ('music_pack_creator/*', 'music_pack_creator'),
     ],
     hiddenimports=[
         # Required for auto-updater

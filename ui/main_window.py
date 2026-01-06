@@ -314,6 +314,35 @@ class SCDToolkit(QMainWindow):
         from ui.musiclist_editor import MusicListEditor
         editor = MusicListEditor(self)
         editor.exec_()
+    
+    def open_music_pack_creator(self):
+        """Open the Music Pack Creator dialog"""
+        from PyQt5.QtCore import Qt, QTimer
+        from ui.music_pack_creator_dialog import MusicPackCreatorDialog
+        
+        # Get all library files (both regular and KH Rando)
+        library_files = self.get_full_library_playlist()
+        
+        if not library_files:
+            show_themed_message(self, QMessageBox.Information, 'No Library Files',
+                              'Please add some music files to your library first.')
+            return
+        
+        # Show loading cursor
+        self.setCursor(Qt.WaitCursor)
+        
+        # Use QTimer to update UI before creating dialog
+        def create_dialog():
+            try:
+                # Open the dialog (non-modal so main window can be used)
+                dialog = MusicPackCreatorDialog(self, library_files)
+                dialog.show()
+            finally:
+                # Restore cursor
+                self.setCursor(Qt.ArrowCursor)
+        
+        # Defer dialog creation to next event loop iteration
+        QTimer.singleShot(10, create_dialog)
         
     def setup_ui(self):
         """Setup the user interface"""
@@ -754,6 +783,27 @@ class SCDToolkit(QMainWindow):
         convert_buttons_layout.addWidget(self.open_loop_editor_btn)
         
         library_layout.addLayout(convert_buttons_layout)
+        
+        # Music Pack Creator button
+        music_pack_layout = QHBoxLayout()
+        
+        self.music_pack_creator_btn = QPushButton('Create Music Pack (KH:ReFined)')
+        self.music_pack_creator_btn.clicked.connect(self.open_music_pack_creator)
+        self.music_pack_creator_btn.setToolTip('Create a music pack mod for Kingdom Hearts II - Re:Fined')
+        self.music_pack_creator_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1a4d2e;
+                color: white;
+                font-weight: bold;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background-color: #2d6a4f;
+            }
+        """)
+        music_pack_layout.addWidget(self.music_pack_creator_btn)
+        
+        library_layout.addLayout(music_pack_layout)
 
         # Now that both file lists exist, initialize self.library
         self.library = AudioLibrary(self.file_list, self.kh_rando_exporter, self.kh_rando_file_list, self.kh_rando_categories)

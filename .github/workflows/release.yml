@@ -97,6 +97,17 @@ jobs:
                 }
             }
             
+            # Verify critical folders exist
+            $criticalFolders = @("redist", "music_pack_creator", "vgmstream", "ffmpeg", "khpc_tools")
+            foreach ($folder in $criticalFolders) {
+                if (Test-Path "dist\SCDToolkit\$folder") {
+                    Write-Host "✓ $folder folder found"
+                } else {
+                    Write-Host "✗ $folder folder MISSING!"
+                    exit 1
+                }
+            }
+            
             Write-Host ""
             Write-Host "Build size information:"
             $totalSize = (Get-ChildItem "dist\SCDToolkit" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
