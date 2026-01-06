@@ -40,14 +40,18 @@ def main():
     # Check for .NET runtime availability and prompt for installation if missing
     def check_dotnet():
         try:
-            from utils.dotnet_installer import DotNetRuntimeChecker, prompt_dotnet_install
+            from utils.dotnet_installer import DotNetRuntimeChecker, prompt_dotnet_install, install_dotnet_runtime
             is_available, version = DotNetRuntimeChecker.check_dotnet_installed()
             if is_available:
                 logging.info(f".NET {version} detected - SCD conversion available")
             else:
                 logging.warning(".NET 5.0 not detected - prompting for installation")
                 # Prompt user to install .NET immediately
-                prompt_dotnet_install(window)
+                if prompt_dotnet_install(window):
+                    logging.info("User accepted .NET installation prompt")
+                    install_dotnet_runtime(window)
+                else:
+                    logging.info("User declined .NET installation")
         except Exception as e:
             logging.warning(f"Error checking .NET: {e}")
     
