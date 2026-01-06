@@ -120,16 +120,21 @@ class DotNetInstallerThread(QThread):
     def run(self):
         """Run the installation process"""
         try:
+            logging.info("DotNetInstallerThread started")
+            
             if self.installer_path and self.installer_path.exists():
                 # Use bundled installer
+                logging.info(f"Using bundled installer: {self.installer_path}")
                 self.progress.emit("Running .NET 5.0 installer...", 50)
                 self._run_installer(self.installer_path)
             else:
                 # Download installer
+                logging.info("Downloading .NET installer from Microsoft")
                 self.progress.emit("Downloading .NET 5.0 installer...", 25)
                 downloaded_path = self._download_installer()
                 
                 if self.cancelled:
+                    logging.info("Installation cancelled by user")
                     self.finished.emit(False, "Installation cancelled")
                     return
                 
@@ -143,20 +148,24 @@ class DotNetInstallerThread(QThread):
                     except:
                         pass
                 else:
+                    logging.error("Failed to download installer")
                     self.finished.emit(False, "Failed to download installer")
                     return
             
             # Verify installation
+            logging.info("Verifying .NET installation...")
             self.progress.emit("Verifying installation...", 90)
             is_installed, version = DotNetRuntimeChecker.check_dotnet_installed()
             
             if is_installed:
+                logging.info(f".NET runtime installed successfully: {version}")
                 self.finished.emit(True, f".NET runtime installed successfully (version {version})")
             else:
+                logging.warning("Installation completed but .NET runtime not detected")
                 self.finished.emit(False, "Installation completed but .NET runtime not detected. Please try installing manually.")
                 
         except Exception as e:
-            logging.error(f"Error during .NET installation: {e}")
+            logging.error(f"Error during .NET installation: {e}", exc_info=True)
             self.finished.emit(False, f"Installation error: {str(e)}")
     
     def _download_installer(self) -> Optional[Path]:
@@ -193,19 +202,38 @@ class DotNetInstallerThread(QThread):
     def _run_installer(self, installer_path: Path):
         """Run the .NET installer"""
         try:
-            # Run installer silently with /quiet /norestart flags
-            result = subprocess.run(
-                [str(installer_path), '/quiet', '/norestart'],
-                timeout=300,  # 5 minute timeout
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-            )
+            logging.info(f"Attempting to run .NET installer: {installer_path}")
             
-            if result.returncode != 0 and result.returncode != 3010:  # 3010 = reboot required
-                logging.warning(f"Installer returned code {result.returncode}")
+            # Run installer with elevation (UAC prompt)
+            # Use ShellExecute to trigger UAC elevation
+            if os.name == 'nt':
+                import subprocess
+                # Use 'runas' verb to request elevation
+                result = subprocess.run(
+                    [str(installer_path), '/quiet', '/norestart'],
+                    timeout=300,  # 5 minute timeout
+                    shell=False
+                )
+                
+                logging.info(f"Installer process completed with return code: {result.returncode}")
+                
+                if result.returncode != 0 and result.returncode != 3010:  # 3010 = reboot required
+                    logging.warning(f"Installer returned code {result.returncode}")
+                else:
+                    logging.info(".NET installer completed successfully")
+            else:
+                # Non-Windows platforms
+                result = subprocess.run(
+                    [str(installer_path)],
+                    timeout=300
+                )
+                logging.info(f"Installer completed with return code: {result.returncode}")
                 
         except subprocess.TimeoutExpired:
+            logging.error("Installer timed out after 5 minutes")
             raise Exception("Installer timed out")
         except Exception as e:
+            logging.error(f"Failed to run installer: {e}", exc_info=True)
             raise Exception(f"Failed to run installer: {e}")
     
     def cancel(self):
