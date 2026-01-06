@@ -84,28 +84,21 @@ class DotNetRuntimeChecker:
     def check_bundled_installer() -> Optional[Path]:
         """Check if .NET installer is bundled with the app"""
         try:
-            # First check in redist folder (for bundled .NET 5.0 runtime)
-            redist_dir = Path(__file__).parent.parent / 'redist'
-            if redist_dir.exists():
-                for installer in redist_dir.glob('windowsdesktop-runtime-*.exe'):
+            # Check in the bundled redist folder (for PyInstaller and development)
+            redist_path = Path(get_bundled_path('redist'))
+            if redist_path.exists():
+                for installer in redist_path.glob('windowsdesktop-runtime-*.exe'):
                     logging.info(f"Found bundled .NET installer in redist: {installer}")
                     return installer
             
-            # Check in the bundled dotnet_installer directory
+            # Fallback: Check in the bundled dotnet_installer directory
             installer_dir = Path(get_bundled_path('dotnet_installer'))
             if installer_dir.exists():
-                # Look for installer exe
                 for installer in installer_dir.glob('windowsdesktop-runtime-*.exe'):
                     logging.info(f"Found bundled .NET installer: {installer}")
                     return installer
             
-            # Also check in root directory
-            root_dir = Path(__file__).parent.parent
-            for installer in root_dir.glob('windowsdesktop-runtime-*.exe'):
-                logging.info(f"Found .NET installer in root: {installer}")
-                return installer
-                
-            logging.debug("No bundled .NET installer found")
+            logging.warning("No bundled .NET installer found in redist or dotnet_installer folders")
             return None
             
         except Exception as e:
