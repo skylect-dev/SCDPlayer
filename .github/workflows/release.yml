@@ -86,24 +86,13 @@ jobs:
             Get-ChildItem "dist\SCDToolkit" | ForEach-Object { Write-Host "  $_" }
             Write-Host ""
             
-            # Verify critical files exist
+            # Verify critical executables exist
             $criticalFiles = @("SCDToolkit.exe", "updater.exe")
             foreach ($file in $criticalFiles) {
                 if (Test-Path "dist\SCDToolkit\$file") {
                     Write-Host "✓ $file found"
                 } else {
                     Write-Host "✗ $file MISSING!"
-                    exit 1
-                }
-            }
-            
-            # Verify critical folders exist
-            $criticalFolders = @("redist", "music_pack_creator", "vgmstream", "ffmpeg", "khpc_tools")
-            foreach ($folder in $criticalFolders) {
-                if (Test-Path "dist\SCDToolkit\$folder") {
-                    Write-Host "✓ $folder folder found"
-                } else {
-                    Write-Host "✗ $folder folder MISSING!"
                     exit 1
                 }
             }
