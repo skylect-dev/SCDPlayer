@@ -9,8 +9,8 @@ VSVersionInfo(  # type: ignore
   ffi=FixedFileInfo(  # type: ignore
 # filevers and prodvers should be always a tuple with four items: (1, 2, 3, 4)
 # Set not needed items to zero 0.
-filevers=(3,0,1,0),
-prodvers=(3,0,1,0),
+filevers=(5,1,0,0),
+prodvers=(5,1,0,0),
 # Contains a bitmask that specifies the valid bits 'flags'r
 mask=0x3f,
 # Contains a bitmask that specifies the Boolean attributes of the file.
@@ -34,12 +34,12 @@ StringFileInfo(
     u'040904B0',
     [StringStruct(u'CompanyName', u'skylect-dev'),
     StringStruct(u'FileDescription', u'SCDToolkit - Audio Player and Toolkit for Game Music Files'),
-    StringStruct(u'FileVersion', u'3.3.0'),
+    StringStruct(u'FileVersion', u'5.1.0'),
     StringStruct(u'InternalName', u'SCDToolkit'),
     StringStruct(u'LegalCopyright', u'Copyright (C) 2025 skylect-dev'),
     StringStruct(u'OriginalFilename', u'SCDToolkit.exe'),
     StringStruct(u'ProductName', u'SCDToolkit'),
-    StringStruct(u'ProductVersion', u'3.3.0')])
+    StringStruct(u'ProductVersion', u'5.1.0')])
   ]), 
 VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
   ]
