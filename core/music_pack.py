@@ -48,11 +48,12 @@ class TrackListParser:
 class MusicPackMetadata:
     """Container for music pack metadata"""
     
-    def __init__(self, pack_name: str, author: str, description: str, slot: int):
+    def __init__(self, pack_name: str, author: str, description: str, slot: int, pack_name_width: int = None):
         self.pack_name = pack_name
         self.author = author
         self.description = description
         self.slot = slot  # 1 or 2
+        self.pack_name_width = pack_name_width  # Optional user override (80-100)
     
     def validate(self) -> Tuple[bool, Optional[str]]:
         """Validate metadata. Returns (is_valid, error_message)"""
@@ -292,14 +293,17 @@ class MusicPackExporter:
             
             # Use language-specific names if provided, otherwise use base pack name for all
             if language_names:
-                # Calculate width per language
+                # Calculate width per language (respect optional override for all languages)
                 lang_name_data = {}
+                override_width = metadata.pack_name_width
                 for lang_code, lang_name in language_names.items():
-                    width = self._calculate_width(lang_name)
+                    if lang_code.startswith('_'):
+                        continue  # skip meta entries like _width
+                    width = override_width if override_width is not None else self._calculate_width(lang_name)
                     lang_name_data[lang_code] = (lang_name, width)
             else:
                 # Fallback: use same name and width for all languages
-                width = self._calculate_width(metadata.pack_name)
+                width = metadata.pack_name_width if metadata.pack_name_width is not None else self._calculate_width(metadata.pack_name)
                 lang_name_data = {
                     'en': (metadata.pack_name, width),
                     'it': (metadata.pack_name, width),
@@ -408,6 +412,7 @@ class MusicPackExporter:
                 "game_metadata": {
                     "name": game_metadata.pack_name,
                     "description": game_metadata.description,
+                    "name_width": game_metadata.pack_name_width,
                 },
                 "language_names": language_names,
                 "language_descriptions": language_descriptions,

@@ -1,37 +1,3 @@
-"""
-Hybrid SCD Loop Point Manager
-Combines the best of direct SCD editing with WAV metadata workflow
-
-Workflow:
-1. For SCD editing: SCD → Temp WAV (with loop metadata) → Edit → WAV → SCD
-2. For new audio: Any format → WAV → Edit → WAV → SCD
-3. Uses Audacity-compatible WAV metadata format (ID3v2.3 TXXX frames)
-4. MusicEncoder preserves WAV m                if frame_id == b'TXXX':
-                    frame_size = struct.unpack('>I', id3_data[pos+4:pos+8])[0]
-                    frame_data = id3_data[pos+10:pos+10+frame_size]
-                    
-                    logging.debug(f"Found TXXX frame, size {frame_size}: {frame_data}")
-                    
-                    if b'LoopStart' in frame_data:
-                        parts = frame_data.split(b'\x00')
-                        if len(parts) >= 3:
-                            try:
-                                loop_start = int(parts[2].decode('utf-8'))
-                                logging.debug(f"Found LoopStart: {loop_start}")
-                            except Exception as e:
-                                logging.debug(f"Error parsing LoopStart: {e}")
-                    elif b'LoopEnd' in frame_data:
-                        parts = frame_data.split(b'\x00')
-                        if len(parts) >= 3:
-                            try:
-                                loop_end = int(parts[2].decode('utf-8'))
-                                logging.debug(f"Found LoopEnd: {loop_end}")
-                            except Exception as e:
-                                logging.debug(f"Error parsing LoopEnd: {e}")
-                    
-                    pos += 10 + frame_sizecomments in SCD
-"""
-
 import struct
 import logging
 import os

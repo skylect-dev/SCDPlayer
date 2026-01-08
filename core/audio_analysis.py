@@ -1,13 +1,9 @@
-"""
-Audio Analysis Module for SCDToolkit
-Provides comprehensive audio level analysis including peak, RMS, LUFS, and dynamic range
-Also includes auto volume adjustment and normalization features
-"""
 import json
 import logging
 import subprocess
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 
@@ -73,7 +69,15 @@ class AudioAnalyzer:
         """Get the bundled ffmpeg.exe path."""
         return Path(__file__).parent.parent / "ffmpeg" / "bin" / "ffmpeg.exe"
 
-    def measure_true_loudness(self, wav_path: str, target_i: float = -15.0, target_tp: float = -1.0) -> Optional[Dict[str, float]]:
+    def _subprocess_kwargs(self) -> Dict[str, Any]:
+        """Hide console windows on Windows and keep default behavior elsewhere."""
+        if os.name == "nt":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            return {"startupinfo": startupinfo, "creationflags": subprocess.CREATE_NO_WINDOW}
+        return {}
+
+    def measure_true_loudness(self, wav_path: str, target_i: float = -12.0, target_tp: float = -1.0) -> Optional[Dict[str, float]]:
         """Run ffmpeg loudnorm analysis to get true LUFS and true peak."""
         try:
             ffmpeg_path = self._ffmpeg_path()
@@ -113,7 +117,7 @@ class AudioAnalyzer:
                 "-f", "null", "-"
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", **self._subprocess_kwargs())
             if result.returncode != 0:
                 logging.error(f"ffmpeg loudnorm analysis failed: {result.stderr}")
                 return None
@@ -143,12 +147,13 @@ class AudioAnalyzer:
             logging.error(f"True loudness analysis failed: {e}")
             return None
 
-    def normalize_file_loudness(self, wav_path: str, target_i: float = -15.0, target_tp: float = -1.0) -> Optional[str]:
+    def normalize_file_loudness(self, wav_path: str, target_i: float = -12.0, target_tp: float = -1.0) -> Optional[str]:
         """
         Apply two-pass ffmpeg loudnorm to a WAV file in place and return the path.
 
         This uses true LUFS and true peak normalization for accurate in-game loudness.
         """
+        temp_out = None
         try:
             ffmpeg_path = self._ffmpeg_path()
             if not ffmpeg_path.exists():
@@ -207,17 +212,37 @@ class AudioAnalyzer:
                 str(temp_out)
             ]
 
-            result = subprocess.run(cmd_second, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            result = subprocess.run(cmd_second, capture_output=True, text=True, encoding="utf-8", errors="replace", **self._subprocess_kwargs())
             if result.returncode != 0:
                 logging.error(f"ffmpeg loudnorm second pass failed: {result.stderr}")
                 return None
 
-            # Replace the original file atomically
-            Path(temp_out).replace(wav_path)
-            return wav_path
+            # Replace the original file atomically with retry/backoff if locked
+            max_attempts = 5
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    Path(temp_out).replace(wav_path)
+                    return wav_path
+                except PermissionError as e:
+                    if attempt == max_attempts:
+                        logging.error("Loudness normalization failed: could not replace output (file locked)")
+                        return None
+                    backoff = 0.2 * attempt
+                    logging.warning(f"Replace failed (attempt {attempt}/{max_attempts}), retrying after {backoff:.2f}s: {e}")
+                    time.sleep(backoff)
+                except Exception as e:
+                    logging.error(f"Loudness normalization failed during replace: {e}")
+                    return None
         except Exception as e:
             logging.error(f"Loudness normalization failed: {e}")
             return None
+        finally:
+            # Ensure temp file is cleaned up if replace didn't consume it
+            try:
+                if temp_out and Path(temp_out).exists():
+                    Path(temp_out).unlink()
+            except Exception:
+                pass
         
     def analyze_audio_levels(self, audio_data: np.ndarray, sample_rate: int = 44100) -> AudioLevels:
         """

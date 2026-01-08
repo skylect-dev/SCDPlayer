@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QListWidget,
     QListWidgetItem, QComboBox, QLineEdit, QTextEdit, QGroupBox, QSplitter,
     QMessageBox, QFileDialog, QProgressDialog, QRadioButton, QButtonGroup,
-    QScrollArea, QWidget, QFrame
+    QScrollArea, QWidget, QFrame, QSpinBox
 )
 from PyQt5.QtCore import Qt, QTimer
 
@@ -19,11 +19,12 @@ from core.music_pack import TrackListParser, MusicPackMetadata, MusicPackExporte
 class PerLanguageDialog(QDialog):
     """Dialog for editing per-language text (pack names or descriptions)"""
     
-    def __init__(self, parent, field_type: str, english_value: str, current_values: dict = None):
+    def __init__(self, parent, field_type: str, english_value: str, current_values: dict = None, current_width: int = 100):
         super().__init__(parent)
         self.field_type = field_type  # 'name' or 'description'
         self.english_value = english_value
         self.language_values = current_values or {}
+        self.current_width = max(80, min(100, int(current_width)))
         
         self.setWindowTitle(f"Per-Language {field_type.capitalize()}")
         self.setModal(True)
@@ -39,6 +40,19 @@ class PerLanguageDialog(QDialog):
         info_label = QLabel(f"Set {self.field_type} for each language. Leave blank to use English value.")
         info_label.setStyleSheet("color: #888888; font-style: italic; margin-bottom: 10px;")
         layout.addWidget(info_label)
+
+        # Width override (only for name fields)
+        if self.field_type == 'name':
+            width_row = QHBoxLayout()
+            width_row.addWidget(QLabel("Width %:"))
+            self.width_spin = QSpinBox()
+            self.width_spin.setRange(80, 100)
+            self.width_spin.setValue(self.current_width)
+            self.width_spin.setToolTip("Override auto width (%). 80 = narrow, 100 = full.")
+            self.width_spin.setFixedWidth(80)
+            width_row.addWidget(self.width_spin)
+            width_row.addStretch()
+            layout.addLayout(width_row)
         
         # Show English value as reference
         en_ref = QLabel(f"English: {self.english_value or '(not set)'}")
@@ -116,7 +130,16 @@ class PerLanguageDialog(QDialog):
             # Only include non-empty values - blank fields will use English as fallback
             if text:
                 values[lang_code] = text
+        # Persist width override for caller if applicable
+        if hasattr(self, 'width_spin'):
+            values['_width'] = self.width_spin.value()
         return values
+
+    def get_width_override(self) -> int:
+        """Return the selected width override (only for name dialogs)."""
+        if hasattr(self, 'width_spin'):
+            return self.width_spin.value()
+        return self.current_width
 
 
 class MusicPackCreatorDialog(QDialog):
@@ -448,12 +471,20 @@ class MusicPackCreatorDialog(QDialog):
         info_label.setStyleSheet("color: #888888; font-size: 10px; font-style: italic;")
         game_layout.addWidget(info_label)
         
-        # Pack Name with per-language button
+        # Pack Name with per-language button and width override
         name_layout = QHBoxLayout()
         name_layout.addWidget(QLabel("Pack Name (EN):"))
         self.game_name_input = QLineEdit()
         self.game_name_input.setPlaceholderText("My Custom Music Pack")
         name_layout.addWidget(self.game_name_input)
+
+        self.game_name_width_spin = QSpinBox()
+        self.game_name_width_spin.setRange(80, 100)
+        self.game_name_width_spin.setValue(100)
+        self.game_name_width_spin.setToolTip("Override auto width (%). 80 = narrow, 100 = full.")
+        self.game_name_width_spin.setFixedWidth(70)
+        name_layout.addWidget(QLabel("Width %:"))
+        name_layout.addWidget(self.game_name_width_spin)
         
         self.name_lang_btn = QPushButton("Set Per Language")
         self.name_lang_btn.setStyleSheet("""
@@ -534,9 +565,16 @@ class MusicPackCreatorDialog(QDialog):
                               'Please enter an English pack name first.')
             return
         
-        dialog = PerLanguageDialog(self, 'name', english_value, self.name_lang_values)
+        dialog = PerLanguageDialog(self, 'name', english_value, self.name_lang_values, current_width=self.game_name_width_spin.value())
         if dialog.exec_() == QDialog.Accepted:
             self.name_lang_values = dialog.get_values()
+            # Sync width override from dialog back to main spinbox
+            try:
+                    width_override = dialog.get_width_override()
+                    self.game_name_width_spin.setValue(width_override)
+                    self.name_lang_values['_width'] = width_override
+            except Exception:
+                pass
             self.update_lang_indicator(self.name_lang_indicator, self.name_lang_values)
     
     def open_desc_lang_dialog(self):
@@ -753,8 +791,20 @@ class MusicPackCreatorDialog(QDialog):
         game_description_en = self.game_description_input.toPlainText().strip() or "A custom music pack."
         
         # Build language-specific names (use English as fallback)
+        width_override = self.name_lang_values.get('_width') if isinstance(self.name_lang_values, dict) else None
+        if width_override:
+            try:
+                width_override = max(80, min(100, int(width_override)))
+                self.game_name_width_spin.setValue(width_override)
+            except Exception:
+                width_override = None
+
         game_names = {'en': game_name_en}
-        game_names.update(self.name_lang_values)
+        # Only include actual language keys (skip meta like _width)
+        for k, v in self.name_lang_values.items():
+            if k.startswith('_'):
+                continue
+            game_names[k] = v
         # Fill in missing languages with English
         for lang in ['it', 'gr', 'fr', 'sp']:
             if lang not in game_names:
@@ -786,8 +836,9 @@ class MusicPackCreatorDialog(QDialog):
                     slot_output = f"{base_output}-SL{slot}.zip"
                 
                 # Create metadata for this slot
+                name_width = self.game_name_width_spin.value()
                 mod_metadata = MusicPackMetadata(mod_title, mod_author, mod_description, slot)
-                game_metadata = MusicPackMetadata(game_name_en, mod_author, game_description_en, slot)
+                game_metadata = MusicPackMetadata(game_name_en, mod_author, game_description_en, slot, pack_name_width=name_width)
                 
                 # Update progress message
                 if len(slots) > 1:
@@ -865,6 +916,12 @@ class MusicPackCreatorDialog(QDialog):
         self.mod_description_input.setPlainText(mod_meta.get('description', ''))
         self.game_name_input.setText(game_meta.get('name', ''))
         self.game_description_input.setPlainText(game_meta.get('description', ''))
+        try:
+            width_val = int(game_meta.get('name_width', 100))
+            width_val = max(80, min(100, width_val))
+            self.game_name_width_spin.setValue(width_val)
+        except Exception:
+            self.game_name_width_spin.setValue(100)
 
         # Restore language values
         self.name_lang_values = data.get('language_names', {}) or {}

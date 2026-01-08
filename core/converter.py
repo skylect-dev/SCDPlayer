@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 from utils.helpers import get_bundled_path, cleanup_temp_files
+from core.audio_analysis import AudioAnalyzer
 
 
 class AudioConverter:
@@ -138,6 +139,23 @@ class AudioConverter:
             return False
         except Exception as e:
             logging.error(f"Unexpected error in FFmpeg conversion: {e}")
+            return False
+
+    def normalize_wav_loudness(self, wav_path: str, target_i: float = -12.0, target_tp: float = -1.0) -> bool:
+        """Normalize WAV loudness in-place using true loudnorm targets.
+
+        Returns True on success; logs and returns False on failure (non-fatal).
+        """
+        try:
+            analyzer = AudioAnalyzer()
+            result = analyzer.normalize_file_loudness(wav_path, target_i=target_i, target_tp=target_tp)
+            if result:
+                logging.info(f"Normalized WAV to {target_i} LUFS / {target_tp} dBTP: {wav_path}")
+                return True
+            logging.warning("Loudness normalization failed; proceeding without change")
+            return False
+        except Exception as e:
+            logging.warning(f"Error during loudness normalization: {e}")
             return False
     
     def convert_to_wav_temp(self, input_path: str) -> Optional[str]:
@@ -324,6 +342,7 @@ class AudioConverter:
                         logging.debug(f"Could not analyze output file: {e}")
                     
                     shutil.copy2(encoder_output_scd, scd_file)
+                    self._patch_scd_volume(scd_file, target_gain=1.2)
                     logging.info(f"SCD conversion completed: {scd_path}")
                     return True
                 else:
@@ -365,3 +384,45 @@ class AudioConverter:
         """Clean up all temporary files"""
         cleanup_temp_files(self.temp_files)
         self.temp_files = []
+
+    def _patch_scd_volume(self, scd_path: Path, target_gain: float = 1.0) -> bool:
+        """Patch SCD header playback gain float to avoid quiet output.
+
+        The gain float for BGM is at (table_ptr + 0x08), where table_ptr is read from 0x50.
+        This is typically at 0x128 for standard BGM files.
+        """
+        try:
+            import struct
+            import math
+            
+            data = bytearray(scd_path.read_bytes())
+            if len(data) < 0x60:
+                logging.warning("SCD too small to patch volume")
+                return False
+
+            table_off = int.from_bytes(data[0x50:0x54], 'little')
+            if table_off <= 0 or table_off + 12 > len(data):
+                logging.warning(f"SCD table offset invalid or out of range: 0x{table_off:X}")
+                return False
+
+            # The gain float is at table_ptr + 0x08 for BGM
+            volume_pos = table_off + 8
+            
+            # Read existing value to confirm it's a plausible gain float
+            try:
+                current_gain = struct.unpack('<f', data[volume_pos:volume_pos + 4])[0]
+                if not math.isfinite(current_gain) or current_gain < 0.0 or current_gain > 10.0:
+                    logging.warning(f"SCD volume position 0x{volume_pos:X} does not contain a plausible gain float (got {current_gain})")
+                    return False
+            except Exception as e:
+                logging.warning(f"Failed to read existing gain float: {e}")
+                return False
+
+            # Patch the gain
+            data[volume_pos:volume_pos + 4] = struct.pack('<f', float(target_gain))
+            scd_path.write_bytes(data)
+            logging.info(f"Patched SCD volume float at 0x{volume_pos:X}: {current_gain:.3f} -> {target_gain:.3f}")
+            return True
+        except Exception as e:
+            logging.warning(f"Failed to patch SCD volume: {e}")
+            return False

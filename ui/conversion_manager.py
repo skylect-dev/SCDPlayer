@@ -265,6 +265,9 @@ class ConversionWorker(QThread):
                     return False
                 source_file = temp_wav
             
+            # Normalize loudness before encoding to SCD (non-fatal if it fails)
+            self.converter.normalize_wav_loudness(source_file, target_i=-12.0, target_tp=-1.0)
+
             # Convert WAV to SCD
             # If original file was SCD, use it as template to preserve codec/compression
             original_scd_template = file_path if file_ext == '.scd' else None
@@ -518,6 +521,9 @@ class ConversionManager:
                     return
                 source_file = temp_wav
             
+            # Normalize loudness before encoding to SCD (non-fatal if it fails)
+            self.converter.normalize_wav_loudness(source_file, target_i=-12.0, target_tp=-1.0)
+
             # Convert WAV to SCD using original file as template if it's SCD
             original_scd_template = self.main_window.current_file if file_ext == '.scd' else None
             success = self.converter.convert_wav_to_scd(source_file, save_path, original_scd_template, selected_quality)

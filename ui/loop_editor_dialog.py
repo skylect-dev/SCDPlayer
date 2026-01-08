@@ -1,12 +1,3 @@
-"""
-Professional Loop Editor with Audacity-style interface
-Features:
-- Waveform visualization
-- Timeline with time/sample markers
-- Loop point editing with visual feedback
-- Keyboard shortcuts for precise control
-- Fine control with Ctrl+drag
-"""
 import logging
 import sys
 import os
@@ -18,7 +9,7 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
-from core.audio_analysis import AudioAnalyzer, VolumeAdjustment
+from core.audio_analysis import AudioAnalyzer
 
 
 class SaveWorker(QThread):
@@ -47,12 +38,13 @@ class LoudnessWorker(QThread):
     normalize_finished = pyqtSignal(bool, object)  # success, true loudness dict or None
     error = pyqtSignal(str)
 
-    def __init__(self, mode: str, wav_path: str, target_i: float = -15.0, target_tp: float = -1.0):
+    def __init__(self, mode: str, wav_path: str, target_i: float = -12.0, target_tp: float = -1.0, delta_i: float = None):
         super().__init__()
         self.mode = mode
         self.wav_path = wav_path
         self.target_i = target_i
         self.target_tp = target_tp
+        self.delta_i = delta_i
 
     def run(self):
         try:
@@ -60,8 +52,20 @@ class LoudnessWorker(QThread):
             if self.mode == "analyze":
                 loud = analyzer.measure_true_loudness(self.wav_path)
                 self.analyze_finished.emit(loud)
-            elif self.mode == "normalize":
-                ok_path = analyzer.normalize_file_loudness(self.wav_path, target_i=self.target_i, target_tp=self.target_tp)
+            elif self.mode in ("normalize", "relative"):
+                target_i = self.target_i
+                if self.mode == "relative":
+                    loud_before = analyzer.measure_true_loudness(self.wav_path)
+                    if not loud_before or "input_i" not in loud_before:
+                        self.normalize_finished.emit(False, None)
+                        return
+                    target_i = loud_before["input_i"] + (self.delta_i or 0.0)
+
+                ok_path = analyzer.normalize_file_loudness(
+                    self.wav_path,
+                    target_i=target_i,
+                    target_tp=self.target_tp,
+                )
                 if not ok_path:
                     self.normalize_finished.emit(False, None)
                     return
@@ -155,12 +159,12 @@ Real game audio averages around -13 to -18dB RMS""")
                     recs.append(("warning", f"True peak {tp:.1f} dBTP may clip. Reduce by {tp + 1.0:.1f} dB to hit -1 dBTP."))
                 elif tp > -1.0:
                     recs.append(("info", f"True peak {tp:.1f} dBTP is near headroom."))
-                if -18.5 <= i_val <= -14.0:
-                    recs.append(("info", f"Integrated loudness {i_val:.1f} LUFS matches target range."))
-                elif i_val > -13.5:
-                    recs.append(("warning", f"Integrated loudness {i_val:.1f} LUFS is hot; consider lowering toward -15 LUFS."))
+                if -13.0 <= i_val <= -11.0:
+                    recs.append(("info", f"Integrated loudness {i_val:.1f} LUFS matches target range (around -12)."))
+                elif i_val > -11.0:
+                    recs.append(("warning", f"Integrated loudness {i_val:.1f} LUFS is hot; consider lowering toward -12 LUFS."))
                 else:
-                    recs.append(("info", f"Integrated loudness {i_val:.1f} LUFS is below target; LUFS normalize to -15 LUFS."))
+                    recs.append(("info", f"Integrated loudness {i_val:.1f} LUFS is below target; LUFS normalize to -12 LUFS."))
             else:
                 recommendations = analyzer.get_gain_recommendation(levels)
                 for rec in recommendations['recommendations']:
@@ -1233,6 +1237,12 @@ class LoopEditorDialog(QDialog):
         self.media_player.positionChanged.connect(self.on_playback_position_changed)
         self.media_player.stateChanged.connect(self.on_playback_state_changed)
         self.media_player.durationChanged.connect(self.on_duration_changed)
+
+        # Busy overlay for long operations
+        self.busy_overlay = None
+        self.busy_label = None
+        self.busy_bar = None
+        self._busy_task = None
         
         # Playback state
         self.is_loop_testing = False
@@ -1246,10 +1256,16 @@ class LoopEditorDialog(QDialog):
         
         self.setup_ui()
         self.load_audio_data()
+        # Set window title to file name if available
+        file_path = getattr(self.loop_manager, "current_file_path", None)
+        if file_path:
+            self.setWindowTitle(f"{Path(file_path).name} - Loop Editor")
+        else:
+            self.setWindowTitle("Loop Editor")
         
     def setup_ui(self):
         """Setup the user interface"""
-        self.setWindowTitle("Loop Editor - Professional Audio Loop Point Editor")
+        # Window title is set in __init__ to file name
         self.setMinimumSize(800, 650)
         self.resize(1400, 800)
         
@@ -1593,9 +1609,17 @@ class LoopEditorDialog(QDialog):
         # Volume adjustment buttons
         volume_btn_layout = QHBoxLayout()
         
-        self.adjust_volume_btn = QPushButton("Adjust Volume (-15 LUFS)")
+        self.adjust_volume_btn = QPushButton("Adjust Volume (-12 LUFS)")
         self.adjust_volume_btn.clicked.connect(self.adjust_volume_lufs)
-        self.adjust_volume_btn.setToolTip("True loudness normalize to -15 LUFS / -1 dBTP (ffmpeg loudnorm)")
+        self.adjust_volume_btn.setToolTip("True loudness normalize to -12 LUFS / -1 dBTP (ffmpeg loudnorm)")
+
+        self.increase_lufs_btn = QPushButton("Increase (+1 LUFS)")
+        self.increase_lufs_btn.clicked.connect(lambda: self.adjust_volume_relative(+1.0))
+        self.increase_lufs_btn.setToolTip("Raise loudness by about +1 LUFS (true loudnorm)")
+
+        self.decrease_lufs_btn = QPushButton("Decrease (-1 LUFS)")
+        self.decrease_lufs_btn.clicked.connect(lambda: self.adjust_volume_relative(-1.0))
+        self.decrease_lufs_btn.setToolTip("Lower loudness by about -1 LUFS (true loudnorm)")
         
         self.reset_volume_btn = QPushButton("Reset Volume")
         self.reset_volume_btn.clicked.connect(self.reset_volume_adjustment)
@@ -1642,16 +1666,87 @@ class LoopEditorDialog(QDialog):
         """
         
         self.adjust_volume_btn.setStyleSheet(volume_btn_style)
+        self.increase_lufs_btn.setStyleSheet(volume_btn_style)
+        self.decrease_lufs_btn.setStyleSheet(volume_btn_style)
         self.reset_volume_btn.setStyleSheet(reset_btn_style)
         
         volume_btn_layout.addWidget(self.adjust_volume_btn)
+        volume_btn_layout.addWidget(self.increase_lufs_btn)
+        volume_btn_layout.addWidget(self.decrease_lufs_btn)
         volume_btn_layout.addWidget(self.reset_volume_btn)
         
         analysis_layout.addLayout(volume_btn_layout)
         
+        # SCD Volume Float Editor
+        scd_volume_layout = QHBoxLayout()
+        
+        scd_label = QLabel("SCD Volume Float:")
+        scd_label.setStyleSheet("color: #aaa; font-size: 10px; font-weight: bold;")
+        scd_label.setToolTip("Direct SCD header volume multiplier (typically 0.48-2.0)")
+        
+        self.scd_volume_spinbox = QDoubleSpinBox()
+        self.scd_volume_spinbox.setRange(0.0, 3.0)
+        self.scd_volume_spinbox.setSingleStep(0.1)
+        self.scd_volume_spinbox.setDecimals(2)
+        self.scd_volume_spinbox.setValue(1.2)
+        self.scd_volume_spinbox.setFixedWidth(80)
+        self.scd_volume_spinbox.setToolTip("Volume float at SCD header offset (table_ptr + 0x08)\nOfficial files: ~0.48, Recommended: 1.0-1.5")
+        self.scd_volume_spinbox.setStyleSheet("""
+            QDoubleSpinBox {
+                background-color: #333;
+                border: 1px solid #555;
+                border-radius: 3px;
+                padding: 3px;
+                color: #ddd;
+                font-size: 11px;
+            }
+            QDoubleSpinBox:focus {
+                border: 1px solid #4a8a4a;
+            }
+        """)
+        
+        self.apply_scd_volume_btn = QPushButton("Apply Float")
+        self.apply_scd_volume_btn.clicked.connect(self.apply_scd_volume_float)
+        self.apply_scd_volume_btn.setToolTip("Patch the SCD file with this volume float value")
+        self.apply_scd_volume_btn.setFixedWidth(90)
+        
+        apply_btn_style = """
+            QPushButton {
+                background-color: #2a4a5a;
+                border: 1px solid #4a6a8a;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-size: 10px;
+                font-weight: bold;
+                color: white;
+            }
+            QPushButton:hover { background-color: #3a5a6a; }
+            QPushButton:pressed { background-color: #1a3a4a; }
+            QPushButton:disabled { 
+                background-color: #333;
+                border-color: #555;
+                color: #888;
+            }
+        """
+        self.apply_scd_volume_btn.setStyleSheet(apply_btn_style)
+        
+        self.scd_volume_status = QLabel("")
+        self.scd_volume_status.setStyleSheet("color: #888; font-size: 9px; font-style: italic;")
+        
+        scd_volume_layout.addWidget(scd_label)
+        scd_volume_layout.addWidget(self.scd_volume_spinbox)
+        scd_volume_layout.addWidget(self.apply_scd_volume_btn)
+        scd_volume_layout.addWidget(self.scd_volume_status, 1)
+        
+        analysis_layout.addLayout(scd_volume_layout)
+        
         # Initially disable volume buttons until audio is loaded
         self.adjust_volume_btn.setEnabled(False)
+        self.increase_lufs_btn.setEnabled(False)
+        self.decrease_lufs_btn.setEnabled(False)
         self.reset_volume_btn.setEnabled(False)
+        self.scd_volume_spinbox.setEnabled(False)
+        self.apply_scd_volume_btn.setEnabled(False)
         
         controls_layout.addWidget(self.analysis_group, 1)  # Give analysis group more space with stretch factor
         
@@ -1732,6 +1827,53 @@ class LoopEditorDialog(QDialog):
         # Connect timeline to waveform and scrollbar
         self.waveform.scrollChanged = self.timeline.set_view_params
         self.waveform.zoomChanged = self.update_scrollbar_range
+
+        # Build hidden overlay to block input during long-running work
+        self._init_busy_overlay()
+
+    def _init_busy_overlay(self):
+        """Create a modal-style overlay to block input during background work"""
+        self.busy_overlay = QWidget(self)
+        self.busy_overlay.setStyleSheet("background-color: rgba(0, 0, 0, 160);")
+        self.busy_overlay.hide()
+
+        layout = QVBoxLayout(self.busy_overlay)
+        layout.setAlignment(Qt.AlignCenter)
+
+        self.busy_label = QLabel("Working...")
+        self.busy_label.setStyleSheet("color: white; font-size: 14px; font-weight: bold;")
+
+        self.busy_bar = QProgressBar()
+        self.busy_bar.setRange(0, 0)  # Indeterminate
+        self.busy_bar.setTextVisible(False)
+        self.busy_bar.setFixedWidth(260)
+        self.busy_bar.setStyleSheet("QProgressBar { border: 1px solid #666; border-radius: 4px; background: #333; } QProgressBar::chunk { background: #4a90e2; }")
+
+        layout.addWidget(self.busy_label, 0, Qt.AlignHCenter)
+        layout.addSpacing(8)
+        layout.addWidget(self.busy_bar, 0, Qt.AlignHCenter)
+
+    def _show_busy(self, message: str = "Working..."):
+        """Display the busy overlay with the given message"""
+        if not self.busy_overlay:
+            return
+        self._busy_task = message
+        self.busy_label.setText(message)
+        self.busy_overlay.setGeometry(self.rect())
+        self.busy_overlay.raise_()
+        self.busy_overlay.show()
+
+    def _hide_busy(self):
+        """Hide the busy overlay"""
+        self._busy_task = None
+        if self.busy_overlay:
+            self.busy_overlay.hide()
+
+    def resizeEvent(self, event):
+        """Keep overlay covering the dialog on resize"""
+        super().resizeEvent(event)
+        if self.busy_overlay and self.busy_overlay.isVisible():
+            self.busy_overlay.setGeometry(self.rect())
         
     def closeEvent(self, event):
         """Clean up when dialog closes"""
@@ -1824,9 +1966,6 @@ class LoopEditorDialog(QDialog):
         file_info = self.loop_manager.get_file_info()
         self.timeline.set_audio_info(file_info['sample_rate'], file_info['total_samples'])
 
-        # Update file information display
-        self.update_file_info_display(file_info)
-
         # Set current loop points or defaults
         start, end = self.loop_manager.get_loop_points()
 
@@ -1848,6 +1987,9 @@ class LoopEditorDialog(QDialog):
 
         # Update volume button states  
         self._update_volume_buttons_state()
+        
+        # Read and display current SCD volume float if this is an SCD file
+        self._read_scd_volume_float()
 
         # Initialize scrollbar and zoom properly after widget is shown
         QTimer.singleShot(200, self._finalize_waveform_setup)
@@ -1892,11 +2034,6 @@ class LoopEditorDialog(QDialog):
             self.waveform_scroll.setRange(0, int(scroll_info.get('max_scroll', 0)))
             self.waveform_scroll.setPageStep(int(scroll_info.get('page_step', 100)))
             self.waveform_scroll.setValue(int(scroll_info.get('current_scroll', 0)))
-        
-    def update_file_info_display(self, file_info):
-        """Update the file information display"""
-        # This would need to be added to the dialog - for now just placeholder
-        pass
         
     def on_position_changed(self, position: int):
         """Handle playback position change from waveform clicks"""
@@ -2419,20 +2556,22 @@ class LoopEditorDialog(QDialog):
             return self._temp_wav_path
         return self.loop_manager.get_wav_path()
 
-    def _start_loudness_worker(self, mode: str, wav_path: str):
+    def _start_loudness_worker(self, mode: str, wav_path: str, *, target_i: float = -12.0, target_tp: float = -1.0, delta_i: float = None):
         """Start loudness analysis/normalization in the background"""
         try:
             if hasattr(self, '_loudness_worker') and self._loudness_worker and self._loudness_worker.isRunning():
-                return  # already running
+                return False  # already running
 
-            worker = LoudnessWorker(mode, wav_path, target_i=-15.0, target_tp=-1.0)
+            worker = LoudnessWorker(mode, wav_path, target_i=target_i, target_tp=target_tp, delta_i=delta_i)
             worker.analyze_finished.connect(self._on_true_loudness_ready)
             worker.normalize_finished.connect(self._on_loudnorm_finished)
             worker.error.connect(self._on_loudness_error)
             self._loudness_worker = worker
             worker.start()
+            return True
         except Exception as e:
             logging.error(f"Failed to start loudness worker: {e}")
+            return False
 
     def _on_true_loudness_ready(self, loudness):
         """Handle completion of background true loudness analysis"""
@@ -2453,12 +2592,12 @@ class LoopEditorDialog(QDialog):
                     analysis_text += f"\n⚠️ True peak {tp:.1f} dBTP may clip. Reduce ~{tp + 1.0:.1f} dB to hit -1 dBTP.\n"
                 elif tp > -1.0:
                     analysis_text += f"\nℹ️ True peak {tp:.1f} dBTP is near headroom.\n"
-                if -18.5 <= i_val <= -14.0:
-                    analysis_text += f"\nℹ️ Integrated loudness {i_val:.1f} LUFS matches target range.\n"
-                elif i_val > -13.5:
-                    analysis_text += f"\n⚠️ Integrated loudness {i_val:.1f} LUFS is hot; consider lowering toward -15 LUFS.\n"
+                if -13.0 <= i_val <= -11.0:
+                    analysis_text += f"\nℹ️ Integrated loudness {i_val:.1f} LUFS matches target range (around -12).\n"
+                elif i_val > -11.0:
+                    analysis_text += f"\n⚠️ Integrated loudness {i_val:.1f} LUFS is hot; consider lowering toward -12 LUFS.\n"
                 else:
-                    analysis_text += f"\nℹ️ Integrated loudness {i_val:.1f} LUFS is below target; normalize to -15 LUFS.\n"
+                    analysis_text += f"\nℹ️ Integrated loudness {i_val:.1f} LUFS is below target; normalize to -12 LUFS.\n"
             else:
                 analysis_text += "True loudness unavailable (ffmpeg not found).\n"
 
@@ -2471,6 +2610,7 @@ class LoopEditorDialog(QDialog):
             analysis_text += f"Total Samples  : {file_info.get('total_samples', 0):,}\n"
 
             self.analysis_text.setText(analysis_text)
+            self._hide_busy()
         except Exception as e:
             logging.error(f"Error updating loudness analysis: {e}")
 
@@ -2479,6 +2619,9 @@ class LoopEditorDialog(QDialog):
         try:
             # Re-enable button
             self.adjust_volume_btn.setEnabled(True)
+            self.increase_lufs_btn.setEnabled(True)
+            self.decrease_lufs_btn.setEnabled(True)
+            self._hide_busy()
 
             if not success:
                 QMessageBox.critical(self, "Normalization Failed", "Could not apply loudness normalization. Check logs for details.")
@@ -2502,8 +2645,7 @@ class LoopEditorDialog(QDialog):
             self.reset_volume_btn.setEnabled(True)
             self._force_media_refresh()
             QTimer.singleShot(100, self.analyze_audio)
-
-            QMessageBox.information(self, "Loudness Normalized", "Applied -15 LUFS / -1 dBTP normalization (background) and preserved loop points.")
+            
         except Exception as e:
             logging.error(f"Error finalizing loudnorm: {e}")
 
@@ -2511,6 +2653,9 @@ class LoopEditorDialog(QDialog):
         """Handle worker errors"""
         logging.error(f"Loudness worker error: {msg}")
         self.adjust_volume_btn.setEnabled(True)
+        self.increase_lufs_btn.setEnabled(True)
+        self.decrease_lufs_btn.setEnabled(True)
+        self._hide_busy()
         QMessageBox.critical(self, "Loudness Error", msg)
     
     def _cleanup_temp_files(self):
@@ -3016,10 +3161,13 @@ class LoopEditorDialog(QDialog):
             # Start background true loudness worker
             wav_path = self.loop_manager.get_wav_path()
             if wav_path:
-                self._start_loudness_worker(mode="analyze", wav_path=wav_path)
+                if self._start_loudness_worker(mode="analyze", wav_path=wav_path):
+                    self._show_busy("Analyzing audio (true loudness)...")
 
             # Enable consolidated volume button after kick-off
             self.adjust_volume_btn.setEnabled(True)
+            self.increase_lufs_btn.setEnabled(True)
+            self.decrease_lufs_btn.setEnabled(True)
             self.reset_volume_btn.setEnabled(self._volume_adjusted)
 
         except Exception as e:
@@ -3039,19 +3187,157 @@ class LoopEditorDialog(QDialog):
         self._apply_volume_adjustment("rms")
 
     def adjust_volume_lufs(self):
-        """Normalize audio to -15 LUFS / -1 dBTP using ffmpeg loudnorm"""
+        """Normalize audio to -12 LUFS / -1 dBTP using ffmpeg loudnorm (matches official SCD files)"""
         wav_path = self.loop_manager.get_wav_path()
         if not wav_path:
             QMessageBox.warning(self, "No Audio", "No audio file available for loudness normalization")
             return
+        self._prepare_loudness_edit()
         # Preserve current loop points so we can re-apply metadata after normalization
         self._pending_loop_restore = self.loop_manager.get_loop_points()
 
         # Disable button to prevent re-entry and show progress text
         self.adjust_volume_btn.setEnabled(False)
-        self.analysis_text.setText("Normalizing to -15 LUFS / -1 dBTP (background)...")
+        self.increase_lufs_btn.setEnabled(False)
+        self.decrease_lufs_btn.setEnabled(False)
+        self.analysis_text.setText("Normalizing to -12 LUFS / -1 dBTP (background)...")
+        self._show_busy("Normalizing to -12 LUFS / -1 dBTP...")
 
-        self._start_loudness_worker(mode="normalize", wav_path=wav_path)
+        if not self._start_loudness_worker(mode="normalize", wav_path=wav_path, target_i=-12.0, target_tp=-1.0):
+            self._hide_busy()
+            self.adjust_volume_btn.setEnabled(True)
+            self.increase_lufs_btn.setEnabled(True)
+            self.decrease_lufs_btn.setEnabled(True)
+            QMessageBox.warning(self, "Busy", "Another loudness task is already running.")
+
+    def adjust_volume_relative(self, delta_lufs: float):
+        """Raise or lower loudness by a relative LUFS offset using loudnorm"""
+        wav_path = self.loop_manager.get_wav_path()
+        if not wav_path:
+            QMessageBox.warning(self, "No Audio", "No audio file available for loudness adjustment")
+            return
+        self._prepare_loudness_edit()
+
+        # Preserve current loop points so we can re-apply metadata after normalization
+        self._pending_loop_restore = self.loop_manager.get_loop_points()
+
+        # Disable buttons to prevent re-entry and show progress text
+        self.adjust_volume_btn.setEnabled(False)
+        self.increase_lufs_btn.setEnabled(False)
+        self.decrease_lufs_btn.setEnabled(False)
+
+        direction = "Increasing" if delta_lufs > 0 else "Decreasing"
+        self.analysis_text.setText(f"{direction} loudness by {delta_lufs:+.1f} LUFS (background)...")
+        self._show_busy(f"{direction} loudness by {delta_lufs:+.1f} LUFS...")
+
+        # Use relative mode which measures current loudness then targets offset
+        if not self._start_loudness_worker(
+            mode="relative",
+            wav_path=wav_path,
+            delta_i=delta_lufs,
+            target_tp=-1.0,
+        ):
+            self._hide_busy()
+            self.adjust_volume_btn.setEnabled(True)
+            self.increase_lufs_btn.setEnabled(True)
+            self.decrease_lufs_btn.setEnabled(True)
+            QMessageBox.warning(self, "Busy", "Another loudness task is already running.")
+
+    def _prepare_loudness_edit(self):
+        """Stop playback and release media handles before loudnorm writes"""
+        try:
+            # Stop timers to avoid re-arming during edit
+            self.position_timer.stop()
+            self.loop_timer.stop()
+
+            # Stop playback and clear media to release file handles
+            was_playing = self.media_player.state() == QMediaPlayer.PlayingState
+            self.media_player.stop()
+            self.media_player.setMedia(QMediaContent())
+
+            # Small delay helps Windows release file locks from the media backend
+            QCoreApplication.processEvents()
+            import time
+            time.sleep(0.15)
+
+            # Remember previous playing state if we want to resume later (unused for now)
+            self._was_playing_before_loudnorm = was_playing
+        except Exception as e:
+            logging.warning(f"Failed to fully release media before loudnorm: {e}")
+    
+    def _read_scd_volume_float(self):
+        """Read the current SCD volume float from the file and update the UI"""
+        try:
+            scd_path = getattr(self.loop_manager, "original_scd_path", None) or getattr(self.loop_manager, "current_file_path", None)
+            if not scd_path or not Path(scd_path).exists() or Path(scd_path).suffix.lower() != ".scd":
+                self.scd_volume_spinbox.setEnabled(False)
+                self.apply_scd_volume_btn.setEnabled(False)
+                self.scd_volume_status.setText("(No SCD file)")
+                return
+            
+            import struct
+            data = Path(scd_path).read_bytes()
+            
+            if len(data) < 0x54:
+                self.scd_volume_status.setText("(Invalid SCD)")
+                return
+            
+            table_off = int.from_bytes(data[0x50:0x54], 'little')
+            if table_off <= 0 or table_off + 12 > len(data):
+                self.scd_volume_status.setText("(Invalid offset)")
+                return
+            
+            volume_pos = table_off + 8
+            current_gain = struct.unpack('<f', data[volume_pos:volume_pos + 4])[0]
+            
+            # Update spinbox with current value
+            self.scd_volume_spinbox.blockSignals(True)
+            self.scd_volume_spinbox.setValue(current_gain)
+            self.scd_volume_spinbox.blockSignals(False)
+            
+            self.scd_volume_spinbox.setEnabled(True)
+            self.apply_scd_volume_btn.setEnabled(True)
+            self.scd_volume_status.setText(f"(Current: {current_gain:.2f})")
+            
+        except Exception as e:
+            logging.warning(f"Failed to read SCD volume float: {e}")
+            self.scd_volume_status.setText("(Read error)")
+            self.scd_volume_spinbox.setEnabled(False)
+            self.apply_scd_volume_btn.setEnabled(False)
+    
+    def apply_scd_volume_float(self):
+        """Apply the volume float value to the SCD file"""
+        try:
+            scd_path = getattr(self.loop_manager, "original_scd_path", None) or getattr(self.loop_manager, "current_file_path", None)
+            if not scd_path or not Path(scd_path).exists() or Path(scd_path).suffix.lower() != ".scd":
+                QMessageBox.warning(self, "Error", "No SCD file available to patch")
+                return
+            
+            target_gain = self.scd_volume_spinbox.value()
+            
+            # Use the loop manager's patch method
+            success = self.loop_manager._patch_scd_volume(scd_path, target_gain=target_gain)
+            
+            if success:
+                self.scd_volume_status.setText(f"✓ Applied: {target_gain:.2f}")
+                self.scd_volume_status.setStyleSheet("color: #4a8a4a; font-size: 9px; font-style: italic;")
+                
+                # Show success toast
+                if hasattr(self, 'show_toast'):
+                    self.show_toast(f"SCD volume float updated to {target_gain:.2f}", duration=2000)
+                
+                # Reset status color after 3 seconds
+                QTimer.singleShot(3000, lambda: self.scd_volume_status.setStyleSheet("color: #888; font-size: 9px; font-style: italic;"))
+            else:
+                self.scd_volume_status.setText("✗ Failed")
+                self.scd_volume_status.setStyleSheet("color: #8a4a4a; font-size: 9px; font-style: italic;")
+                QMessageBox.warning(self, "Error", "Failed to patch SCD volume float")
+                
+        except Exception as e:
+            logging.error(f"Failed to apply SCD volume float: {e}")
+            self.scd_volume_status.setText("✗ Error")
+            self.scd_volume_status.setStyleSheet("color: #8a4a4a; font-size: 9px; font-style: italic;")
+            QMessageBox.warning(self, "Error", f"Failed to patch SCD volume: {str(e)}")
     
     def custom_volume_adjustment(self):
         """Open custom volume adjustment dialog"""
@@ -3074,9 +3360,6 @@ class LoopEditorDialog(QDialog):
             # Restore original audio data
             self.waveform.audio_data = self._original_audio_data.copy()
             self._volume_adjusted = False
-            
-            # Reset window title
-            self.setWindowTitle("Loop Editor - Professional Audio Loop Point Editor")
             
             # Disable reset button
             self.reset_volume_btn.setEnabled(False)
@@ -3153,9 +3436,6 @@ class LoopEditorDialog(QDialog):
                 # Mark that volume has been adjusted
                 self._volume_adjusted = True
                 
-                # Update window title to show volume was adjusted
-                self.setWindowTitle("Loop Editor - Professional Audio Loop Point Editor (Volume Adjusted*)")
-                
                 # Enable reset button
                 self.reset_volume_btn.setEnabled(True)
                 
@@ -3196,6 +3476,8 @@ class LoopEditorDialog(QDialog):
                     len(self.waveform.audio_data) > 0)
         
         self.adjust_volume_btn.setEnabled(has_audio)
+        self.increase_lufs_btn.setEnabled(has_audio)
+        self.decrease_lufs_btn.setEnabled(has_audio)
         # Reset button only enabled if volume was adjusted
         self.reset_volume_btn.setEnabled(has_audio and self._volume_adjusted)
     
