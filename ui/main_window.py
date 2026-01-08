@@ -787,7 +787,7 @@ class SCDToolkit(QMainWindow):
         # Music Pack Creator button
         music_pack_layout = QHBoxLayout()
         
-        self.music_pack_creator_btn = QPushButton('Create Music Pack (KH:ReFined)')
+        self.music_pack_creator_btn = QPushButton('Create Music Pack (Kingdom Hearts II - Re:Fined)')
         self.music_pack_creator_btn.clicked.connect(self.open_music_pack_creator)
         self.music_pack_creator_btn.setToolTip('Create a music pack mod for Kingdom Hearts II - Re:Fined')
         self.music_pack_creator_btn.setStyleSheet("""

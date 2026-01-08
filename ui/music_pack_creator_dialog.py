@@ -1,4 +1,4 @@
-"""Music Pack Creator Dialog UI for creating KH:ReFined Music Packs"""
+"""Music Pack Creator Dialog UI for creating Kingdom Hearts II - Re:Fined Music Packs"""
 import os
 import logging
 from pathlib import Path
