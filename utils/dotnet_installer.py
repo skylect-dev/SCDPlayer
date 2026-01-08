@@ -267,7 +267,6 @@ def prompt_dotnet_install(parent_widget) -> bool:
             "A bundled installer has been found. Would you like to install it now?\n\n"
             "⚠️ NOTE: A UAC (User Account Control) prompt will appear.\n"
             "If you don't see it, check your taskbar - it may be minimized.\n\n"
-            "The app will automatically restart after installation completes.\n\n"
             "This is a one-time setup and only takes a minute."
         )
     else:
@@ -278,8 +277,7 @@ def prompt_dotnet_install(parent_widget) -> bool:
             "⚠️ NOTE: A UAC (User Account Control) prompt will appear.\n"
             "If you don't see it, check your taskbar - it may be minimized.\n\n"
             "The app will automatically restart after installation completes.\n\n"
-            "This is a one-time setup and only takes a few minutes.\n\n"
-            "Alternative: You can download it manually from:\n"
+            "Thternative: You can download it manually from:\n"
             f"{DotNetRuntimeChecker.DOWNLOAD_URL}"
         )
     
@@ -354,39 +352,8 @@ def install_dotnet_runtime(parent_widget) -> bool:
             parent_widget,
             QMessageBox.Information,
             "Installation Successful",
-            f"✅ {result[1]}\n\nThe application will now restart."
+            f"✅ {result[1]}\n\nYou can now convert SCD files!"
         )
-        
-        # Auto-restart the application
-        logging.info("Restarting application after .NET installation")
-        import sys
-        from PyQt5.QtWidgets import QApplication
-        from PyQt5.QtCore import QTimer
-        
-        def restart_app():
-            """Restart the application"""
-            # Get the executable path
-            if getattr(sys, 'frozen', False):
-                # Running as PyInstaller executable
-                exe_path = sys.executable
-                logging.info(f"Restarting executable: {exe_path}")
-                import subprocess
-                # Start new instance then exit
-                subprocess.Popen([exe_path], creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
-            else:
-                # Running in development - restart with Python
-                exe_path = sys.executable
-                args = [exe_path] + sys.argv
-                logging.info(f"Restarting Python process: {args}")
-                import subprocess
-                subprocess.Popen(args)
-            
-            # Exit current process
-            QApplication.instance().quit()
-        
-        # Delay restart slightly to ensure dialog closes cleanly
-        QTimer.singleShot(100, restart_app)
-        
         return True
     else:
         show_themed_message(
