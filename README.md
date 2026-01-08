@@ -13,7 +13,8 @@ A Windows audio player and toolkit designed for game music files (SCD format) wi
 
 - **Game Audio Support**: Native SCD file playback from Kingdom Hearts, Final Fantasy XIV, and other games
 - **Library Management**: Organize files by folder with search and filtering
-- **KH Randomizer Integration**: Export music directly to Kingdom Hearts Randomizer folders
+- **Kingdom Hearts II Randomizer Integration**: Export music directly to Kingdom Hearts Randomizer folders
+- **Kingdom Hearts II Re:Fined Music Pack Creation:** Directly create custom Music Pack mods to be used with Kingdom Hearts II - Re:Fined. 
 - **Format Conversion**: Convert between SCD, WAV, MP3, OGG, and FLAC formats
 - **Loop Editor**: Professional waveform editor for setting precise loop points
 - **Auto-Updates**: Built-in update system keeps you current
@@ -23,7 +24,7 @@ A Windows audio player and toolkit designed for game music files (SCD format) wi
 
 **Download & Run (Recommended):**
 1. Get the latest version from [Releases](https://github.com/skylect-dev/SCDToolkit/releases)
-2. Extract `SCDToolkit-vX.X.X.zip`
+2. Extract `SCDToolkit-Windows.zip`
 3. Run `SCDToolkit.exe`
 
 Everything needed is included - no additional setup required.
