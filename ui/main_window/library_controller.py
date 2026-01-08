@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -20,7 +21,10 @@ from PyQt5.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QProgressDialog,
     QSplitter,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -297,6 +301,11 @@ class LibraryController:
         )
         self.open_file_location_btn.setEnabled(False)
         library_buttons_layout.addWidget(self.open_file_location_btn)
+
+        self.clear_cache_btn = QPushButton('Clear Cache')
+        self.clear_cache_btn.clicked.connect(self.clear_sanitize_cache)
+        self.clear_cache_btn.setToolTip('Clear normalized SCD cache entries to force re-processing')
+        library_buttons_layout.addWidget(self.clear_cache_btn)
         library_layout.addLayout(library_buttons_layout)
 
         # Conversion buttons
@@ -318,6 +327,11 @@ class LibraryController:
         self.open_loop_editor_btn.setEnabled(False)
         self.open_loop_editor_btn.setToolTip('Edit loop points for selected SCD or WAV file with professional waveform editor')
         convert_buttons_layout.addWidget(self.open_loop_editor_btn)
+
+        self.normalize_btn = QPushButton('Normalize…')
+        self.normalize_btn.clicked.connect(self.open_normalize_dialog)
+        self.normalize_btn.setToolTip('Normalize uncached SCDs to -12 LUFS / -1 dBTP and mark cache')
+        convert_buttons_layout.addWidget(self.normalize_btn)
         library_layout.addLayout(convert_buttons_layout)
 
         # Music Pack Creator button
@@ -683,6 +697,8 @@ class LibraryController:
     def load_from_library(self, item):
         file_path = item.data(Qt.UserRole)
         if file_path and file_path.startswith("FOLDER_HEADER:"):
+            folder_name = file_path.replace("FOLDER_HEADER:", "")
+            self._toggle_folder_expansion(folder_name)
             return
         if file_path and file_path != "FOLDER_HEADER":
             self.window.load_file_path(file_path, auto_play=True)
@@ -1082,6 +1098,76 @@ class LibraryController:
         except Exception as e:
             show_themed_message(self.window, QMessageBox.Warning, "Cannot Open Location",
                               f"Failed to open file location:\n{str(e)}")
+
+    def clear_sanitize_cache(self):
+        """Clear the persistent SCD sanitize cache after confirmation."""
+        converter = getattr(self.window, 'converter', None)
+        if not converter:
+            return
+
+        reply = QMessageBox.question(
+            self.window,
+            "Clear Cache",
+            "Clear the normalized SCD cache? This will force re-processing next time.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        if converter.clear_sanitize_cache():
+            show_themed_message(self.window, QMessageBox.Information, "Cache Cleared", "Normalization cache cleared.")
+        else:
+            show_themed_message(self.window, QMessageBox.Warning, "Cache Error", "Could not clear the cache.")
+
+    def _collect_uncached_scds(self):
+        """Return a folder->list mapping of SCDs that are not in the sanitize cache."""
+        converter = getattr(self.window, 'converter', None)
+        if not converter:
+            return {}
+
+        files_by_folder = {}
+        seen = set()
+
+        def _add_file(path_str: str):
+            if not path_str or path_str in seen:
+                return
+            if not path_str.lower().endswith('.scd'):
+                return
+            if not os.path.exists(path_str):
+                return
+            if converter.is_sanitized(path_str):
+                return
+            seen.add(path_str)
+            folder = str(Path(path_str).parent)
+            files_by_folder.setdefault(folder, []).append(path_str)
+
+        if self._files_by_folder_cache:
+            for _, entries in self._files_by_folder_cache.items():
+                for _, file_path, _ in entries:
+                    _add_file(file_path)
+        else:
+            for i in range(self.file_list.count()):
+                item = self.file_list.item(i)
+                file_path = item.data(Qt.UserRole)
+                if file_path and not str(file_path).startswith("FOLDER_HEADER"):
+                    _add_file(file_path)
+
+        return files_by_folder
+
+    def open_normalize_dialog(self):
+        """Open the bulk normalize dialog for uncached SCDs."""
+        converter = getattr(self.window, 'converter', None)
+        if not converter:
+            return
+
+        uncached = self._collect_uncached_scds()
+        if not uncached:
+            show_themed_message(self.window, QMessageBox.Information, "Nothing to Normalize", "All SCD files are already cached.")
+            return
+
+        dialog = NormalizeDialog(self.window, converter, uncached, parent=self.window)
+        dialog.exec_()
 
     def convert_selected_to_wav(self):
         """Convert selected library items (or current file) to WAV via the main conversion manager."""
@@ -1578,3 +1664,183 @@ class LibraryController:
             else:
                 show_themed_message(self.window, QMessageBox.Warning, "Export Failed",
                                    "Failed to export files. Check the log for details.")
+
+
+class NormalizeDialog(QDialog):
+    """Bulk normalization dialog for uncached SCD files."""
+
+    def __init__(self, window, converter, files_by_folder, parent=None):
+        super().__init__(parent)
+        self.window = window
+        self.converter = converter
+        self.files_by_folder = files_by_folder
+        self._syncing_checks = False
+
+        self.setWindowTitle("Normalize SCDs")
+        self.resize(640, 520)
+
+        layout = QVBoxLayout()
+
+        warning_label = QLabel(
+            "Normalize uncached SCDs to -12 LUFS / -1 dBTP (gain patched to 1.2). "
+            "Loop points are preserved, but processing can take time."
+        )
+        warning_label.setWordWrap(True)
+        warning_label.setStyleSheet("color: #f0ad4e;")
+        layout.addWidget(warning_label)
+
+        self.tree = QTreeWidget()
+        self.tree.setColumnCount(1)
+        self.tree.setHeaderLabels(["SCD File"])
+        self.tree.itemChanged.connect(self._on_item_changed)
+        layout.addWidget(self.tree)
+
+        self._populate_tree()
+
+        buttons_layout = QHBoxLayout()
+        buttons_layout.addStretch()
+
+        normalize_selected_btn = QPushButton("Normalize Selected")
+        normalize_selected_btn.clicked.connect(self._normalize_selected)
+        buttons_layout.addWidget(normalize_selected_btn)
+
+        normalize_all_btn = QPushButton("Normalize All")
+        normalize_all_btn.clicked.connect(lambda: self._normalize_all_and_run())
+        buttons_layout.addWidget(normalize_all_btn)
+
+        cancel_btn = QPushButton("Close")
+        cancel_btn.clicked.connect(self.reject)
+        buttons_layout.addWidget(cancel_btn)
+
+        layout.addLayout(buttons_layout)
+        self.setLayout(layout)
+
+    def _populate_tree(self):
+        self.tree.clear()
+        for folder, paths in sorted(self.files_by_folder.items()):
+            folder_name = Path(folder).name or folder
+            folder_item = QTreeWidgetItem([folder_name])
+            folder_item.setFlags(folder_item.flags() | Qt.ItemIsUserCheckable)
+            folder_item.setCheckState(0, Qt.Checked)
+            folder_item.setToolTip(0, folder)
+            for path_str in sorted(paths):
+                file_name = Path(path_str).name
+                child = QTreeWidgetItem([file_name])
+                child.setData(0, Qt.UserRole, path_str)
+                child.setFlags(child.flags() | Qt.ItemIsUserCheckable)
+                child.setCheckState(0, Qt.Checked)
+                child.setToolTip(0, path_str)
+                folder_item.addChild(child)
+            self.tree.addTopLevelItem(folder_item)
+            folder_item.setExpanded(True)
+
+    def _normalize_all_and_run(self):
+        self._set_all_checked(Qt.Checked)
+        self._normalize_selected()
+
+    def _set_all_checked(self, state: Qt.CheckState):
+        self._syncing_checks = True
+        for i in range(self.tree.topLevelItemCount()):
+            folder_item = self.tree.topLevelItem(i)
+            folder_item.setCheckState(0, state)
+            for j in range(folder_item.childCount()):
+                child = folder_item.child(j)
+                child.setCheckState(0, state)
+        self._syncing_checks = False
+
+    def _on_item_changed(self, item, column):
+        if self._syncing_checks:
+            return
+
+        # Keep parent/child check states in sync
+        if item.childCount() > 0:
+            self._syncing_checks = True
+            state = item.checkState(0)
+            for i in range(item.childCount()):
+                item.child(i).setCheckState(0, state)
+            self._syncing_checks = False
+        else:
+            parent = item.parent()
+            if parent:
+                checked = 0
+                unchecked = 0
+                for i in range(parent.childCount()):
+                    child = parent.child(i)
+                    if child.checkState(0) == Qt.Checked:
+                        checked += 1
+                    elif child.checkState(0) == Qt.Unchecked:
+                        unchecked += 1
+                self._syncing_checks = True
+                if checked == parent.childCount():
+                    parent.setCheckState(0, Qt.Checked)
+                elif unchecked == parent.childCount():
+                    parent.setCheckState(0, Qt.Unchecked)
+                else:
+                    parent.setCheckState(0, Qt.PartiallyChecked)
+                self._syncing_checks = False
+
+    def _gather_selected_paths(self):
+        selected = []
+        for i in range(self.tree.topLevelItemCount()):
+            folder_item = self.tree.topLevelItem(i)
+            for j in range(folder_item.childCount()):
+                child = folder_item.child(j)
+                if child.checkState(0) == Qt.Checked:
+                    path_str = child.data(0, Qt.UserRole)
+                    if path_str:
+                        selected.append(path_str)
+        return selected
+
+    def _normalize_selected(self):
+        paths = self._gather_selected_paths()
+        if not paths:
+            show_themed_message(self.window, QMessageBox.Information, "Nothing Selected", "Check at least one SCD to normalize.")
+            return
+
+        progress = QProgressDialog("Normalizing SCDs...", None, 0, len(paths), self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.show()
+
+        success_count = 0
+        errors = []
+
+        for idx, path_str in enumerate(paths, start=1):
+            progress.setLabelText(f"Normalizing {Path(path_str).name} ({idx}/{len(paths)})")
+            progress.setValue(idx - 1)
+            QApplication.processEvents()
+            try:
+                sanitized_path = self.converter.ensure_scd_ready_for_export(path_str)
+                if sanitized_path and os.path.exists(sanitized_path) and sanitized_path != path_str:
+                    shutil.copy2(sanitized_path, path_str)
+                    try:
+                        Path(sanitized_path).unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                self.converter.mark_sanitized(path_str)
+                success_count += 1
+            except Exception as e:
+                logging.exception("Normalize failed")
+                errors.append((path_str, str(e)))
+
+        progress.setValue(len(paths))
+        progress.close()
+
+        for i in range(self.tree.topLevelItemCount() - 1, -1, -1):
+            folder_item = self.tree.topLevelItem(i)
+            for j in range(folder_item.childCount() - 1, -1, -1):
+                child = folder_item.child(j)
+                path_str = child.data(0, Qt.UserRole)
+                if path_str in paths and path_str not in [p for p, _ in errors]:
+                    child.setCheckState(0, Qt.Unchecked)
+                    child.setForeground(0, QColor('gray'))
+                    child.setForeground(1, QColor('gray'))
+            # Update folder tri-state
+            self._on_item_changed(folder_item, 0)
+
+        if errors:
+            message_lines = [f"Failed: {Path(p).name}\n{err}" for p, err in errors]
+            show_themed_message(self.window, QMessageBox.Warning, "Normalize Completed with Errors", "\n\n".join(message_lines))
+        else:
+            show_themed_message(self.window, QMessageBox.Information, "Normalize Complete", f"Normalized {success_count} SCD file(s).")

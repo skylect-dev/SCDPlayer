@@ -63,8 +63,9 @@ class HelpDialog(QDialog):
             ("Playing Audio", "playing-audio"),
             ("Loop Editor", "loop-editor"),
             ("Audio Analysis", "audio-analysis"),
-            ("Re:Fined Music Packs", "refined-music-packs"),
             ("Volume Controls", "volume-controls"),
+            ("Batch File Normalization", "batch-normalization"),
+            ("Re:Fined Music Packs", "refined-music-packs"),
             ("KH Randomizer Setup", "kh-rando-setup"),
             ("Export Options", "export-options"),
             ("File Conversion", "file-conversion"),
@@ -151,18 +152,14 @@ class HelpDialog(QDialog):
             
             <h2 id="getting-started">Getting Started</h2>
             <div class="section">
-                <p>SCDToolkit is designed for managing and playing SCD audio files, particularly for use with the Kingdom Hearts Randomizer. The application supports multiple audio formats and provides seamless conversion capabilities with a modern, streamlined interface.</p>
+                <p>SCDToolkit is designed for managing and playing SCD audio files, particularly for use with the Kingdom Hearts Randomizer and Kingdom Hearts II - Re:Fined. The application supports multiple audio formats and provides seamless conversion capabilities with a modern, streamlined interface.</p>
                 
                 <h3>What's New in v{__version__}</h3>
                 <ul>
-                    <li><strong>Instant Performance:</strong> 2-3 second faster startup with optimized splash screen</li>
-                    <li><strong>Real-time Detection:</strong> New folders and files detected instantly without manual rescan</li>
-                    <li><strong>Context Menus:</strong> Right-click any track for quick access to common operations</li>
-                    <li><strong>Drag and Drop:</strong> Drag files directly to KH Rando folders with visual feedback</li>
-                    <li><strong>Modern UI:</strong> Custom rounded scrollbars and polished dark theme</li>
-                    <li><strong>Music List Editor:</strong> Quick access via J key or dedicated button</li>
-                    <li><strong>Folder Creation:</strong> Create new KH Rando categories on the fly during export</li>
-                    <li><strong>.NET 5.0 Runtime:</strong> MusicEncoder requires .NET 5.0 Desktop Runtime (bundled installer included)</li>
+                    <li><strong>Kingdom Hearts II - Re:Fined Music Pack support:</strong>Create Music Pack mods for the popular Kingdom Hearts II - Re:Fined mod!</li>
+                    <li><strong>Auto Normalization:</strong> Intelligent volume normalization based on audio characteristics.</li>
+                    <li><strong>Batch file normalization:</strong> Normalize multiple files directly from the library.</li>
+                    <li><strong>Improved Performance:</strong> Faster library loading and audio processing.</li>
                 </ul>
             </div>
             
@@ -197,7 +194,7 @@ class HelpDialog(QDialog):
             <h2 id="loop-editor">Loop Editor</h2>
             <div class="section">
                 <h3>Professional Audio Loop Point Editor</h3>
-                <p>Access via the "Edit Loop Points" button when a file is loaded. The Loop Editor provides professional-grade audio editing capabilities.</p>
+                <p>Access via the "Edit Loop Points" button when a file is selected. The Loop Editor provides professional-grade audio editing capabilities.</p>
                 
                 <h3>Core Features</h3>
                 <ul>
@@ -289,14 +286,23 @@ class HelpDialog(QDialog):
                 </ul>
             </div>
             
+            <h2 id="batch-normalization">Batch File Normalization</h2>
+            <div class="section">
+                <h3>Normalize Multiple Files at Once</h3>
+                <p>Easily apply volume normalization to multiple audio files directly from the library.</p>
+                <h3>How to Use</h3>
+                <ul>
+                    <li><strong>Click the Normalize button at the bottom of the library panel.</strong></li>
+                    <li><strong>Select Tracks in the dialog:</strong> Choose which files to normalize from your library or normalize all.</li>
+                </ul>
+                <li><thin>Note:</thin> Normalization will take longer for large batches.</li>
+                
+            </div>
+            
             <h2 id="refined-music-packs">Re:Fined Music Packs</h2>
             <div class="section">
-                <h3>When to Use</h3>
-                <ul>
-                    <li>Create full Kingdom Hearts II Re:Fined music packs once your library and loops are ready.</li>
-                    <li>Convert sources to SCD before exporting to ensure in-game looping.</li>
-                </ul>
-
+                <h3>Creating Music Packs for Kingdom Hearts II - Re:Fined</h3>
+                <p>SCDToolkit includes a dedicated music pack creator for the popular Kingdom Hearts II - Re:Fined mod. Easily build custom music packs with your favorite tracks.</p>
                 <h3>Build Steps</h3>
                 <ul>
                     <li><strong>Open the Creator:</strong> Click "Create Music Pack (Kingdom Hearts II - Re:Fined)".</li>
@@ -315,6 +321,8 @@ class HelpDialog(QDialog):
             </div>
 
             <h2 id="kh-rando-setup">Kingdom Hearts Randomizer Integration</h2>
+            <h3>Setting Up for KH Randomizer</h3>
+            <p>SCDToolkit provides seamless integration with the Kingdom Hearts Randomizer by allowing you to easily set up your music folder and export tracks directly.</p>
             <div class="section">
                 <h3>Setting Up KH Rando</h3>
                 <ul>

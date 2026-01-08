@@ -17,6 +17,64 @@ class AudioConverter:
         self.temp_files = []
         self._dotnet_checked = False
         self._dotnet_available = False
+        self._sanitized_cache = {}  # path -> {'mtime': float, 'size': int, 'ok': bool}
+        self._cache_path = Path(tempfile.gettempdir()) / "scdtoolkit_scd_cache.json"
+        self._load_sanitize_cache()
+
+    def _load_sanitize_cache(self):
+        try:
+            if self._cache_path.exists():
+                import json
+                data = json.loads(self._cache_path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    self._sanitized_cache = data
+        except Exception:
+            self._sanitized_cache = {}
+
+    def _save_sanitize_cache(self):
+        try:
+            import json
+            self._cache_path.write_text(json.dumps(self._sanitized_cache), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _cache_sanitized(self, scd_file: Path):
+        """Record a sanitized SCD (gain + loudness applied) by path/mtime/size."""
+        try:
+            stat = scd_file.stat()
+            key = str(scd_file.resolve())
+            self._sanitized_cache[key] = {"mtime": stat.st_mtime, "size": stat.st_size, "ok": True}
+            self._save_sanitize_cache()
+        except Exception:
+            pass
+
+    def is_sanitized(self, scd_path: str) -> bool:
+        """Return True if the cached metadata matches the on-disk SCD."""
+        try:
+            scd_file = Path(scd_path)
+            stat = scd_file.stat()
+            key = str(scd_file.resolve())
+            entry = self._sanitized_cache.get(key)
+            return bool(entry and entry.get("ok") and entry.get("mtime") == stat.st_mtime and entry.get("size") == stat.st_size)
+        except Exception:
+            return False
+
+    def mark_sanitized(self, scd_path: str):
+        """Public helper to record sanitized state after external operations."""
+        try:
+            self._cache_sanitized(Path(scd_path))
+        except Exception:
+            pass
+
+    def clear_sanitize_cache(self) -> bool:
+        """Clear sanitize cache from memory and disk."""
+        try:
+            self._sanitized_cache.clear()
+            if self._cache_path.exists():
+                self._cache_path.unlink(missing_ok=True)
+            return True
+        except Exception:
+            return False
     
     def check_dotnet_available(self) -> bool:
         """
@@ -345,6 +403,7 @@ class AudioConverter:
                     
                     shutil.copy2(encoder_output_scd, scd_file)
                     self._patch_scd_volume(scd_file, target_gain=1.2)
+                    self._cache_sanitized(scd_file)
                     logging.info(f"SCD conversion completed: {scd_path}")
                     return True
                 else:
@@ -440,6 +499,17 @@ class AudioConverter:
         if not scd_file.exists():
             return scd_path
 
+        # Fast path: if we've already sanitized this exact file in this session, skip work
+        stat = scd_file.stat()
+        key = str(scd_file.resolve())
+        cache_entry = self._sanitized_cache.get(key)
+        if cache_entry:
+            cached_mtime = cache_entry.get("mtime")
+            cached_size = cache_entry.get("size")
+            cached_ok = cache_entry.get("ok", False)
+            if cached_ok and cached_mtime == stat.st_mtime and cached_size == stat.st_size:
+                return scd_path
+
         temp_wav = None
         temp_scd_path = None
         sanitized_path = scd_path
@@ -477,6 +547,7 @@ class AudioConverter:
                 if self.convert_wav_to_scd(wav_path, str(temp_scd_path), original_scd_path=str(scd_file), quality=10):
                     sanitized_path = str(temp_scd_path)
                     needs_gain = False  # convert_wav_to_scd already patches gain
+                    self._cache_sanitized(temp_scd_path)
                 else:
                     try:
                         temp_scd_path.unlink(missing_ok=True)
@@ -490,6 +561,7 @@ class AudioConverter:
                 shutil.copy2(scd_file, temp_scd_path)
                 self._patch_scd_volume(temp_scd_path, target_gain=target_gain)
                 sanitized_path = str(temp_scd_path)
+                self._cache_sanitized(temp_scd_path)
 
             return sanitized_path
         finally:
@@ -501,4 +573,7 @@ class AudioConverter:
                     self.temp_files.remove(temp_wav)
             except Exception:
                 pass
+
+            # Cache sanitized result (persisted) by path/mtime/size
+            self._cache_sanitized(scd_file)
 

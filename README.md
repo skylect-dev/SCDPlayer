@@ -7,7 +7,7 @@ A Windows audio player and toolkit designed for game music files (SCD format) wi
 - This is resolved in 3.3.1 and up. Please download the full package to update from this version. 
 - **You may copy you scdplayer_config.json to the new folder and SCDToolkit will migrate it**
 
-### SCDToolkit has a Discord now! https://discord.gg/FqePtT2BBM
+### SCDToolkit has a [Discord](https://discord.gg/FqePtT2BBM) now!
 
 ## Features
 
@@ -19,6 +19,16 @@ A Windows audio player and toolkit designed for game music files (SCD format) wi
 - **Loop Editor**: Professional waveform editor for setting precise loop points
 - **Auto-Updates**: Built-in update system keeps you current
 - **Recycle Bin Safety**: File deletion uses Windows Recycle Bin for safety
+
+## Batch Normalization: ## 
+Normalize volume levels across multiple files directly from the library. This will apply a consistent loudness level to all selected tracks, ensuring a uniform listening experience while in-game.
+- **Auto Normalization**: Intelligent volume normalization based on audio characteristics. Targets -12 LUFS with True Peak of -1 dBTP.
+- **SCD HEX Float Patching**: Applies float patch directly to SCD files to ensure in-game volume consistency.
+- **Caching**: Processed files are cached for faster future access. Run a batch normalization to pre-cache files and speed up exporting.
+    - Cached files are automatically reused unless source files change.
+    - Cache can be cleared from main window.
+    - Cached files export faster since they skip re-processing.
+    - Setting personalized loudness levels in the Loop Editor marks files as "sanitized" to skip re-normalization during export.
 
 ## Installation
 

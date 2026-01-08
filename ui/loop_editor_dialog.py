@@ -1452,6 +1452,12 @@ class LoopEditorDialog(QDialog):
             
             if success:
                 logging.info("SCD save operation completed successfully")
+                try:
+                    # Mark sanitized cache for the saved SCD so exports skip re-processing
+                    if getattr(self.loop_manager, "original_scd_path", None) and getattr(self.parent_window, "converter", None):
+                        self.parent_window.converter.mark_sanitized(self.loop_manager.original_scd_path)
+                except Exception:
+                    logging.debug("Could not mark sanitized cache after loop save")
                 # Stop playback and all timers before closing
                 self.media_player.stop()
                 self.position_timer.stop()
