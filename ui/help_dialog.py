@@ -63,6 +63,7 @@ class HelpDialog(QDialog):
             ("Playing Audio", "playing-audio"),
             ("Loop Editor", "loop-editor"),
             ("Audio Analysis", "audio-analysis"),
+            ("Re:Fined Music Packs", "refined-music-packs"),
             ("Volume Controls", "volume-controls"),
             ("KH Randomizer Setup", "kh-rando-setup"),
             ("Export Options", "export-options"),
@@ -288,6 +289,31 @@ class HelpDialog(QDialog):
                 </ul>
             </div>
             
+            <h2 id="refined-music-packs">Re:Fined Music Packs</h2>
+            <div class="section">
+                <h3>When to Use</h3>
+                <ul>
+                    <li>Create full Kingdom Hearts II Re:Fined music packs once your library and loops are ready.</li>
+                    <li>Convert sources to SCD before exporting to ensure in-game looping.</li>
+                </ul>
+
+                <h3>Build Steps</h3>
+                <ul>
+                    <li><strong>Open the Creator:</strong> Click "Create Music Pack (Kingdom Hearts II - Re:Fined)".</li>
+                    <li><strong>Assign Tracks:</strong> Drag/drop or pick replacements for each vanilla slot.</li>
+                    <li><strong>Select Slots:</strong> Choose which template slot(s) to build and fill in pack name/description (defaults to English for missing locales).</li>
+                    <li><strong>Export:</strong> Click "Export Music Pack" and choose a save location.</li>
+                    <li><strong>Install:</strong> In OpenKH Mod Manager, install the exported archive and enable it before Build and Run.</li>
+                </ul>
+
+                <h3>Tips & Notes</h3>
+                <ul>
+                    <li>Non-SCD sources auto-convert during export but will not gain loop points—convert to SCD first for seamless loops.</li>
+                    <li>Set loop points in SCDs before pack creation to avoid in-game gaps.</li>
+                    <li>Keep backups of your packs and source audio.</li>
+                </ul>
+            </div>
+
             <h2 id="kh-rando-setup">Kingdom Hearts Randomizer Integration</h2>
             <div class="section">
                 <h3>Setting Up KH Rando</h3>
@@ -303,6 +329,23 @@ class HelpDialog(QDialog):
                     <li><strong>Status Indicators:</strong> Files show color coding based on KH Rando status</li>
                     <li><strong>Progress Tracking:</strong> Shows conversion progress when exporting multiple files</li>
                     <li><strong>Real-time Updates:</strong> KH Rando folder monitoring detects new folders instantly</li>
+                </ul>
+            </div>
+
+            <h2 id="export-options">Export Options</h2>
+            <div class="section">
+                <h3>Main Export Paths</h3>
+                <ul>
+                    <li><strong>Export Selected (E):</strong> Send highlighted library items to KH Rando with conversion prompts only if needed.</li>
+                    <li><strong>Export Missing (M):</strong> Fill only the KH Rando slots that are currently empty.</li>
+                    <li><strong>Drag and Drop:</strong> Drop files onto KH Rando folders in the sidebar for a quick export with visual feedback.</li>
+                </ul>
+
+                <h3>Quality & Conversion</h3>
+                <ul>
+                    <li>Non-SCD sources auto-convert; you can pick quality when conversion is required.</li>
+                    <li>SCD-to-SCD copies skip re-encoding for fastest export.</li>
+                    <li>Export dialog highlights duplicates so you avoid overwriting existing picks.</li>
                 </ul>
             </div>
             

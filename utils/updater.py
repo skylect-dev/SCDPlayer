@@ -41,10 +41,10 @@ class UpdateChecker(QThread):
                 release_data = json.loads(response.read().decode())
             
             latest_version = release_data['tag_name']
-            current_version = f"v{__version__.split(' ')[0]}"  # Extract version from "2.0.0 - 'Keyblade Harmony'"
+            current_version = f"v{__version__.split(' ')[0]}"
             
             # Compare versions (simple string comparison for now)
-            if latest_version != current_version:
+            if latest_version > current_version:
                 # Find the executable asset
                 exe_asset = None
                 zip_asset = None
