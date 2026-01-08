@@ -4,8 +4,9 @@ import logging
 import shutil
 import tempfile
 import zipfile
+import json
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 
 
 class TrackListParser:
@@ -206,6 +207,16 @@ class MusicPackExporter:
                 
                 # Update sys.yml with game_metadata (in-game display)
                 self._update_sys_yml(pack_root / 'msg' / 'sys.yml', game_metadata, language_names, language_descriptions)
+
+                # Write source mapping for reopen support
+                self._write_source_map(
+                    pack_root,
+                    mod_metadata,
+                    game_metadata,
+                    track_assignments,
+                    language_names or {},
+                    language_descriptions or {}
+                )
                 
                 if progress_callback:
                     progress_callback(85, 100, "Creating ZIP archive...")
@@ -221,6 +232,22 @@ class MusicPackExporter:
         except Exception as e:
             logging.error(f"Error exporting music pack: {e}", exc_info=True)
             return False
+
+    def load_pack(self, zip_path: str) -> Optional[Dict[str, Any]]:
+        """Load a music pack ZIP and return stored mapping/metadata if available"""
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                map_name = '.scdtoolkit_map.json'
+                if map_name not in zf.namelist():
+                    logging.warning("No source map found in pack")
+                    return None
+
+                data = json.loads(zf.read(map_name).decode('utf-8'))
+                data['source'] = zip_path
+                return data
+        except Exception as e:
+            logging.error(f"Failed to load pack mapping: {e}", exc_info=True)
+            return None
     
     def _update_mod_yml(self, mod_yml_path: Path, metadata: MusicPackMetadata):
         """Update mod.yml with pack metadata"""
@@ -357,6 +384,48 @@ class MusicPackExporter:
                 
         except Exception as e:
             logging.warning(f"Error updating sys.yml: {e}")
+
+    def _write_source_map(
+        self,
+        pack_root: Path,
+        mod_metadata: MusicPackMetadata,
+        game_metadata: MusicPackMetadata,
+        track_assignments: Dict[str, str],
+        language_names: Dict[str, str],
+        language_descriptions: Dict[str, str]
+    ) -> None:
+        """Write mapping file to allow reopening packs and restoring assignments"""
+        try:
+            map_path = pack_root / '.scdtoolkit_map.json'
+            map_data = {
+                "version": 1,
+                "slot": mod_metadata.slot,
+                "mod_metadata": {
+                    "title": mod_metadata.pack_name,
+                    "author": mod_metadata.author,
+                    "description": mod_metadata.description,
+                },
+                "game_metadata": {
+                    "name": game_metadata.pack_name,
+                    "description": game_metadata.description,
+                },
+                "language_names": language_names,
+                "language_descriptions": language_descriptions,
+                "tracks": []
+            }
+
+            for vanilla_filename, source_path in track_assignments.items():
+                map_data["tracks"].append({
+                    "vanilla_filename": vanilla_filename,
+                    "source_basename": os.path.basename(source_path),
+                    "source_path": source_path
+                })
+
+            with open(map_path, 'w', encoding='utf-8') as f:
+                json.dump(map_data, f, indent=2)
+
+        except Exception as e:
+            logging.warning(f"Failed to write source map: {e}")
     
     def _create_zip(self, source_dir: Path, output_file: str):
         """Create a ZIP archive from the pack directory"""

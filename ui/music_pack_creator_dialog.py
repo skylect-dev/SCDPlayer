@@ -192,6 +192,10 @@ class MusicPackCreatorDialog(QDialog):
         # Bottom buttons
         button_layout = QHBoxLayout()
         
+        open_btn = QPushButton('Open Music Pack...')
+        open_btn.clicked.connect(self.load_existing_pack)
+        button_layout.addWidget(open_btn)
+
         clear_btn = QPushButton('Clear All Assignments')
         clear_btn.clicked.connect(self.clear_all_assignments)
         button_layout.addWidget(clear_btn)
@@ -670,10 +674,14 @@ class MusicPackCreatorDialog(QDialog):
         )
         
         if reply == QMessageBox.Yes:
-            self.track_assignments.clear()
-            for row in self.track_rows.values():
-                row.combo.setCurrentIndex(0)
-            self.update_stats()
+            self.reset_assignments()
+
+    def reset_assignments(self):
+        """Reset assignments without prompt"""
+        self.track_assignments.clear()
+        for row in self.track_rows.values():
+            row.combo.setCurrentIndex(0)
+        self.update_stats()
     
     def update_stats(self):
         """Update assignment statistics"""
@@ -822,3 +830,97 @@ class MusicPackCreatorDialog(QDialog):
                               f'Failed to create music pack:\n{str(e)}')
         finally:
             progress.close()
+
+    def load_existing_pack(self):
+        """Load a previously exported music pack and restore assignments"""
+        zip_path, _ = QFileDialog.getOpenFileName(
+            self,
+            'Open Music Pack',
+            '',
+            'ZIP Files (*.zip);;All Files (*.*)'
+        )
+
+        if not zip_path:
+            return
+
+        data = self.exporter.load_pack(zip_path)
+        if not data:
+            show_themed_message(
+                self,
+                QMessageBox.Warning,
+                'No Mapping Found',
+                'This pack does not contain source mapping data, so assignments cannot be restored.'
+            )
+            return
+
+        # Reset current assignments
+        self.reset_assignments()
+
+        # Restore metadata
+        mod_meta = data.get('mod_metadata', {})
+        game_meta = data.get('game_metadata', {})
+        self.mod_title_input.setText(mod_meta.get('title', ''))
+        self.mod_author_input.setText(mod_meta.get('author', ''))
+        self.mod_description_input.setPlainText(mod_meta.get('description', ''))
+        self.game_name_input.setText(game_meta.get('name', ''))
+        self.game_description_input.setPlainText(game_meta.get('description', ''))
+
+        # Restore language values
+        self.name_lang_values = data.get('language_names', {}) or {}
+        self.desc_lang_values = data.get('language_descriptions', {}) or {}
+        self.update_lang_indicator(self.name_lang_indicator, self.name_lang_values)
+        self.update_lang_indicator(self.desc_lang_indicator, self.desc_lang_values)
+
+        # Restore slot selection
+        slot_value = data.get('slot', 1)
+        if slot_value == 0:
+            self.slot0_radio.setChecked(True)
+        elif slot_value == 1:
+            self.slot1_radio.setChecked(True)
+        elif slot_value == 2:
+            self.slot2_radio.setChecked(True)
+        else:
+            self.slot1_radio.setChecked(True)
+
+        # Build lookup for library files by basename
+        library_by_basename = {}
+        for path in self.library_files:
+            base = os.path.basename(path).lower()
+            library_by_basename.setdefault(base, []).append(path)
+
+        # Restore assignments using stored mapping
+        matched = 0
+        missing = []
+        for track in data.get('tracks', []):
+            vanilla = track.get('vanilla_filename')
+            source_path = track.get('source_path')
+            source_base = (track.get('source_basename') or '').lower()
+
+            chosen_path = None
+            if source_path and os.path.exists(source_path):
+                chosen_path = source_path
+            elif source_base and source_base in library_by_basename:
+                chosen_path = library_by_basename[source_base][0]
+
+            if vanilla and chosen_path:
+                self.assign_track(vanilla, chosen_path)
+                matched += 1
+            elif vanilla:
+                missing.append((vanilla, track.get('source_basename', '?')))
+
+        self.update_stats()
+
+        # Show summary
+        summary = f"Restored {matched} assignments."
+        if missing:
+            missing_list = '\n'.join([f"{v} ← {src}" for v, src in missing[:10]])
+            if len(missing) > 10:
+                missing_list += f"\n...and {len(missing) - 10} more"
+            summary += f"\nCould not find matches for {len(missing)} tracks:\n{missing_list}"
+
+        show_themed_message(
+            self,
+            QMessageBox.Information,
+            'Music Pack Loaded',
+            summary
+        )
