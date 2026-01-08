@@ -166,10 +166,9 @@ class DotNetInstallerThread(QThread):
                 logging.info(f".NET runtime installed successfully: {version}")
                 self.finished.emit(True, f".NET runtime installed successfully (version {version})")
             else:
-                # Installation completed but detection failed (common - requires restart)
-                logging.warning("Installation completed but .NET runtime not detected in current process")
                 # Still report success - the installer completed successfully
-                self.finished.emit(True, ".NET runtime installation completed. App restart required to apply changes.")
+                logging.info(".NET installer completed, but runtime not detected yet. Normal.")
+                self.finished.emit(True, ".NET runtime installation completed.")
                 
         except Exception as e:
             logging.error(f"Error during .NET installation: {e}", exc_info=True)
@@ -276,8 +275,8 @@ def prompt_dotnet_install(parent_widget) -> bool:
             "The .NET 5.0 Desktop Runtime installer will be downloaded (~50 MB) and installed automatically.\n\n"
             "⚠️ NOTE: A UAC (User Account Control) prompt will appear.\n"
             "If you don't see it, check your taskbar - it may be minimized.\n\n"
-            "The app will automatically restart after installation completes.\n\n"
-            "Thternative: You can download it manually from:\n"
+            "This is a one-time setup and only takes a minute.\n\n"
+            "Alternative: You can download it manually from:\n"
             f"{DotNetRuntimeChecker.DOWNLOAD_URL}"
         )
     
