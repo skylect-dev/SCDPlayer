@@ -116,14 +116,23 @@ jobs:
         
     - name: Set version for naming
       id: set_version
+      shell: pwsh
       run: |
-        # Set version for artifact naming
-        if ("${{ github.ref_type }}" -eq "tag") {
-          $version = "${{ github.ref_name }}"
-        } else {
-          $version = "dev-$(Get-Date -Format 'yyyy-MM-dd-HHmm')"
+        # Read __version__ from version.py
+        $versionLine = Get-Content version.py | Where-Object { $_ -match '__version__' } | Select-Object -First 1
+        if (-not $versionLine) {
+          Write-Host "Could not find __version__ in version.py"
+          exit 1
         }
-        
+
+        $match = [regex]::Match($versionLine, '"([^"]+)"')
+        if (-not $match.Success) {
+          Write-Host "Could not parse version string from: $versionLine"
+          exit 1
+        }
+
+        $version = $match.Groups[1].Value
+        Write-Host "Using version from version.py: $version"
         echo "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
     
     - name: Archive Release
