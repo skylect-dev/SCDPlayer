@@ -339,11 +339,12 @@ class MusicPackCreatorDialog(QDialog):
                     combo_ref.addItem(display_name, file_path)
                 combo_ref.setProperty('_populated', True)
         
-        # Populate on first click
-        def on_combo_show():
+        # Populate on first click by wrapping showPopup without returning a value
+        orig_showPopup = combo.showPopup
+        def wrapped_showPopup():
             populate_combo(combo)
-        
-        combo.showPopup = lambda c=combo, orig=combo.showPopup: (populate_combo(c), orig())
+            orig_showPopup()
+        combo.showPopup = wrapped_showPopup
         
         combo.currentIndexChanged.connect(lambda idx, fn=filename: self.on_assignment_changed(fn, idx))
         combo.setMinimumWidth(300)

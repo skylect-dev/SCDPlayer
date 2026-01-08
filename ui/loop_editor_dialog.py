@@ -40,6 +40,39 @@ class SaveWorker(QThread):
             self.error.emit(str(e))
 
 
+class LoudnessWorker(QThread):
+    """Background worker for loudness analysis and normalization"""
+
+    analyze_finished = pyqtSignal(object)  # true loudness dict or None
+    normalize_finished = pyqtSignal(bool, object)  # success, true loudness dict or None
+    error = pyqtSignal(str)
+
+    def __init__(self, mode: str, wav_path: str, target_i: float = -15.0, target_tp: float = -1.0):
+        super().__init__()
+        self.mode = mode
+        self.wav_path = wav_path
+        self.target_i = target_i
+        self.target_tp = target_tp
+
+    def run(self):
+        try:
+            analyzer = AudioAnalyzer()
+            if self.mode == "analyze":
+                loud = analyzer.measure_true_loudness(self.wav_path)
+                self.analyze_finished.emit(loud)
+            elif self.mode == "normalize":
+                ok_path = analyzer.normalize_file_loudness(self.wav_path, target_i=self.target_i, target_tp=self.target_tp)
+                if not ok_path:
+                    self.normalize_finished.emit(False, None)
+                    return
+                loud = analyzer.measure_true_loudness(self.wav_path)
+                self.normalize_finished.emit(True, loud)
+            else:
+                self.error.emit(f"Unknown loudness worker mode: {self.mode}")
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class CustomVolumeDialog(QDialog):
     """Dialog for custom volume adjustment settings"""
     
@@ -84,63 +117,81 @@ Real game audio averages around -13 to -18dB RMS""")
         
         layout.addWidget(method_group)
         
-        # Target level input
-        target_group = QGroupBox("Target Level")
-        target_layout = QVBoxLayout(target_group)
-        
-        target_layout.addWidget(QLabel("Target dB level:"))
-        
-        input_layout = QHBoxLayout()
-        self.target_spin = QDoubleSpinBox()
-        self.target_spin.setRange(-60.0, 0.0)
-        self.target_spin.setValue(-0.2)  # Updated to match real game audio
-        self.target_spin.setSuffix(" dB")
-        self.target_spin.setDecimals(1)
-        self.target_spin.setSingleStep(0.1)
-        
-        input_layout.addWidget(self.target_spin)
-        
-        # Preset buttons
-        preset_layout = QHBoxLayout()
-        
-        game_preset = QPushButton("Conservative (-0.6dB)")
-        game_preset.clicked.connect(lambda: self.target_spin.setValue(-0.6))
-        game_preset.setToolTip("Conservative peak level like some game audio")
-        game_preset.setStyleSheet("QPushButton { background-color: #2a5a2a; }")
-        
-        typical_preset = QPushButton("Typical (-0.2dB)")  
-        typical_preset.clicked.connect(lambda: self.target_spin.setValue(-0.2))
-        typical_preset.setToolTip("Most common game audio peak level")
-        typical_preset.setStyleSheet("QPushButton { background-color: #5a5a2a; }")
-        
-        max_preset = QPushButton("Maximum (0.0dB)")
-        max_preset.clicked.connect(lambda: self.target_spin.setValue(0.0))
-        max_preset.setToolTip("Maximum level with zero headroom (some game audio)")
-        max_preset.setStyleSheet("QPushButton { background-color: #5a2a2a; }")
-        
-        preset_layout.addWidget(game_preset)
-        preset_layout.addWidget(typical_preset)
-        preset_layout.addWidget(max_preset)
-        
-        target_layout.addLayout(input_layout)
-        target_layout.addLayout(preset_layout)
-        
-        layout.addWidget(target_group)
-        
-        # Buttons
-        button_layout = QHBoxLayout()
-        
-        self.ok_btn = QPushButton("Apply")
-        self.ok_btn.clicked.connect(self.accept)
-        self.ok_btn.setDefault(True)
-        
-        self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.clicked.connect(self.reject)
-        
-        button_layout.addStretch()
-        button_layout.addWidget(self.ok_btn)
-        button_layout.addWidget(self.cancel_btn)
-        
+        try:
+            analyzer = AudioAnalyzer()
+
+            # Primary: true loudness via ffmpeg loudnorm
+            wav_path = self.loop_manager.get_wav_path()
+            true_loudness = analyzer.measure_true_loudness(wav_path) if wav_path else None
+
+            # Fallback: legacy in-memory analysis
+            levels = analyzer.analyze_audio_levels(
+                self.waveform.audio_data,
+                self.waveform.sample_rate
+            )
+
+            analysis_text = "=== AUDIO LEVEL ANALYSIS ===\n\n"
+
+            if true_loudness:
+                analysis_text += f"Integrated (LUFS): {true_loudness['input_i']:.1f} LUFS\n"
+                analysis_text += f"True Peak       : {true_loudness['input_tp']:.1f} dBTP\n"
+                analysis_text += f"Loudness Range  : {true_loudness['input_lra']:.1f} dB\n"
+                analysis_text += f"Threshold       : {true_loudness['input_thresh']:.1f} dB\n"
+                analysis_text += f"Target Offset   : {true_loudness['target_offset']:.2f} dB\n"
+            else:
+                # Note: approximate fallback
+                analysis_text += "(Approximate; ffmpeg loudnorm unavailable)\n"
+                level_dict = levels.to_dict()
+                for key, value in level_dict.items():
+                    analysis_text += f"{key:<15}: {value}\n"
+
+            # Recommendations based on true metrics when available
+            analysis_text += "\n=== RECOMMENDATIONS ===\n"
+            recs = []
+            if true_loudness:
+                tp = true_loudness['input_tp']
+                i_val = true_loudness['input_i']
+                if tp > -0.1:
+                    recs.append(("warning", f"True peak {tp:.1f} dBTP may clip. Reduce by {tp + 1.0:.1f} dB to hit -1 dBTP."))
+                elif tp > -1.0:
+                    recs.append(("info", f"True peak {tp:.1f} dBTP is near headroom."))
+                if -18.5 <= i_val <= -14.0:
+                    recs.append(("info", f"Integrated loudness {i_val:.1f} LUFS matches target range."))
+                elif i_val > -13.5:
+                    recs.append(("warning", f"Integrated loudness {i_val:.1f} LUFS is hot; consider lowering toward -15 LUFS."))
+                else:
+                    recs.append(("info", f"Integrated loudness {i_val:.1f} LUFS is below target; LUFS normalize to -15 LUFS."))
+            else:
+                recommendations = analyzer.get_gain_recommendation(levels)
+                for rec in recommendations['recommendations']:
+                    icon = "⚠️" if rec['type'] == 'warning' else "❌" if rec['type'] == 'error' else "ℹ️"
+                    recs.append((icon, f"{rec['message']} → {rec['suggestion']}"))
+
+            if recs:
+                for rec in recs:
+                    icon = "⚠️" if rec[0] == "warning" else "ℹ️"
+                    analysis_text += f"\n{icon} {rec[1]}\n"
+            else:
+                analysis_text += "\n✅ Audio levels look good!\n"
+
+            # File info
+            file_info = self.loop_manager.get_file_info()
+            duration_seconds = file_info.get('total_samples', 0) / file_info.get('sample_rate', 44100)
+            analysis_text += f"\n=== FILE INFO ===\n"
+            analysis_text += f"Sample Rate    : {file_info.get('sample_rate', 0)} Hz\n"
+            analysis_text += f"Duration       : {self.format_time(duration_seconds)}\n"
+            analysis_text += f"Total Samples  : {file_info.get('total_samples', 0):,}\n"
+
+            self.analysis_text.setText(analysis_text)
+            logging.info("Audio analysis completed (true loudness shown where available)")
+
+            # Enable buttons after analysis
+            self.adjust_volume_btn.setEnabled(True)
+            self.reset_volume_btn.setEnabled(self._volume_adjusted)
+
+        except Exception as e:
+            logging.error(f"Error during audio analysis: {e}")
+            self.analysis_text.setText(f"Error analyzing audio: {str(e)}")
         layout.addLayout(button_layout)
         
         # Connect method change to update recommended values
@@ -1542,21 +1593,9 @@ class LoopEditorDialog(QDialog):
         # Volume adjustment buttons
         volume_btn_layout = QHBoxLayout()
         
-        self.auto_volume_btn = QPushButton("Auto Volume")
-        self.auto_volume_btn.clicked.connect(self.auto_volume_adjustment)
-        self.auto_volume_btn.setToolTip("Intelligent auto-leveling that targets realistic game audio levels (-0.2dB peak, -15dB RMS typical)")
-        
-        self.normalize_peak_btn = QPushButton("Normalize Peak")
-        self.normalize_peak_btn.clicked.connect(self.normalize_peak)
-        self.normalize_peak_btn.setToolTip("Normalize to -0.2dB peak level (typical game audio)")
-        
-        self.normalize_rms_btn = QPushButton("Normalize RMS") 
-        self.normalize_rms_btn.clicked.connect(self.normalize_rms)
-        self.normalize_rms_btn.setToolTip("Normalize to -15dB RMS level (game audio range)")
-        
-        self.custom_volume_btn = QPushButton("Custom Volume")
-        self.custom_volume_btn.clicked.connect(self.custom_volume_adjustment)
-        self.custom_volume_btn.setToolTip("Set custom target levels for peak or RMS normalization")
+        self.adjust_volume_btn = QPushButton("Adjust Volume (-15 LUFS)")
+        self.adjust_volume_btn.clicked.connect(self.adjust_volume_lufs)
+        self.adjust_volume_btn.setToolTip("True loudness normalize to -15 LUFS / -1 dBTP (ffmpeg loudnorm)")
         
         self.reset_volume_btn = QPushButton("Reset Volume")
         self.reset_volume_btn.clicked.connect(self.reset_volume_adjustment)
@@ -1602,25 +1641,16 @@ class LoopEditorDialog(QDialog):
             }
         """
         
-        self.auto_volume_btn.setStyleSheet(volume_btn_style)
-        self.normalize_peak_btn.setStyleSheet(volume_btn_style)
-        self.normalize_rms_btn.setStyleSheet(volume_btn_style)
-        self.custom_volume_btn.setStyleSheet(volume_btn_style)
+        self.adjust_volume_btn.setStyleSheet(volume_btn_style)
         self.reset_volume_btn.setStyleSheet(reset_btn_style)
         
-        volume_btn_layout.addWidget(self.auto_volume_btn)
-        volume_btn_layout.addWidget(self.normalize_peak_btn)
-        volume_btn_layout.addWidget(self.normalize_rms_btn)
-        volume_btn_layout.addWidget(self.custom_volume_btn)
+        volume_btn_layout.addWidget(self.adjust_volume_btn)
         volume_btn_layout.addWidget(self.reset_volume_btn)
         
         analysis_layout.addLayout(volume_btn_layout)
         
         # Initially disable volume buttons until audio is loaded
-        self.auto_volume_btn.setEnabled(False)
-        self.normalize_peak_btn.setEnabled(False)
-        self.normalize_rms_btn.setEnabled(False)
-        self.custom_volume_btn.setEnabled(False)
+        self.adjust_volume_btn.setEnabled(False)
         self.reset_volume_btn.setEnabled(False)
         
         controls_layout.addWidget(self.analysis_group, 1)  # Give analysis group more space with stretch factor
@@ -2388,6 +2418,100 @@ class LoopEditorDialog(QDialog):
         if self._volume_adjusted and self._temp_wav_path and os.path.exists(self._temp_wav_path):
             return self._temp_wav_path
         return self.loop_manager.get_wav_path()
+
+    def _start_loudness_worker(self, mode: str, wav_path: str):
+        """Start loudness analysis/normalization in the background"""
+        try:
+            if hasattr(self, '_loudness_worker') and self._loudness_worker and self._loudness_worker.isRunning():
+                return  # already running
+
+            worker = LoudnessWorker(mode, wav_path, target_i=-15.0, target_tp=-1.0)
+            worker.analyze_finished.connect(self._on_true_loudness_ready)
+            worker.normalize_finished.connect(self._on_loudnorm_finished)
+            worker.error.connect(self._on_loudness_error)
+            self._loudness_worker = worker
+            worker.start()
+        except Exception as e:
+            logging.error(f"Failed to start loudness worker: {e}")
+
+    def _on_true_loudness_ready(self, loudness):
+        """Handle completion of background true loudness analysis"""
+        try:
+            analysis_text = "=== AUDIO LEVEL ANALYSIS ===\n\n"
+            if loudness:
+                analysis_text += f"Integrated (LUFS): {loudness['input_i']:.1f} LUFS\n"
+                analysis_text += f"True Peak       : {loudness['input_tp']:.1f} dBTP\n"
+                analysis_text += f"Loudness Range  : {loudness['input_lra']:.1f} dB\n"
+                analysis_text += f"Threshold       : {loudness['input_thresh']:.1f} dB\n"
+                analysis_text += f"Target Offset   : {loudness['target_offset']:.2f} dB\n"
+
+                # Recommendations
+                analysis_text += "\n=== RECOMMENDATIONS ===\n"
+                tp = loudness['input_tp']
+                i_val = loudness['input_i']
+                if tp > -0.1:
+                    analysis_text += f"\n⚠️ True peak {tp:.1f} dBTP may clip. Reduce ~{tp + 1.0:.1f} dB to hit -1 dBTP.\n"
+                elif tp > -1.0:
+                    analysis_text += f"\nℹ️ True peak {tp:.1f} dBTP is near headroom.\n"
+                if -18.5 <= i_val <= -14.0:
+                    analysis_text += f"\nℹ️ Integrated loudness {i_val:.1f} LUFS matches target range.\n"
+                elif i_val > -13.5:
+                    analysis_text += f"\n⚠️ Integrated loudness {i_val:.1f} LUFS is hot; consider lowering toward -15 LUFS.\n"
+                else:
+                    analysis_text += f"\nℹ️ Integrated loudness {i_val:.1f} LUFS is below target; normalize to -15 LUFS.\n"
+            else:
+                analysis_text += "True loudness unavailable (ffmpeg not found).\n"
+
+            # Append file info
+            file_info = self.loop_manager.get_file_info()
+            duration_seconds = file_info.get('total_samples', 0) / file_info.get('sample_rate', 44100)
+            analysis_text += f"\n=== FILE INFO ===\n"
+            analysis_text += f"Sample Rate    : {file_info.get('sample_rate', 0)} Hz\n"
+            analysis_text += f"Duration       : {self.format_time(duration_seconds)}\n"
+            analysis_text += f"Total Samples  : {file_info.get('total_samples', 0):,}\n"
+
+            self.analysis_text.setText(analysis_text)
+        except Exception as e:
+            logging.error(f"Error updating loudness analysis: {e}")
+
+    def _on_loudnorm_finished(self, success: bool, loudness):
+        """Handle completion of background loudness normalization"""
+        try:
+            # Re-enable button
+            self.adjust_volume_btn.setEnabled(True)
+
+            if not success:
+                QMessageBox.critical(self, "Normalization Failed", "Could not apply loudness normalization. Check logs for details.")
+                return
+
+            # Restore loop metadata
+            start, end = getattr(self, '_pending_loop_restore', (0, 0))
+            if end > start:
+                self.loop_manager.set_loop_points(start, end)
+
+            # Refresh loop manager info
+            wav_path = self.loop_manager.get_wav_path()
+            try:
+                self.loop_manager._analyze_wav_file(wav_path)
+            except Exception:
+                pass
+
+            # Reload audio and refresh UI
+            self.load_audio_data()
+            self._volume_adjusted = True
+            self.reset_volume_btn.setEnabled(True)
+            self._force_media_refresh()
+            QTimer.singleShot(100, self.analyze_audio)
+
+            QMessageBox.information(self, "Loudness Normalized", "Applied -15 LUFS / -1 dBTP normalization (background) and preserved loop points.")
+        except Exception as e:
+            logging.error(f"Error finalizing loudnorm: {e}")
+
+    def _on_loudness_error(self, msg: str):
+        """Handle worker errors"""
+        logging.error(f"Loudness worker error: {msg}")
+        self.adjust_volume_btn.setEnabled(True)
+        QMessageBox.critical(self, "Loudness Error", msg)
     
     def _cleanup_temp_files(self):
         """Clean up temporary files"""
@@ -2865,58 +2989,39 @@ class LoopEditorDialog(QDialog):
             return
         
         try:
-            # Initialize audio analyzer
             analyzer = AudioAnalyzer()
-            
-            # Analyze the audio
+
+            # Quick approximate while we spin up true loudness worker
             levels = analyzer.analyze_audio_levels(
-                self.waveform.audio_data, 
+                self.waveform.audio_data,
                 self.waveform.sample_rate
             )
-            
-            # Get gain recommendations
-            recommendations = analyzer.get_gain_recommendation(levels)
-            
-            # Format the results
-            analysis_text = "=== AUDIO LEVEL ANALYSIS ===\n\n"
-            
-            # Display level information
-            level_dict = levels.to_dict()
-            for key, value in level_dict.items():
-                analysis_text += f"{key:<15}: {value}\n"
-            
-            analysis_text += "\n=== RECOMMENDATIONS ===\n"
-            
-            if recommendations['recommendations']:
-                for rec in recommendations['recommendations']:
-                    icon = "⚠️" if rec['type'] == 'warning' else "❌" if rec['type'] == 'error' else "ℹ️"
-                    analysis_text += f"\n{icon} {rec['message']}\n"
-                    analysis_text += f"   → {rec['suggestion']}\n"
-            else:
-                analysis_text += "\n✅ Audio levels look good!"
-            
-            # Add file information
+
+            # File info
             file_info = self.loop_manager.get_file_info()
             duration_seconds = file_info.get('total_samples', 0) / file_info.get('sample_rate', 44100)
-            
-            analysis_text += f"\n=== FILE INFO ===\n"
+
+            analysis_text = "=== AUDIO LEVEL ANALYSIS ===\n\n"
+            analysis_text += "Calculating true loudness (ffmpeg loudnorm)...\n"
+            analysis_text += f"Approx Peak    : {levels.peak_db:.1f} dB\n"
+            analysis_text += f"Approx RMS     : {levels.rms_db:.1f} dB\n"
+
+            analysis_text += "\n=== FILE INFO ===\n"
             analysis_text += f"Sample Rate    : {file_info.get('sample_rate', 0)} Hz\n"
             analysis_text += f"Duration       : {self.format_time(duration_seconds)}\n"
             analysis_text += f"Total Samples  : {file_info.get('total_samples', 0):,}\n"
-            
-            # Display the results
+
             self.analysis_text.setText(analysis_text)
-            
-            logging.info(f"Audio analysis completed - Peak: {levels.peak_db:.1f}dB, RMS: {levels.rms_db:.1f}dB")
-            
-            # Enable volume adjustment buttons after analysis
-            self.auto_volume_btn.setEnabled(True)
-            self.normalize_peak_btn.setEnabled(True)
-            self.normalize_rms_btn.setEnabled(True)
-            self.custom_volume_btn.setEnabled(True)
-            # Reset button only enabled if volume was adjusted
+
+            # Start background true loudness worker
+            wav_path = self.loop_manager.get_wav_path()
+            if wav_path:
+                self._start_loudness_worker(mode="analyze", wav_path=wav_path)
+
+            # Enable consolidated volume button after kick-off
+            self.adjust_volume_btn.setEnabled(True)
             self.reset_volume_btn.setEnabled(self._volume_adjusted)
-            
+
         except Exception as e:
             logging.error(f"Error during audio analysis: {e}")
             self.analysis_text.setText(f"Error analyzing audio: {str(e)}")
@@ -2932,6 +3037,21 @@ class LoopEditorDialog(QDialog):
     def normalize_rms(self):
         """Normalize audio to -15dB RMS level (game audio range)"""
         self._apply_volume_adjustment("rms")
+
+    def adjust_volume_lufs(self):
+        """Normalize audio to -15 LUFS / -1 dBTP using ffmpeg loudnorm"""
+        wav_path = self.loop_manager.get_wav_path()
+        if not wav_path:
+            QMessageBox.warning(self, "No Audio", "No audio file available for loudness normalization")
+            return
+        # Preserve current loop points so we can re-apply metadata after normalization
+        self._pending_loop_restore = self.loop_manager.get_loop_points()
+
+        # Disable button to prevent re-entry and show progress text
+        self.adjust_volume_btn.setEnabled(False)
+        self.analysis_text.setText("Normalizing to -15 LUFS / -1 dBTP (background)...")
+
+        self._start_loudness_worker(mode="normalize", wav_path=wav_path)
     
     def custom_volume_adjustment(self):
         """Open custom volume adjustment dialog"""
@@ -3075,10 +3195,7 @@ class LoopEditorDialog(QDialog):
         has_audio = (self.waveform.audio_data is not None and 
                     len(self.waveform.audio_data) > 0)
         
-        self.auto_volume_btn.setEnabled(has_audio)
-        self.normalize_peak_btn.setEnabled(has_audio)
-        self.normalize_rms_btn.setEnabled(has_audio)
-        self.custom_volume_btn.setEnabled(has_audio)
+        self.adjust_volume_btn.setEnabled(has_audio)
         # Reset button only enabled if volume was adjusted
         self.reset_volume_btn.setEnabled(has_audio and self._volume_adjusted)
     

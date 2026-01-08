@@ -3,9 +3,15 @@ Audio Analysis Module for SCDToolkit
 Provides comprehensive audio level analysis including peak, RMS, LUFS, and dynamic range
 Also includes auto volume adjustment and normalization features
 """
-import numpy as np
+import json
 import logging
+import subprocess
+import os
+import tempfile
+from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
+
+import numpy as np
 from dataclasses import dataclass
 
 
@@ -62,6 +68,156 @@ class AudioAnalyzer:
     
     def __init__(self):
         self.sample_rate = 44100
+
+    def _ffmpeg_path(self) -> Path:
+        """Get the bundled ffmpeg.exe path."""
+        return Path(__file__).parent.parent / "ffmpeg" / "bin" / "ffmpeg.exe"
+
+    def measure_true_loudness(self, wav_path: str, target_i: float = -15.0, target_tp: float = -1.0) -> Optional[Dict[str, float]]:
+        """Run ffmpeg loudnorm analysis to get true LUFS and true peak."""
+        try:
+            ffmpeg_path = self._ffmpeg_path()
+            if not ffmpeg_path.exists():
+                logging.warning("ffmpeg not found for loudness analysis")
+                return None
+
+            # Preserve original format
+            try:
+                import wave
+                with wave.open(wav_path, 'rb') as wf:
+                    channels = wf.getnchannels()
+                    sample_rate = wf.getframerate()
+                    sampwidth = wf.getsampwidth()
+                if sampwidth == 1:
+                    sample_fmt = "u8"
+                elif sampwidth == 2:
+                    sample_fmt = "s16"
+                elif sampwidth == 3:
+                    sample_fmt = "s32"
+                else:
+                    sample_fmt = "s32"
+            except Exception as e:
+                logging.warning(f"Could not read WAV format, defaulting to s16: {e}")
+                channels = 2
+                sample_rate = 44100
+                sample_fmt = "s16"
+
+            cmd = [
+                str(ffmpeg_path),
+                "-hide_banner", "-y",
+                "-i", wav_path,
+                "-af", f"loudnorm=I={target_i}:TP={target_tp}:LRA=11:print_format=json",
+                "-ar", str(sample_rate),
+                "-ac", str(channels),
+                "-sample_fmt", sample_fmt,
+                "-f", "null", "-"
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            if result.returncode != 0:
+                logging.error(f"ffmpeg loudnorm analysis failed: {result.stderr}")
+                return None
+
+            # ffmpeg writes the JSON block to stderr; extract between the first '{' and last '}'
+            err = result.stderr
+            start = err.find('{')
+            end = err.rfind('}')
+            if start == -1 or end == -1 or end <= start:
+                logging.error("Could not parse loudnorm analysis output (no JSON block found)")
+                return None
+
+            loudnorm_json = err[start:end + 1]
+            try:
+                data = json.loads(loudnorm_json)
+            except Exception as parse_err:
+                logging.error(f"Could not parse loudnorm analysis JSON: {parse_err}")
+                return None
+            return {
+                "input_i": float(data.get("input_i", 0.0)),
+                "input_tp": float(data.get("input_tp", 0.0)),
+                "input_lra": float(data.get("input_lra", 0.0)),
+                "input_thresh": float(data.get("input_thresh", 0.0)),
+                "target_offset": float(data.get("target_offset", 0.0)),
+            }
+        except Exception as e:
+            logging.error(f"True loudness analysis failed: {e}")
+            return None
+
+    def normalize_file_loudness(self, wav_path: str, target_i: float = -15.0, target_tp: float = -1.0) -> Optional[str]:
+        """
+        Apply two-pass ffmpeg loudnorm to a WAV file in place and return the path.
+
+        This uses true LUFS and true peak normalization for accurate in-game loudness.
+        """
+        try:
+            ffmpeg_path = self._ffmpeg_path()
+            if not ffmpeg_path.exists():
+                logging.error("ffmpeg not found for loudness normalization")
+                return None
+
+            # Read original format to preserve sample rate, channels, and bit depth
+            try:
+                import wave
+                with wave.open(wav_path, 'rb') as wf:
+                    channels = wf.getnchannels()
+                    sample_rate = wf.getframerate()
+                    sampwidth = wf.getsampwidth()
+                if sampwidth == 1:
+                    sample_fmt = "u8"
+                elif sampwidth == 2:
+                    sample_fmt = "s16"
+                elif sampwidth == 3:
+                    sample_fmt = "s32"  # ffmpeg doesn't have s24 sample_fmt, s32 keeps headroom
+                else:
+                    sample_fmt = "s32"
+            except Exception as e:
+                logging.warning(f"Could not read WAV format, defaulting to s16: {e}")
+                channels = 2
+                sample_rate = 44100
+                sample_fmt = "s16"
+
+            # First pass: analyze
+            analyze = self.measure_true_loudness(wav_path, target_i=target_i, target_tp=target_tp)
+            if not analyze:
+                return None
+
+            # Prepare temp output to avoid corrupting the source on failure
+            temp_fd, temp_out = tempfile.mkstemp(suffix="_loudnorm.wav", prefix="scdtoolkit_")
+            os.close(temp_fd)
+            Path(temp_out).unlink(missing_ok=True)  # will be written by ffmpeg
+
+            filter_second_pass = (
+                f"loudnorm=I={target_i}:TP={target_tp}:LRA=11:"
+                f"measured_I={analyze['input_i']}:"
+                f"measured_LRA={analyze['input_lra']}:"
+                f"measured_TP={analyze['input_tp']}:"
+                f"measured_thresh={analyze['input_thresh']}:"
+                f"offset={analyze['target_offset']}:"
+                f"print_format=summary"
+            )
+
+            cmd_second = [
+                str(ffmpeg_path),
+                "-hide_banner", "-y",
+                "-i", wav_path,
+                "-af", filter_second_pass,
+                "-ar", str(sample_rate),
+                "-ac", str(channels),
+                "-sample_fmt", sample_fmt,
+                str(temp_out)
+            ]
+
+            result = subprocess.run(cmd_second, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            if result.returncode != 0:
+                logging.error(f"ffmpeg loudnorm second pass failed: {result.stderr}")
+                return None
+
+            # Replace the original file atomically
+            Path(temp_out).replace(wav_path)
+            return wav_path
+        except Exception as e:
+            logging.error(f"Loudness normalization failed: {e}")
+            return None
         
     def analyze_audio_levels(self, audio_data: np.ndarray, sample_rate: int = 44100) -> AudioLevels:
         """
