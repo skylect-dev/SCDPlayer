@@ -3,10 +3,9 @@ import math
 import logging
 from PyQt5.QtWidgets import QLabel, QSplashScreen, QSlider
 from PyQt5.QtCore import QTimer, Qt, QPropertyAnimation, QEasingCurve, pyqtProperty
-from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QPolygon, QPen, QLinearGradient, QRadialGradient
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QPolygon, QPen, QRadialGradient
 from PyQt5.QtCore import QPoint, QRect
 from PyQt5.QtSvg import QSvgRenderer
-from version import __version__
 
 
 class ScrollingLabel(QLabel):
@@ -75,148 +74,61 @@ class ScrollingLabel(QLabel):
 
 
 class SplashScreen(QSplashScreen):
-    """Custom splash screen for SCDToolkit"""
+    """Minimal splash showing a pulsing app icon."""
+
     def __init__(self):
-        # Initialize properties first
-        self._message = "Loading SCDToolkit..."
-        
-        # Create base splash screen pixmap ONCE (cached)
-        self._base_pixmap = self.create_base_pixmap()
-        splash_pixmap = self.create_splash_with_message(self._message)
-        super().__init__(splash_pixmap)
+        pixmap = self._create_base_pixmap()
+        super().__init__(pixmap)
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
-    
-    def showMessage(self, message, alignment=Qt.AlignLeft, color=Qt.black):
-        """Override to efficiently update message without redrawing everything"""
-        self._message = message
-        # Only redraw the message on top of cached base pixmap
-        new_pixmap = self.create_splash_with_message(message)
-        self.setPixmap(new_pixmap)
-    
-    def finish(self, widget):
-        """Override finish to clean up"""
-        super().finish(widget)
-    
-    def create_base_pixmap(self):
-        """Create the base splash screen image ONCE (without message text)"""
-        # Create larger pixmap with transparent background
-        width = 550
-        height = 420  # Increased to prevent text cutoff
-        pixmap = QPixmap(width, height)
+
+        self._fade = None
+
+    def _create_base_pixmap(self):
+        size = 220
+        pixmap = QPixmap(size, size)
         pixmap.fill(Qt.transparent)
-        
-        # Create painter
+
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.Antialiasing)
-        
-        # Create rounded rectangle path for clipping
-        from PyQt5.QtGui import QPainterPath
-        path = QPainterPath()
-        path.addRoundedRect(0, 0, width, height, 20, 20)
-        
-        # Clip to rounded rectangle
-        painter.setClipPath(path)
-        
-        # Dark gradient background
-        gradient = QLinearGradient(0, 0, width, height)
-        gradient.setColorAt(0, QColor("#1e293b"))  # Dark slate
-        gradient.setColorAt(1, QColor("#0f172a"))  # Very dark blue
-        
-        painter.fillRect(0, 0, width, height, gradient)
-        
-        # Static radial glow in center
-        center_x = width // 2
-        center_y = height // 2
-        
-        center_gradient = QRadialGradient(center_x, center_y, 220)
-        glow_color = QColor("#22d3ee")
-        glow_color.setAlphaF(0.3)
-        center_gradient.setColorAt(0, glow_color)
-        center_gradient.setColorAt(0.4, QColor("#1e293b"))
-        center_gradient.setColorAt(1, QColor("#0f172a"))
-        
-        # Apply glow without clipping
-        painter.setCompositionMode(QPainter.CompositionMode_Overlay)
-        painter.fillRect(pixmap.rect(), center_gradient)
-        painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
-        
-        # Static sound waves in background
-        for i in range(4):  # 4 rings for good visual effect
-            wave_radius = 85 + i * 30
-            wave_opacity = 0.3 - i * 0.05  # Fade out as rings get larger
-            
-            # Alternate colors for visual variety
-            if i % 2 == 0:
-                color = QColor("#34d399")  # Emerald
-            else:
-                color = QColor("#22d3ee")  # Cyan
-            
-            color.setAlphaF(wave_opacity)
-            painter.setPen(QPen(color, 2.5, Qt.SolidLine, Qt.RoundCap))
-            painter.setBrush(Qt.NoBrush)
-            
-            # Draw static circles around the icon (centered)
-            painter.drawEllipse(int(center_x - wave_radius), int(center_y - wave_radius), 
-                              int(wave_radius * 2), int(wave_radius * 2))
-        
-        # Use your minimal icon as centerpiece (centered)
-        icon_size = 100
+
+        # Soft radial background to frame the icon
+        bg = QRadialGradient(size / 2, size / 2, size / 1.2)
+        bg.setColorAt(0.0, QColor("#0f172a"))
+        bg.setColorAt(1.0, QColor("#020617"))
+        painter.setBrush(bg)
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(0, 0, size, size)
+
+        # Centered app icon from assets/icon.svg
+        icon_size = int(size * 0.6)
         app_icon = create_app_icon(icon_size)
         icon_pixmap = app_icon.pixmap(icon_size, icon_size)
-        painter.drawPixmap(center_x - icon_size // 2, center_y - icon_size // 2, icon_pixmap)
-        
-        # Draw static text (no animation)
-        # Modern, clean title with sufficient vertical space
-        font = QFont("Segoe UI", 38, QFont.Bold)  # Slightly smaller to prevent clipping
-        painter.setFont(font)
-        
-        # Use gradient colors from the icon for title
-        painter.setPen(QColor("#22d3ee"))  # Bright cyan
-        title_rect = QRect(0, height - 145, width, 70)  # More vertical space and padding
-        painter.drawText(title_rect, Qt.AlignCenter, "SCDToolkit")
-        
-        # Version with emerald accent
-        font = QFont("Segoe UI", 12, QFont.Normal)
-        painter.setFont(font)
-        painter.setPen(QColor("#34d399"))  # Emerald green
-        version_rect = QRect(0, height - 75, width, 25)
-        painter.drawText(version_rect, Qt.AlignCenter, f"v{__version__}")
-        
-        # NOTE: Message text NOT drawn here - added separately in create_splash_with_message()
-        
-        painter.setOpacity(1.0)
+        x = (size - icon_pixmap.width()) // 2
+        y = (size - icon_pixmap.height()) // 2
+        painter.drawPixmap(x, y, icon_pixmap)
+
         painter.end()
         return pixmap
-    
-    def create_splash_with_message(self, message):
-        """Efficiently composite message text onto cached base pixmap"""
-        # Copy the base pixmap (fast operation - just copies the pixel buffer)
-        pixmap = QPixmap(self._base_pixmap)
-        
-        # Only paint the message text
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        width = 550
-        height = 420
-        
-        # Loading message at bottom with more space
-        if message:
-            font = QFont("Segoe UI", 9, QFont.Normal)
-            painter.setFont(font)
-            painter.setPen(QColor("#94a3b8"))  # Light slate gray
-            # Enable word wrap by drawing multiple lines if needed
-            text_lines = message.split('\n') if '\n' in message else [message]
-            y_offset = 0
-            line_height = 15
-            start_y = height - 50
-            for line in text_lines:
-                line_rect = QRect(10, start_y + y_offset, width - 20, line_height)
-                painter.drawText(line_rect, Qt.AlignCenter, line)
-                y_offset += line_height
-        
-        painter.end()
-        return pixmap
+
+    def showMessage(self, *args, **kwargs):
+        """No-op to keep API compatibility without rendering text."""
+        return
+
+    def fade_and_finish(self, widget, duration_ms: int = 500):
+        """Fade out once the main window is ready, then finish."""
+        if self._fade:
+            self._fade.stop()
+
+        self._fade = QPropertyAnimation(self, b"windowOpacity")
+        self._fade.setDuration(duration_ms)
+        self._fade.setStartValue(1.0)
+        self._fade.setEndValue(0.0)
+        self._fade.setEasingCurve(QEasingCurve.InOutQuad)
+
+        def _on_done():
+            super(SplashScreen, self).finish(widget)
+        self._fade.finished.connect(_on_done)
+        self._fade.start()
 
 
 def create_app_icon(size=32):

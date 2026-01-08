@@ -4,6 +4,7 @@ from PyQt5.QtWidgets import QWidget, QPushButton, QLabel
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QPainter, QColor, QPen, QBrush, QLinearGradient, QRadialGradient, QFont
 import math
+from ui.styles import BUTTON_PRIMARY_BLUE
 
 
 class AudioVisualizer(QWidget):
@@ -18,7 +19,10 @@ class AudioVisualizer(QWidget):
         
     def update_audio_data(self, data, volume, position_ms, is_playing):
         """Update visualizer with new audio data"""
-        self.audio_data = data
+        # Apply power-law filter to emphasize peaks and reduce soft sounds
+        # Using exponent of 2.0 creates a quadratic curve that highlights peaks
+        filtered_data = np.power(data, 2.0)
+        self.audio_data = filtered_data
         self.volume = volume
         self.position_ms = position_ms
         self.is_playing = is_playing
@@ -352,19 +356,19 @@ class VisualizerWidget(QWidget):
         self.toggle_button.setFixedSize(30, 30)
         self.toggle_button.setStyleSheet("""
             QPushButton {
-                background-color: rgba(13, 115, 119, 150);
-                color: #14ffec;
-                border: 2px solid #0d7377;
+                background-color: #2060c0;
+                color: white;
+                border: 1px solid #4080ff;
                 border-radius: 5px;
                 font-size: 12px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: rgba(13, 115, 119, 200);
-                border: 2px solid #14ffec;
+                background-color: #3070d0;
+                border: 1px solid #5090ff;
             }
             QPushButton:pressed {
-                background-color: rgba(10, 95, 99, 200);
+                background-color: #1050a0;
             }
         """)
         self.toggle_button.setToolTip("Show/Hide Visualizer")
@@ -375,19 +379,19 @@ class VisualizerWidget(QWidget):
         self.prev_button.setFixedSize(30, 30)
         self.prev_button.setStyleSheet("""
             QPushButton {
-                background-color: rgba(13, 115, 119, 150);
-                color: #14ffec;
-                border: 2px solid #0d7377;
+                background-color: #2060c0;
+                color: white;
+                border: 1px solid #4080ff;
                 border-radius: 5px;
                 font-size: 12px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: rgba(13, 115, 119, 200);
-                border: 2px solid #14ffec;
+                background-color: #3070d0;
+                border: 1px solid #5090ff;
             }
             QPushButton:pressed {
-                background-color: rgba(10, 95, 99, 200);
+                background-color: #1050a0;
             }
         """)
         self.prev_button.setToolTip("Previous Visualizer")
@@ -399,19 +403,19 @@ class VisualizerWidget(QWidget):
         self.next_button.setFixedSize(30, 30)
         self.next_button.setStyleSheet("""
             QPushButton {
-                background-color: rgba(13, 115, 119, 150);
-                color: #14ffec;
-                border: 2px solid #0d7377;
+                background-color: #2060c0;
+                color: white;
+                border: 1px solid #4080ff;
                 border-radius: 5px;
                 font-size: 12px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: rgba(13, 115, 119, 200);
-                border: 2px solid #14ffec;
+                background-color: #3070d0;
+                border: 1px solid #5090ff;
             }
             QPushButton:pressed {
-                background-color: rgba(10, 95, 99, 200);
+                background-color: #1050a0;
             }
         """)
         self.next_button.setToolTip("Next Visualizer")
@@ -423,9 +427,9 @@ class VisualizerWidget(QWidget):
         self.name_label.setAlignment(Qt.AlignCenter)
         self.name_label.setStyleSheet("""
             QLabel {
-                background-color: rgba(13, 115, 119, 150);
-                color: #14ffec;
-                border: 2px solid #0d7377;
+                background-color: #323232;
+                color: white;
+                border: 1px solid #4080ff;
                 border-radius: 5px;
                 padding: 4px 8px;
                 font-size: 11px;
@@ -438,10 +442,6 @@ class VisualizerWidget(QWidget):
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.update_visualizer)
         self.update_timer.start(33)  # ~30 FPS
-        
-        # Set minimum size and initial size
-        self.setMinimumSize(450, 350)
-        self.resize(450, 350)
         
     def toggle_visibility(self):
         """Toggle visualizer visibility"""

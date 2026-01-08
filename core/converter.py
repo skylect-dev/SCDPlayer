@@ -1,5 +1,7 @@
 """Audio conversion functionality for SCDToolkit"""
 import logging
+import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -385,6 +387,28 @@ class AudioConverter:
         cleanup_temp_files(self.temp_files)
         self.temp_files = []
 
+    def _read_scd_volume(self, scd_path: Path) -> Optional[tuple]:
+        """Read current SCD gain float and position; returns (gain, offset) or None"""
+        try:
+            import struct
+            import math
+
+            data = scd_path.read_bytes()
+            if len(data) < 0x60:
+                return None
+
+            table_off = int.from_bytes(data[0x50:0x54], 'little')
+            if table_off <= 0 or table_off + 12 > len(data):
+                return None
+
+            volume_pos = table_off + 8
+            current_gain = struct.unpack('<f', data[volume_pos:volume_pos + 4])[0]
+            if not math.isfinite(current_gain) or current_gain < 0.0 or current_gain > 10.0:
+                return None
+            return current_gain, volume_pos
+        except Exception:
+            return None
+
     def _patch_scd_volume(self, scd_path: Path, target_gain: float = 1.0) -> bool:
         """Patch SCD header playback gain float to avoid quiet output.
 
@@ -393,32 +417,14 @@ class AudioConverter:
         """
         try:
             import struct
-            import math
-            
+
+            gain_info = self._read_scd_volume(scd_path)
+            if not gain_info:
+                logging.warning("SCD volume float not found or invalid")
+                return False
+
+            current_gain, volume_pos = gain_info
             data = bytearray(scd_path.read_bytes())
-            if len(data) < 0x60:
-                logging.warning("SCD too small to patch volume")
-                return False
-
-            table_off = int.from_bytes(data[0x50:0x54], 'little')
-            if table_off <= 0 or table_off + 12 > len(data):
-                logging.warning(f"SCD table offset invalid or out of range: 0x{table_off:X}")
-                return False
-
-            # The gain float is at table_ptr + 0x08 for BGM
-            volume_pos = table_off + 8
-            
-            # Read existing value to confirm it's a plausible gain float
-            try:
-                current_gain = struct.unpack('<f', data[volume_pos:volume_pos + 4])[0]
-                if not math.isfinite(current_gain) or current_gain < 0.0 or current_gain > 10.0:
-                    logging.warning(f"SCD volume position 0x{volume_pos:X} does not contain a plausible gain float (got {current_gain})")
-                    return False
-            except Exception as e:
-                logging.warning(f"Failed to read existing gain float: {e}")
-                return False
-
-            # Patch the gain
             data[volume_pos:volume_pos + 4] = struct.pack('<f', float(target_gain))
             scd_path.write_bytes(data)
             logging.info(f"Patched SCD volume float at 0x{volume_pos:X}: {current_gain:.3f} -> {target_gain:.3f}")
@@ -426,3 +432,73 @@ class AudioConverter:
         except Exception as e:
             logging.warning(f"Failed to patch SCD volume: {e}")
             return False
+
+    def ensure_scd_ready_for_export(self, scd_path: str, target_gain: float = 1.2, target_lufs: float = -12.0,
+                                     lufs_tolerance: float = 0.4) -> str:
+        """Ensure an SCD has target gain and loudness. Returns path to patched copy (or original)."""
+        scd_file = Path(scd_path)
+        if not scd_file.exists():
+            return scd_path
+
+        temp_wav = None
+        temp_scd_path = None
+        sanitized_path = scd_path
+
+        try:
+            gain_info = self._read_scd_volume(scd_file)
+            needs_gain = (not gain_info) or abs(gain_info[0] - target_gain) > 0.01
+
+            # Convert to WAV for loudness check
+            temp_wav = self._create_temp_wav()
+            wav_path = self.convert_scd_to_wav(str(scd_file), out_path=temp_wav, preserve_loop_points=True)
+            if not wav_path:
+                # Still try to patch gain if that's all we can do
+                if needs_gain:
+                    temp_fd, temp_scd = tempfile.mkstemp(suffix=".scd", prefix="scdtoolkit_gain_")
+                    os.close(temp_fd)
+                    temp_scd_path = Path(temp_scd)
+                    shutil.copy2(scd_file, temp_scd_path)
+                    self._patch_scd_volume(temp_scd_path, target_gain=target_gain)
+                    sanitized_path = str(temp_scd_path)
+                return sanitized_path
+
+            analyzer = AudioAnalyzer()
+            loudness = analyzer.measure_true_loudness(wav_path, target_i=target_lufs, target_tp=-1.0)
+            needs_loudnorm = False
+            if loudness and 'input_i' in loudness:
+                needs_loudnorm = abs(loudness['input_i'] - target_lufs) > lufs_tolerance
+
+            if needs_loudnorm:
+                self.normalize_wav_loudness(wav_path, target_i=target_lufs, target_tp=-1.0)
+
+                temp_fd, temp_scd = tempfile.mkstemp(suffix=".scd", prefix="scdtoolkit_norm_")
+                os.close(temp_fd)
+                temp_scd_path = Path(temp_scd)
+                if self.convert_wav_to_scd(wav_path, str(temp_scd_path), original_scd_path=str(scd_file), quality=10):
+                    sanitized_path = str(temp_scd_path)
+                    needs_gain = False  # convert_wav_to_scd already patches gain
+                else:
+                    try:
+                        temp_scd_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    temp_scd_path = None
+            elif needs_gain:
+                temp_fd, temp_scd = tempfile.mkstemp(suffix=".scd", prefix="scdtoolkit_gain_")
+                os.close(temp_fd)
+                temp_scd_path = Path(temp_scd)
+                shutil.copy2(scd_file, temp_scd_path)
+                self._patch_scd_volume(temp_scd_path, target_gain=target_gain)
+                sanitized_path = str(temp_scd_path)
+
+            return sanitized_path
+        finally:
+            # Clean up temp WAV
+            try:
+                if temp_wav and Path(temp_wav).exists():
+                    Path(temp_wav).unlink(missing_ok=True)
+                if temp_wav and temp_wav in self.temp_files:
+                    self.temp_files.remove(temp_wav)
+            except Exception:
+                pass
+

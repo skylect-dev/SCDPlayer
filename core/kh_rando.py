@@ -22,11 +22,16 @@ class KHRandoExporter:
         'wild': 'Wild'
     }
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, converter=None):
         self.parent = parent
+        self.converter = converter
         self.kh_rando_path = None
         self.existing_files: Dict[str, Set[str]] = {}
         self.detected_folders: Dict[str, str] = {}  # folder_key -> display_name
+    
+    def set_converter(self, converter):
+        """Inject AudioConverter for loudness/gain checks."""
+        self.converter = converter
         
     def is_valid_kh_rando_folder(self, path: str) -> bool:
         """Check if path contains valid KH Rando music folder structure"""
@@ -193,9 +198,20 @@ class KHRandoExporter:
             
         filename = os.path.basename(source_path)
         dest_path = os.path.join(category_path, filename)
+        temp_cleanup = None
+
+        # Ensure loudness and gain targets before export
+        sanitized_path = source_path
+        if self.converter:
+            try:
+                sanitized_path = self.converter.ensure_scd_ready_for_export(source_path)
+                if sanitized_path != source_path:
+                    temp_cleanup = sanitized_path
+            except Exception as e:
+                logging.warning(f"SCD loudness/gain check failed; exporting original file: {e}")
         
         try:
-            shutil.copy2(source_path, dest_path)
+            shutil.copy2(sanitized_path, dest_path)
             
             # Update existing files tracking
             if category not in self.existing_files:
@@ -205,6 +221,12 @@ class KHRandoExporter:
             return True
         except (OSError, PermissionError, shutil.Error):
             return False
+        finally:
+            if temp_cleanup and temp_cleanup != source_path:
+                try:
+                    os.remove(temp_cleanup)
+                except Exception:
+                    pass
     
     def set_kh_rando_path(self, path: str):
         """Set the KH Rando path and scan existing files"""

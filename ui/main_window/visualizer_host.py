@@ -43,7 +43,7 @@ class VisualizerHost(QObject):
         parent_width = rect.width()
 
         # Size to fit available height while respecting a sensible minimum
-        desired_height = min(parent_height, max(150, self.visualizer.sizeHint().height()))
+        desired_height = min(parent_height, max(450, self.visualizer.sizeHint().height())) # Change height by adjusting max(150, ...)
 
         # Stick to the bottom of the player panel; align left to contents rect
         y_pos = rect.bottom() - desired_height + 1  # +1 because bottom is inclusive

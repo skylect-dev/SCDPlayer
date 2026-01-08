@@ -169,6 +169,7 @@ class MusicPackExporter:
                 total_tracks = len(track_assignments)
                 for idx, (filename, source_file) in enumerate(track_assignments.items()):
                     dest_file = bgm_folder / filename
+                    temp_cleanup = None
                     
                     # Check if conversion is needed
                     if not source_file.lower().endswith('.scd'):
@@ -194,11 +195,24 @@ class MusicPackExporter:
                             logging.warning(f"No converter available for {source_file}, copying as-is")
                             shutil.copy2(source_file, dest_file)
                     else:
-                        # Direct copy for SCD files
+                        # Direct copy for SCD files with optional loudness/gain check
                         if progress_callback:
                             progress_callback(30 + int((idx / total_tracks) * 35), 100, 
                                             f"Copying: {filename}")
-                        shutil.copy2(source_file, dest_file)
+                        sanitized_source = source_file
+                        if converter:
+                            try:
+                                sanitized_source = converter.ensure_scd_ready_for_export(source_file)
+                                if sanitized_source != source_file:
+                                    temp_cleanup = sanitized_source
+                            except Exception as e:
+                                logging.warning(f"Skipping SCD loudness check for {source_file}: {e}")
+                        shutil.copy2(sanitized_source, dest_file)
+                        if temp_cleanup and temp_cleanup != source_file:
+                            try:
+                                Path(temp_cleanup).unlink(missing_ok=True)
+                            except Exception:
+                                pass
                 
                 if progress_callback:
                     progress_callback(70, 100, "Updating metadata...")

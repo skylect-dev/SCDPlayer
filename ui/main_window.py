@@ -106,6 +106,8 @@ class SCDToolkit(QMainWindow):
 
     def _init_converter(self):
         self.converter = AudioConverter()
+        if hasattr(self, 'kh_rando_exporter'):
+            self.kh_rando_exporter.set_converter(self.converter)
 
     def _init_file_watcher(self):
         from core.file_watcher import LibraryFileWatcher
