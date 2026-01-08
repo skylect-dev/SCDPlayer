@@ -258,6 +258,9 @@ def prompt_dotnet_install(parent_widget) -> bool:
             "🔧 .NET 5.0 Runtime Required\n\n"
             "SCD file conversion requires the .NET 5.0 Desktop Runtime.\n\n"
             "A bundled installer has been found. Would you like to install it now?\n\n"
+            "⚠️ NOTE: A UAC (User Account Control) prompt will appear.\n"
+            "If you don't see it, check your taskbar - it may be minimized.\n\n"
+            "The app will automatically restart after installation completes.\n\n"
             "This is a one-time setup and only takes a minute."
         )
     else:
@@ -265,6 +268,9 @@ def prompt_dotnet_install(parent_widget) -> bool:
             "🔧 .NET 5.0 Runtime Required\n\n"
             "SCD file conversion requires the .NET 5.0 Desktop Runtime.\n\n"
             "The .NET 5.0 Desktop Runtime installer will be downloaded (~50 MB) and installed automatically.\n\n"
+            "⚠️ NOTE: A UAC (User Account Control) prompt will appear.\n"
+            "If you don't see it, check your taskbar - it may be minimized.\n\n"
+            "The app will automatically restart after installation completes.\n\n"
             "This is a one-time setup and only takes a few minutes.\n\n"
             "Alternative: You can download it manually from:\n"
             f"{DotNetRuntimeChecker.DOWNLOAD_URL}"
@@ -296,7 +302,7 @@ def install_dotnet_runtime(parent_widget) -> bool:
     
     # Create progress dialog
     progress_dialog = QProgressDialog(
-        "Preparing .NET installation...",
+        "Preparing .NET installation...\n\n⚠️ Check your taskbar for the UAC prompt!",
         "Cancel",
         0, 100,
         parent_widget
@@ -341,8 +347,30 @@ def install_dotnet_runtime(parent_widget) -> bool:
             parent_widget,
             QMessageBox.Information,
             "Installation Successful",
-            f"✅ {result[1]}\n\nYou can now convert SCD files!"
+            f"✅ {result[1]}\n\nThe application will now restart to complete the setup."
         )
+        
+        # Auto-restart the application
+        logging.info("Restarting application after .NET installation")
+        import sys
+        import os
+        from PyQt5.QtWidgets import QApplication
+        
+        # Get the executable path
+        if getattr(sys, 'frozen', False):
+            # Running as PyInstaller executable
+            exe_path = sys.executable
+        else:
+            # Running in development - restart with Python
+            exe_path = sys.executable
+            args = [exe_path] + sys.argv
+            os.execv(exe_path, args)
+            return True
+        
+        # Restart the executable
+        QApplication.quit()
+        os.execl(exe_path, exe_path)
+        
         return True
     else:
         show_themed_message(
