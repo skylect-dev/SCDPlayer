@@ -205,6 +205,7 @@ class WaveformWidget(QWidget):
     
     positionChanged = pyqtSignal(int)  # Sample position
     loopPointChanged = pyqtSignal(int, int)  # start, end samples
+    trimPointChanged = pyqtSignal(int, int)  # start, end samples
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -246,6 +247,9 @@ class WaveformWidget(QWidget):
         self.loop_start_color = QColor(0, 255, 0)
         self.loop_end_color = QColor(255, 0, 0)
         self.loop_region_color = QColor(55, 100, 0, 5)
+        self.trim_region_color = QColor(0, 170, 255, 25)
+        self.trim_start_color = QColor(0, 200, 255)
+        self.trim_end_color = QColor(0, 120, 255)
         self.cursor_color = QColor(0, 50, 255)
         
         # Mouse tracking
@@ -254,6 +258,13 @@ class WaveformWidget(QWidget):
         
         # Track if initial zoom has been calculated
         self._initial_zoom_set = False
+
+        # Trim mode state
+        self.mode = 'loop'  # 'loop' or 'trim'
+        self.trim_start = 0
+        self.trim_end = 0
+        self.dragging_trim_start = False
+        self.dragging_trim_end = False
         
         # Focus icon properties
         self.focus_icon_rect = QRect()
@@ -373,6 +384,24 @@ class WaveformWidget(QWidget):
         self.loop_start = max(0, min(start, self.total_samples))
         self.loop_end = max(0, min(end, self.total_samples))
         self.update()
+
+    def set_trim_points(self, start: int, end: int):
+        """Set trim points"""
+        self.trim_start = max(0, min(start, self.total_samples))
+        self.trim_end = max(self.trim_start + 1, min(end, self.total_samples)) if self.total_samples else 0
+        self.update()
+
+    def reset_trim_points(self):
+        """Reset trim to full length"""
+        self.trim_start = 0
+        self.trim_end = self.total_samples
+        self.update()
+
+    def set_mode(self, mode: str):
+        """Switch between loop and trim modes"""
+        if mode in ('loop', 'trim'):
+            self.mode = mode
+            self.update()
         
     def set_current_position(self, position: int):
         """Set current playback position"""
@@ -501,7 +530,20 @@ class WaveformWidget(QWidget):
         if start_sample >= end_sample:
             return
         
-        # Draw loop region background
+        # Draw trim region background in trim mode
+        if self.mode == 'trim' and self.trim_end > self.trim_start:
+            trim_start_x = self.sample_to_pixel(self.trim_start)
+            trim_end_x = self.sample_to_pixel(self.trim_end)
+            if trim_end_x > 0 and trim_start_x < width:
+                trim_rect = QRect(
+                    max(0, trim_start_x),
+                    0,
+                    min(width, trim_end_x) - max(0, trim_start_x),
+                    height
+                )
+                painter.fillRect(trim_rect, self.trim_region_color)
+
+        # Draw loop region background (always shown)
         if self.loop_end > self.loop_start > 0:
             loop_start_x = self.sample_to_pixel(self.loop_start)
             loop_end_x = self.sample_to_pixel(self.loop_end)
@@ -587,7 +629,7 @@ class WaveformWidget(QWidget):
                 # Draw label
                 painter.setPen(Qt.white)
                 painter.drawText(max(2, start_x + 5), 15, "Loop Start")
-        
+
         if self.loop_end > self.loop_start:
             end_x = self.sample_to_pixel(self.loop_end)
             if -5 <= end_x <= width + 5:  # Show slightly outside visible area
@@ -597,6 +639,23 @@ class WaveformWidget(QWidget):
                 # Draw label
                 painter.setPen(Qt.white)
                 painter.drawText(max(2, end_x + 5), 30, "Loop End")
+
+        # Draw trim markers in trim mode
+        if self.mode == 'trim' and self.trim_start >= 0:
+            ts_x = self.sample_to_pixel(self.trim_start)
+            if -5 <= ts_x <= width + 5:
+                painter.setPen(QPen(self.trim_start_color, 2, Qt.DashLine))
+                painter.drawLine(ts_x, 0, ts_x, height)
+                painter.setPen(Qt.white)
+                painter.drawText(max(2, ts_x + 5), 45, "Trim Start")
+
+        if self.mode == 'trim' and self.trim_end > self.trim_start:
+            te_x = self.sample_to_pixel(self.trim_end)
+            if -5 <= te_x <= width + 5:
+                painter.setPen(QPen(self.trim_end_color, 2, Qt.DashLine))
+                painter.drawLine(te_x, 0, te_x, height)
+                painter.setPen(Qt.white)
+                painter.drawText(max(2, te_x + 5), 60, "Trim End")
         
         # Draw loop region highlight
         if self.loop_start >= 0 and self.loop_end > self.loop_start:
@@ -674,7 +733,7 @@ class WaveformWidget(QWidget):
         return int((pixel + self.scroll_position) * self.samples_per_pixel)
     
     def mousePressEvent(self, event):
-        """Handle mouse press for dragging loop points"""
+        """Handle mouse press for dragging loop/trim points"""
         if event.button() == Qt.LeftButton and self.audio_data is not None:
             # Check if clicking on focus icon first
             if self.focus_icon_rect.contains(event.pos()):
@@ -684,24 +743,46 @@ class WaveformWidget(QWidget):
             
             sample_pos = self.pixel_to_sample(event.x())
             
-            # Check if clicking near loop markers (allow for position 0)
+            # Check if clicking near markers
             start_x = self.sample_to_pixel(self.loop_start)
             end_x = self.sample_to_pixel(self.loop_end)
             cursor_x = self.sample_to_pixel(self.current_position)
+            trim_start_x = self.sample_to_pixel(self.trim_start)
+            trim_end_x = self.sample_to_pixel(self.trim_end)
             
             self.fine_control = event.modifiers() & Qt.ControlModifier
             
-            if abs(event.x() - start_x) < 6 and self.loop_start >= 0:  # Reduced from 10 to 6 pixels
-                self.dragging_start = True
-                self._drag_start_x = event.x()  # Store starting drag position
-                self._fine_base_start = self.loop_start  # Store initial position for fine control
-                self.setCursor(Qt.SizeHorCursor)
-            elif abs(event.x() - end_x) < 6 and self.loop_end > self.loop_start:  # Reduced from 10 to 6 pixels
-                self.dragging_end = True
-                self._drag_start_x = event.x()  # Store starting drag position
-                self._fine_base_end = self.loop_end  # Store initial position for fine control
-                self.setCursor(Qt.SizeHorCursor)
-            elif abs(event.x() - cursor_x) < 6:  # Check if clicking near current time cursor
+            # Trim mode interactions take priority when active
+            if self.mode == 'trim':
+                if abs(event.x() - trim_start_x) < 6 and self.trim_start >= 0:
+                    self.dragging_trim_start = True
+                    self._drag_start_x = event.x()
+                    self._fine_base_trim_start = self.trim_start
+                    self.setCursor(Qt.SizeHorCursor)
+                    return
+                elif abs(event.x() - trim_end_x) < 6 and self.trim_end > self.trim_start:
+                    self.dragging_trim_end = True
+                    self._drag_start_x = event.x()
+                    self._fine_base_trim_end = self.trim_end
+                    self.setCursor(Qt.SizeHorCursor)
+                    return
+            
+            # Loop mode interactions
+            if self.mode == 'loop':
+                if abs(event.x() - start_x) < 6 and self.loop_start >= 0:  # Reduced from 10 to 6 pixels
+                    self.dragging_start = True
+                    self._drag_start_x = event.x()  # Store starting drag position
+                    self._fine_base_start = self.loop_start  # Store initial position for fine control
+                    self.setCursor(Qt.SizeHorCursor)
+                    return
+                elif abs(event.x() - end_x) < 6 and self.loop_end > self.loop_start:  # Reduced from 10 to 6 pixels
+                    self.dragging_end = True
+                    self._drag_start_x = event.x()  # Store starting drag position
+                    self._fine_base_end = self.loop_end  # Store initial position for fine control
+                    self.setCursor(Qt.SizeHorCursor)
+                    return
+            
+            if abs(event.x() - cursor_x) < 6:  # Check if clicking near current time cursor
                 self.dragging_cursor = True
                 self._drag_start_x = event.x()  # Store starting drag position
                 self._fine_base_cursor = self.current_position  # Store initial position for fine control
@@ -721,8 +802,39 @@ class WaveformWidget(QWidget):
         
         # Check current Ctrl state
         current_fine_control = event.modifiers() & Qt.ControlModifier
-        
-        if self.dragging_start:
+
+        if self.dragging_trim_start:
+            if current_fine_control != self.fine_control:
+                self.fine_control = current_fine_control
+                self._ctrl_toggle_reference = self.trim_start
+            if self.fine_control:
+                base_pos = getattr(self, '_ctrl_toggle_reference', getattr(self, '_fine_base_trim_start', self.trim_start)) or self.trim_start
+                self._ctrl_toggle_reference = None
+                fine_step = max(1, self.samples_per_pixel // 20)
+                delta = (event.x() - getattr(self, '_drag_start_x', event.x())) * fine_step
+                self.trim_start = max(0, min(int(base_pos + delta), self.trim_end - 1))
+                self._fine_base_trim_start = base_pos
+            else:
+                self.trim_start = max(0, min(sample_pos, self.trim_end - 1))
+            self.trim_start = min(self.trim_start, self.trim_end - 1)
+            self.update()
+            self.trimPointChanged.emit(self.trim_start, self.trim_end)
+        elif self.dragging_trim_end:
+            if current_fine_control != self.fine_control:
+                self.fine_control = current_fine_control
+                self._ctrl_toggle_reference = self.trim_end
+            if self.fine_control:
+                base_pos = getattr(self, '_ctrl_toggle_reference', getattr(self, '_fine_base_trim_end', self.trim_end)) or self.trim_end
+                self._ctrl_toggle_reference = None
+                fine_step = max(1, self.samples_per_pixel // 20)
+                delta = (event.x() - getattr(self, '_drag_start_x', event.x())) * fine_step
+                self.trim_end = max(self.trim_start + 1, min(int(base_pos + delta), self.total_samples))
+                self._fine_base_trim_end = base_pos
+            else:
+                self.trim_end = max(self.trim_start + 1, min(sample_pos, self.total_samples))
+            self.update()
+            self.trimPointChanged.emit(self.trim_start, self.trim_end)
+        elif self.dragging_start:
             # Handle smooth Ctrl toggling during drag
             if current_fine_control != self.fine_control:
                 self.fine_control = current_fine_control
@@ -817,12 +929,23 @@ class WaveformWidget(QWidget):
             end_x = self.sample_to_pixel(self.loop_end)
             cursor_x = self.sample_to_pixel(self.current_position)
             
-            if (abs(event.x() - start_x) < 6 and self.loop_start >= 0) or \
-               (abs(event.x() - end_x) < 6 and self.loop_end > self.loop_start) or \
-               abs(event.x() - cursor_x) < 6:
-                self.setCursor(Qt.SizeHorCursor)
+            trim_start_x = self.sample_to_pixel(self.trim_start)
+            trim_end_x = self.sample_to_pixel(self.trim_end)
+
+            if self.mode == 'trim':
+                if (abs(event.x() - trim_start_x) < 6 and self.trim_start >= 0) or \
+                   (abs(event.x() - trim_end_x) < 6 and self.trim_end > self.trim_start) or \
+                   abs(event.x() - cursor_x) < 6:
+                    self.setCursor(Qt.SizeHorCursor)
+                else:
+                    self.setCursor(Qt.ArrowCursor)
             else:
-                self.setCursor(Qt.ArrowCursor)
+                if (abs(event.x() - start_x) < 6 and self.loop_start >= 0) or \
+                   (abs(event.x() - end_x) < 6 and self.loop_end > self.loop_start) or \
+                   abs(event.x() - cursor_x) < 6:
+                    self.setCursor(Qt.SizeHorCursor)
+                else:
+                    self.setCursor(Qt.ArrowCursor)
         
         # Check if mouse is over focus icon
         was_hovered = self.focus_icon_hovered
@@ -847,16 +970,16 @@ class WaveformWidget(QWidget):
             self.dragging_start = False
             self.dragging_end = False
             self.dragging_cursor = False
+            self.dragging_trim_start = False
+            self.dragging_trim_end = False
             # Clean up fine control state
             self._ctrl_toggle_reference = None
-            if hasattr(self, '_fine_base_start'):
-                delattr(self, '_fine_base_start')
-            if hasattr(self, '_fine_base_end'):
-                delattr(self, '_fine_base_end')
-            if hasattr(self, '_fine_base_cursor'):
-                delattr(self, '_fine_base_cursor')
-            if hasattr(self, '_drag_start_x'):
-                delattr(self, '_drag_start_x')
+            for attr in [
+                '_fine_base_start', '_fine_base_end', '_fine_base_cursor',
+                '_fine_base_trim_start', '_fine_base_trim_end', '_drag_start_x'
+            ]:
+                if hasattr(self, attr):
+                    delattr(self, attr)
             self.setCursor(Qt.ArrowCursor)
     
     def wheelEvent(self, event):
@@ -1128,6 +1251,10 @@ class LoopEditorDialog(QDialog):
             QDoubleSpinBox:focus {
                 border-color: #4080ff;
             }
+            QRadioButton {
+                color: #ddd;
+                background-color: transparent;
+            }
             QScrollBar:horizontal {
                 background-color: #404040;
                 height: 16px;
@@ -1158,6 +1285,7 @@ class LoopEditorDialog(QDialog):
         self.waveform = WaveformWidget()
         self.waveform.positionChanged.connect(self.on_position_changed)
         self.waveform.loopPointChanged.connect(self.on_loop_points_changed)
+        self.waveform.trimPointChanged.connect(lambda s, e: self.update_trim_label())
         
         # Connect focus callback
         self.waveform.focus_callback = self.toggle_follow_mode
@@ -1279,6 +1407,34 @@ class LoopEditorDialog(QDialog):
         tip_label.setStyleSheet("color: #888; font-style: italic; padding: 5px; background-color: rgba(255, 255, 255, 0.05); border-radius: 3px;")
         tip_label.setWordWrap(True)
         info_layout.addWidget(tip_label)
+
+        # Mode toggle
+        mode_layout = QHBoxLayout()
+        mode_layout.addWidget(QLabel("Mode:"))
+        self.mode_loop_radio = QRadioButton("Loop")
+        self.mode_trim_radio = QRadioButton("Trim")
+        self.mode_loop_radio.setChecked(True)
+        self.mode_loop_radio.toggled.connect(lambda checked: self.on_mode_changed('loop' if checked else 'trim'))
+        mode_layout.addWidget(self.mode_loop_radio)
+        mode_layout.addWidget(self.mode_trim_radio)
+        mode_layout.addStretch()
+        info_layout.addLayout(mode_layout)
+
+        # Trim info and actions
+        trim_row = QHBoxLayout()
+        self.trim_label = QLabel("Trim: full length")
+        self.trim_label.setStyleSheet("color: #ccc;")
+        trim_row.addWidget(self.trim_label)
+
+        self.trim_apply_btn = QPushButton("Apply Trim")
+        self.trim_apply_btn.clicked.connect(self.on_apply_trim)
+        trim_row.addWidget(self.trim_apply_btn)
+
+        self.trim_reset_btn = QPushButton("Reset Trim")
+        self.trim_reset_btn.clicked.connect(self.on_reset_trim)
+        trim_row.addWidget(self.trim_reset_btn)
+        trim_row.addStretch()
+        info_layout.addLayout(trim_row)
         
         # Start point controls
         start_layout = QHBoxLayout()
@@ -1652,6 +1808,10 @@ class LoopEditorDialog(QDialog):
         self.waveform.set_loop_points(start, end)
         self.update_loop_info(start, end)
 
+        # Initialize trim range to full length
+        self.waveform.reset_trim_points()
+        self.update_trim_label()
+
         # Automatically analyze audio levels when file loads
         self.analysis_text.setText("Analyzing audio levels...")
         QTimer.singleShot(100, self.analyze_audio)  # Delay slightly to let UI update
@@ -1830,6 +1990,62 @@ class LoopEditorDialog(QDialog):
         track_end = file_info.get('total_samples', 0)
         self.waveform.set_loop_points(0, track_end)
         self.update_loop_info(0, track_end)
+
+    def on_mode_changed(self, mode: str):
+        """Switch between loop editing and trim handles"""
+        self.waveform.set_mode(mode)
+        # Keep UI buttons in sync
+        if mode == 'loop':
+            self.mode_loop_radio.setChecked(True)
+        else:
+            self.mode_trim_radio.setChecked(True)
+        self.update_trim_label()
+
+    def update_trim_label(self):
+        """Update trim label text with current range"""
+        if not self.waveform or self.waveform.total_samples == 0:
+            self.trim_label.setText("Trim: n/a")
+            return
+        sr = self.waveform.sample_rate or 1
+        start_sec = self.waveform.trim_start / sr
+        end_sec = self.waveform.trim_end / sr
+        total_sec = self.waveform.total_samples / sr
+        self.trim_label.setText(
+            f"Trim: {start_sec:.3f}s → {end_sec:.3f}s of {total_sec:.3f}s"
+        )
+
+    def on_reset_trim(self):
+        """Reset trim to full length"""
+        self.waveform.reset_trim_points()
+        self.update_trim_label()
+
+    def on_apply_trim(self):
+        """Apply trim to working audio using current trim handles"""
+        if not self.waveform or self.waveform.total_samples == 0:
+            QMessageBox.warning(self, "No Audio", "Load audio before trimming.")
+            return
+
+        trim_start = self.waveform.trim_start
+        trim_end = self.waveform.trim_end
+
+        if trim_end - trim_start < 10:
+            QMessageBox.warning(self, "Trim Too Small", "Trim range is too small.")
+            return
+
+        if trim_end <= trim_start:
+            QMessageBox.warning(self, "Invalid Trim", "Trim end must be after trim start.")
+            return
+
+        ok = self.loop_manager.trim_audio(trim_start, trim_end)
+        if not ok:
+            QMessageBox.critical(self, "Trim Failed", "Unable to trim audio. Check the log for details.")
+            return
+
+        # Reload audio data and refresh UI
+        self.load_audio_data()
+        self.waveform.set_mode('loop')
+        self.mode_loop_radio.setChecked(True)
+        self.update_trim_label()
     
     def _save_volume_adjusted_audio(self) -> bool:
         """Save volume-adjusted audio data back to the temp WAV file"""

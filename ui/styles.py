@@ -75,21 +75,6 @@ DARK_THEME = '''
     QListWidget::item:hover {
         background: #383838;
     }
-    QCheckBox::indicator {
-        width: 18px;
-        height: 18px;
-    }
-    QCheckBox::indicator:unchecked {
-        background: #2c2c2c;
-        border: 1px solid #404040;
-        border-radius: 4px;
-    }
-    QCheckBox::indicator:checked {
-        background: #0078d4;
-        border: 1px solid #005a9e;
-        border-radius: 4px;
-        image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHZpZXdCb3g9IjAgMCAxMiAxMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEwIDNMMTEgNEw1IDEwTDEgNkwyIDVMNSA4TDEwIDNaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4K);
-    }
     QComboBox {
         background: #323232;
         border: 1px solid #404040;
@@ -112,6 +97,26 @@ DARK_THEME = '''
         border: 1px solid #404040;
         selection-background-color: #0078d4;
         border-radius: 6px;
+    }
+    QTreeView {
+        outline: 0;
+        show-decoration-selected: 1;
+    }
+    QTreeView::item:selected {
+        border: none;
+    }
+    QTreeWidget {
+        outline: 0;
+        show-decoration-selected: 1;
+    }
+    QTreeWidget::item:selected {
+        border: none;
+    }
+    QListWidget {
+        outline: 0;
+    }
+    QListWidget::item:selected {
+        border: none;
     }
     QMenuBar {
         background: #202020;

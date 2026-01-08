@@ -636,7 +636,7 @@ class SCDToolkit(QMainWindow):
         org_layout.addStretch()
         regular_files_layout.addLayout(org_layout)
         
-        regular_files_layout.addWidget(QLabel('Audio Files (SCD, WAV, MP3, OGG, FLAC):'))
+        regular_files_layout.addWidget(QLabel('Audio Files:'))
         self.file_list = QListWidget()
         self.file_list.setVerticalScrollMode(self.file_list.ScrollPerPixel)
         self.file_list.verticalScrollBar().setSingleStep(8)

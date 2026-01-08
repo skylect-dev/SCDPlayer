@@ -286,6 +286,72 @@ class HybridLoopManager:
         except Exception as e:
             logging.error(f"Error analyzing WAV file: {e}")
             return False
+
+    def trim_audio(self, trim_start_samples: int, trim_end_samples: int) -> bool:
+        """Trim the working WAV to the given sample range"""
+        try:
+            if not self.temp_wav_path or not Path(self.temp_wav_path).exists():
+                logging.error("No working WAV to trim")
+                return False
+
+            if trim_end_samples <= trim_start_samples:
+                logging.error("Invalid trim range")
+                return False
+
+            # Clamp to available samples
+            trim_start_samples = max(0, trim_start_samples)
+            trim_end_samples = min(self.total_samples, trim_end_samples)
+            if trim_end_samples <= trim_start_samples:
+                logging.error("Trim range collapsed after clamping")
+                return False
+
+            # Calculate seconds
+            start_sec = trim_start_samples / self.sample_rate if self.sample_rate else 0
+            end_sec = trim_end_samples / self.sample_rate if self.sample_rate else 0
+
+            # Create temp output
+            temp_fd, temp_out_path = tempfile.mkstemp(suffix='.wav', prefix='trim_')
+            os.close(temp_fd)
+            temp_out = Path(temp_out_path)
+
+            ffmpeg_path = Path(__file__).parent.parent / "ffmpeg" / "bin" / "ffmpeg.exe"
+
+            result = subprocess.run([
+                str(ffmpeg_path),
+                '-i', self.temp_wav_path,
+                '-af', f'atrim=start={start_sec}:end={end_sec}',
+                '-ar', str(self.sample_rate),
+                '-ac', '2',
+                '-sample_fmt', 's16',
+                '-y',
+                str(temp_out)
+            ], capture_output=True, text=True, encoding='utf-8', errors='replace',
+               startupinfo=self._create_subprocess_startupinfo(),
+               creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+
+            if result.returncode != 0 or not temp_out.exists():
+                logging.error(f"ffmpeg trim failed: {result.stderr}")
+                return False
+
+            # Swap in trimmed WAV (overwrite original temp wav)
+            shutil.move(str(temp_out), self.temp_wav_path)
+
+            # Re-read audio info
+            if not self._analyze_wav_file(self.temp_wav_path):
+                logging.error("Failed to analyze trimmed WAV")
+                return False
+
+            # Adjust loop points relative to trim start
+            if self.current_loop:
+                new_start = max(0, self.current_loop.start_sample - trim_start_samples)
+                new_end = max(new_start + 1, min(self.current_loop.end_sample - trim_start_samples, self.total_samples))
+                self.current_loop = LoopPoint(new_start, new_end)
+
+            return True
+
+        except Exception as e:
+            logging.error(f"Error trimming audio: {e}")
+            return False
     
     def _write_wav_loop_metadata(self, wav_filepath: str, loop_start: int, loop_end: int) -> bool:
         """Write loop metadata to WAV file in Audacity-compatible format"""
