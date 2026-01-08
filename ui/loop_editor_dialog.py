@@ -11,6 +11,16 @@ from PyQt5.QtGui import *
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from core.audio_analysis import AudioAnalyzer
 from ui.loop_editor.dialogs import CustomVolumeDialog
+from ui.styles import (
+    BUTTON_APPLY_SCD,
+    BUTTON_CANCEL_DANGER,
+    BUTTON_CLEAR_DARK,
+    BUTTON_PRIMARY_BLUE,
+    BUTTON_SECONDARY_DARK,
+    BUTTON_TOGGLE_LOOP,
+    BUTTON_VOLUME_GREEN,
+    BUTTON_VOLUME_RESET,
+)
 from ui.loop_editor.workers import LoudnessWorker, SaveWorker
 from ui.loop_editor.waveform import TimelineWidget, WaveformWidget
 
@@ -188,59 +198,18 @@ class LoopEditorDialog(QDialog):
         
         self.play_btn = QPushButton("Play")
         self.play_btn.clicked.connect(self.toggle_playback)
-        self.play_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2060c0;
-                border: 1px solid #4080ff;
-                border-radius: 4px;
-                padding: 6px 12px;
-                font-weight: bold;
-                color: white;
-                min-width: 60px;
-            }
-            QPushButton:hover { background-color: #3070d0; }
-            QPushButton:pressed { background-color: #1050a0; }
-        """)
+        self.play_btn.setStyleSheet(BUTTON_PRIMARY_BLUE)
         playback_layout.addWidget(self.play_btn)
         
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.clicked.connect(self.stop_playback)
-        self.stop_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #404040;
-                border: 1px solid #666;
-                border-radius: 4px;
-                padding: 6px 12px;
-                font-weight: bold;
-                color: white;
-                min-width: 60px;
-            }
-            QPushButton:hover { background-color: #505050; }
-            QPushButton:pressed { background-color: #303030; }
-        """)
+        self.stop_btn.setStyleSheet(BUTTON_SECONDARY_DARK)
         playback_layout.addWidget(self.stop_btn)
         
         self.loop_test_btn = QPushButton("Loop")
         self.loop_test_btn.setCheckable(True)
         self.loop_test_btn.clicked.connect(self.toggle_loop_mode)
-        self.loop_test_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #404040;
-                border: 1px solid #666;
-                border-radius: 4px;
-                padding: 6px 12px;
-                font-weight: bold;
-                color: white;
-                min-width: 80px;
-            }
-            QPushButton:hover { background-color: #505050; }
-            QPushButton:pressed { background-color: #303030; }
-            QPushButton:checked {
-                background-color: #c06020;
-                border-color: #ff8040;
-                color: white;
-            }
-        """)
+        self.loop_test_btn.setStyleSheet(BUTTON_TOGGLE_LOOP)
         playback_layout.addWidget(self.loop_test_btn)
         
         playback_layout.addStretch()
@@ -433,48 +402,10 @@ class LoopEditorDialog(QDialog):
         self.reset_volume_btn.setEnabled(False)  # Only enabled after volume adjustment
         
         # Style the volume buttons
-        volume_btn_style = """
-            QPushButton {
-                background-color: #2a5a2a;
-                border: 1px solid #4a8a4a;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 10px;
-                font-weight: bold;
-                color: white;
-            }
-            QPushButton:hover { background-color: #3a6a3a; }
-            QPushButton:pressed { background-color: #1a4a1a; }
-            QPushButton:disabled { 
-                background-color: #333;
-                border-color: #555;
-                color: #888;
-            }
-        """
-        
-        reset_btn_style = """
-            QPushButton {
-                background-color: #5a2a2a;
-                border: 1px solid #8a4a4a;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 10px;
-                font-weight: bold;
-                color: white;
-            }
-            QPushButton:hover { background-color: #6a3a3a; }
-            QPushButton:pressed { background-color: #4a1a1a; }
-            QPushButton:disabled { 
-                background-color: #333;
-                border-color: #555;
-                color: #888;
-            }
-        """
-        
-        self.adjust_volume_btn.setStyleSheet(volume_btn_style)
-        self.increase_lufs_btn.setStyleSheet(volume_btn_style)
-        self.decrease_lufs_btn.setStyleSheet(volume_btn_style)
-        self.reset_volume_btn.setStyleSheet(reset_btn_style)
+        self.adjust_volume_btn.setStyleSheet(BUTTON_VOLUME_GREEN)
+        self.increase_lufs_btn.setStyleSheet(BUTTON_VOLUME_GREEN)
+        self.decrease_lufs_btn.setStyleSheet(BUTTON_VOLUME_GREEN)
+        self.reset_volume_btn.setStyleSheet(BUTTON_VOLUME_RESET)
         
         volume_btn_layout.addWidget(self.adjust_volume_btn)
         volume_btn_layout.addWidget(self.increase_lufs_btn)
@@ -516,25 +447,7 @@ class LoopEditorDialog(QDialog):
         self.apply_scd_volume_btn.setToolTip("Patch the SCD file with this volume float value")
         self.apply_scd_volume_btn.setFixedWidth(90)
         
-        apply_btn_style = """
-            QPushButton {
-                background-color: #2a4a5a;
-                border: 1px solid #4a6a8a;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 10px;
-                font-weight: bold;
-                color: white;
-            }
-            QPushButton:hover { background-color: #3a5a6a; }
-            QPushButton:pressed { background-color: #1a3a4a; }
-            QPushButton:disabled { 
-                background-color: #333;
-                border-color: #555;
-                color: #888;
-            }
-        """
-        self.apply_scd_volume_btn.setStyleSheet(apply_btn_style)
+        self.apply_scd_volume_btn.setStyleSheet(BUTTON_APPLY_SCD)
         
         self.scd_volume_status = QLabel("")
         self.scd_volume_status.setStyleSheet("color: #888; font-size: 9px; font-style: italic;")
@@ -563,67 +476,19 @@ class LoopEditorDialog(QDialog):
         # Clear button
         self.clear_btn = QPushButton("Clear Loop Points (C)")
         self.clear_btn.clicked.connect(self.clear_loop_points)
-        self.clear_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #404040;
-                border: 2px solid #666;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #505050;
-                border-color: #777;
-            }
-            QPushButton:pressed {
-                background-color: #303030;
-            }
-        """)
+        self.clear_btn.setStyleSheet(BUTTON_CLEAR_DARK)
         button_layout.addWidget(self.clear_btn)
         
         # Save button
         self.save_btn = QPushButton("Save Changes")
         self.save_btn.clicked.connect(self.save_changes)
-        self.save_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2060c0;
-                border: 2px solid #4080ff;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #3070d0;
-                border-color: #5090ff;
-            }
-            QPushButton:pressed {
-                background-color: #1050a0;
-            }
-        """)
+        self.save_btn.setStyleSheet(BUTTON_PRIMARY_BLUE)
         button_layout.addWidget(self.save_btn)
         
         # Cancel button
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self.cancel_dialog)
-        self.cancel_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #604040;
-                border: 2px solid #806060;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #705050;
-                border-color: #907070;
-            }
-            QPushButton:pressed {
-                background-color: #503030;
-            }
-        """)
+        self.cancel_btn.setStyleSheet(BUTTON_CANCEL_DANGER)
         button_layout.addWidget(self.cancel_btn)
         
         controls_layout.addWidget(button_group)
