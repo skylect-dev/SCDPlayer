@@ -20,7 +20,7 @@ class TrackListParser:
             track_list_path: Path to TrackList.txt file
             
         Returns:
-            List of (track_name, filename) tuples sorted by filename
+            List of (track_name, filename) tuples in file order
         """
         tracks = []
         try:
@@ -37,9 +37,6 @@ class TrackListParser:
                             track_name = parts[0].strip()
                             filename = parts[1].strip()
                             tracks.append((track_name, filename))
-            
-            # Sort by filename (numerical order)
-            tracks.sort(key=lambda x: x[1])
             
         except Exception as e:
             logging.error(f"Error parsing TrackList.txt: {e}")
