@@ -120,7 +120,7 @@ class PerLanguageDialog(QDialog):
 
 
 class MusicPackCreatorDialog(QDialog):
-    """Dialog for creating KH:ReFined Music Pack mods"""
+    """Dialog for creating Kingdom Hearts II - Re:Fined Music Pack mods"""
     
     def __init__(self, parent, library_files: List[str]):
         """
@@ -135,7 +135,7 @@ class MusicPackCreatorDialog(QDialog):
         self.library_files = library_files
         self.track_assignments = {}  # Maps filename -> source_file_path
         
-        self.setWindowTitle('Music Pack Creator - KH:ReFined')
+        self.setWindowTitle('Music Pack Creator - Kingdom Hearts II - Re:Fined')
         self.setGeometry(100, 100, 1200, 800)
         self.setStyleSheet(DARK_THEME)
         
