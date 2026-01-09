@@ -1169,6 +1169,37 @@ class LibraryController:
         dialog = NormalizeDialog(self.window, converter, uncached, parent=self.window)
         dialog.exec_()
 
+    def open_normalize_dialog_for_paths(self, file_paths):
+        """Open the normalize dialog pre-populated with explicit SCD path(s)."""
+        converter = getattr(self.window, 'converter', None)
+        if not converter:
+            return
+
+        paths = [p for p in (file_paths or []) if isinstance(p, str) and p.lower().endswith('.scd') and os.path.exists(p)]
+        if not paths:
+            show_themed_message(
+                self.window,
+                QMessageBox.Information,
+                "Normalize",
+                "Select an existing .scd file to normalize.",
+            )
+            return
+
+        files_by_folder = {}
+        for p in paths:
+            folder = str(Path(p).parent)
+            files_by_folder.setdefault(folder, []).append(p)
+
+        dialog = NormalizeDialog(
+            self.window,
+            converter,
+            files_by_folder,
+            checked_paths=set(paths),
+            show_normalize_all=False,
+            parent=self.window,
+        )
+        dialog.exec_()
+
     def convert_selected_to_wav(self):
         """Convert selected library items (or current file) to WAV via the main conversion manager."""
         if hasattr(self.window, 'conversion_manager'):
@@ -1209,6 +1240,11 @@ class LibraryController:
             if file_ext in ['.scd', '.wav']:
                 loop_editor_action = menu.addAction("Open Loop Editor")
                 loop_editor_action.triggered.connect(self.window.open_loop_editor)
+                menu.addSeparator()
+
+            if file_ext == '.scd':
+                normalize_action = menu.addAction("Normalize...")
+                normalize_action.triggered.connect(lambda: self.open_normalize_dialog_for_paths([file_path]))
                 menu.addSeparator()
             rename_action = menu.addAction("Rename")
             rename_action.triggered.connect(lambda: self.rename_file(file_path))
@@ -1667,13 +1703,23 @@ class LibraryController:
 
 
 class NormalizeDialog(QDialog):
-    """Bulk normalization dialog for uncached SCD files."""
+    """Bulk normalization dialog for SCD files."""
 
-    def __init__(self, window, converter, files_by_folder, parent=None):
+    def __init__(
+        self,
+        window,
+        converter,
+        files_by_folder,
+        checked_paths=None,
+        show_normalize_all: bool = True,
+        parent=None,
+    ):
         super().__init__(parent)
         self.window = window
         self.converter = converter
         self.files_by_folder = files_by_folder
+        self._checked_paths = set(checked_paths or [])
+        self._show_normalize_all = bool(show_normalize_all)
         self._syncing_checks = False
 
         self.setWindowTitle("Normalize SCDs")
@@ -1682,7 +1728,7 @@ class NormalizeDialog(QDialog):
         layout = QVBoxLayout()
 
         warning_label = QLabel(
-            "Normalize uncached SCDs to -12 LUFS / -1 dBTP (gain patched to 1.2). "
+            "Normalize SCDs to -12 LUFS / -1 dBTP (gain patched to 1.2). "
             "Loop points are preserved, but processing can take time."
         )
         warning_label.setWordWrap(True)
@@ -1704,9 +1750,10 @@ class NormalizeDialog(QDialog):
         normalize_selected_btn.clicked.connect(self._normalize_selected)
         buttons_layout.addWidget(normalize_selected_btn)
 
-        normalize_all_btn = QPushButton("Normalize All")
-        normalize_all_btn.clicked.connect(lambda: self._normalize_all_and_run())
-        buttons_layout.addWidget(normalize_all_btn)
+        if self._show_normalize_all:
+            normalize_all_btn = QPushButton("Normalize All")
+            normalize_all_btn.clicked.connect(lambda: self._normalize_all_and_run())
+            buttons_layout.addWidget(normalize_all_btn)
 
         cancel_btn = QPushButton("Close")
         cancel_btn.clicked.connect(self.reject)
@@ -1716,23 +1763,45 @@ class NormalizeDialog(QDialog):
         self.setLayout(layout)
 
     def _populate_tree(self):
-        self.tree.clear()
-        for folder, paths in sorted(self.files_by_folder.items()):
-            folder_name = Path(folder).name or folder
-            folder_item = QTreeWidgetItem([folder_name])
-            folder_item.setFlags(folder_item.flags() | Qt.ItemIsUserCheckable)
-            folder_item.setCheckState(0, Qt.Checked)
-            folder_item.setToolTip(0, folder)
-            for path_str in sorted(paths):
-                file_name = Path(path_str).name
-                child = QTreeWidgetItem([file_name])
-                child.setData(0, Qt.UserRole, path_str)
-                child.setFlags(child.flags() | Qt.ItemIsUserCheckable)
-                child.setCheckState(0, Qt.Checked)
-                child.setToolTip(0, path_str)
-                folder_item.addChild(child)
-            self.tree.addTopLevelItem(folder_item)
-            folder_item.setExpanded(True)
+        self._syncing_checks = True
+        try:
+            self.tree.clear()
+            for folder, paths in sorted(self.files_by_folder.items()):
+                folder_name = Path(folder).name or folder
+                folder_item = QTreeWidgetItem([folder_name])
+                folder_item.setFlags(folder_item.flags() | Qt.ItemIsUserCheckable)
+                folder_item.setToolTip(0, folder)
+
+                any_checked = False
+                any_unchecked = False
+
+                for path_str in sorted(paths):
+                    file_name = Path(path_str).name
+                    child = QTreeWidgetItem([file_name])
+                    child.setData(0, Qt.UserRole, path_str)
+                    child.setFlags(child.flags() | Qt.ItemIsUserCheckable)
+
+                    should_check = True if not self._checked_paths else (path_str in self._checked_paths)
+                    child.setCheckState(0, Qt.Checked if should_check else Qt.Unchecked)
+                    child.setToolTip(0, path_str)
+                    folder_item.addChild(child)
+
+                    if should_check:
+                        any_checked = True
+                    else:
+                        any_unchecked = True
+
+                if any_checked and any_unchecked:
+                    folder_item.setCheckState(0, Qt.PartiallyChecked)
+                elif any_checked:
+                    folder_item.setCheckState(0, Qt.Checked)
+                else:
+                    folder_item.setCheckState(0, Qt.Unchecked)
+
+                self.tree.addTopLevelItem(folder_item)
+                folder_item.setExpanded(True)
+        finally:
+            self._syncing_checks = False
 
     def _normalize_all_and_run(self):
         self._set_all_checked(Qt.Checked)

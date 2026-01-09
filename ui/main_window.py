@@ -19,9 +19,9 @@ from ui.styles import DARK_THEME
 from ui.dialogs import show_themed_message, show_themed_file_dialog, apply_title_bar_theming
 from ui.conversion_manager import ConversionManager
 from ui.kh_rando_manager import KHRandoManager
-from ui.main_window.library_controller import LibraryController
-from ui.main_window.startup import StartupController
-from ui.main_window.visualizer_host import VisualizerHost
+from ui.main_window_pkg.library_controller import LibraryController
+from ui.main_window_pkg.startup import StartupController
+from ui.main_window_pkg.visualizer_host import VisualizerHost
 # Lazy imports for faster startup:
 # from ui.help_dialog import HelpDialog  # Imported when needed
 # from ui.loop_editor_dialog import LoopEditorDialog  # Imported when needed
@@ -921,6 +921,11 @@ class SCDToolkit(QMainWindow):
             if file_ext in ['.scd', '.wav']:
                 loop_editor_action = menu.addAction("Open Loop Editor")
                 loop_editor_action.triggered.connect(self.open_loop_editor)
+                menu.addSeparator()
+
+            if file_ext == '.scd' and hasattr(self, 'library_controller'):
+                normalize_action = menu.addAction("Normalize...")
+                normalize_action.triggered.connect(lambda: self.library_controller.open_normalize_dialog_for_paths([file_path]))
                 menu.addSeparator()
         
         # Rename action (single file only)
