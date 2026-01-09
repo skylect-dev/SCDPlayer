@@ -1,8 +1,5 @@
 """
-KH2 SCD Hook - Memory interface for Kingdom Hearts II Final Mix PC.
-
-Connects to the game process and provides SCD hotswap capability via Topaz's SCDHook mod.
-Uses dynamic memory scanning to locate PANACEA_ALLOC buffers - compatible with vanilla and Re:Fined.
+KH2 SCD Hook
 """
 
 import logging
