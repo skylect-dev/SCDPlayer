@@ -2,9 +2,12 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
 from pathlib import Path
 
-from PyQt5.QtCore import QTimer, Qt, QMimeData, QUrl
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+
+from PyQt5.QtCore import QMimeData, QObject, QThread, QTimer, Qt, QUrl, pyqtSignal
 from PyQt5.QtGui import QColor, QCursor, QDrag, QFont, QPainter, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
@@ -46,6 +49,10 @@ class LibraryController:
         self._folder_expanded_states = {}
         self._drag_hover_item = None
         self.library = None
+        
+        # KH2 Hook auto-connect
+        self._kh2_hook_monitor_thread = None
+        self._kh2_hook_monitor_worker = None
 
     # UI construction
     def create_library_panel(self):
@@ -124,6 +131,21 @@ class LibraryController:
 
         kh_rando_layout.addStretch()
         header_layout.addLayout(kh_rando_layout)
+
+        # KH2 Hook status indicator
+        kh2_hook_layout = QHBoxLayout()
+        kh2_hook_layout.addWidget(QLabel('KH2 Hook:'))
+        
+        self.kh2_hook_status_label = QLabel('Waiting for KH2...')
+        self.kh2_hook_status_label.setStyleSheet("color: #CE9178; font-style: italic;")
+        kh2_hook_layout.addWidget(self.kh2_hook_status_label)
+        
+        self.kh2_hook_files_label = QLabel('')
+        self.kh2_hook_files_label.setStyleSheet("color: #888888; font-size: 12px;")
+        kh2_hook_layout.addWidget(self.kh2_hook_files_label)
+        
+        kh2_hook_layout.addStretch()
+        header_layout.addLayout(kh2_hook_layout)
 
         library_header.setLayout(header_layout)
         library_layout.addWidget(library_header)
@@ -366,6 +388,9 @@ class LibraryController:
 
         QTimer.singleShot(10, self.perform_initial_scan)
         QTimer.singleShot(50, self._update_kh_rando_section_counts)
+        
+        # Start KH2 auto-connect monitor
+        QTimer.singleShot(100, self._start_kh2_monitor)
 
         library_panel.setLayout(library_layout)
         return library_panel
@@ -478,6 +503,95 @@ class LibraryController:
                 self.window, QMessageBox.Warning,
                 "Error Opening Folder",
                 f"Could not open the KH Rando folder:\n{str(e)}"
+            )
+
+    # KH2 Hook connection management
+    def _update_kh2_filenames(self):
+        """Update inline display with current file names in hook memory."""
+        from core.kh2_hook import get_hook
+        hook = get_hook()
+        
+        if not hook.is_connected():
+            self.kh2_hook_files_label.setText('')
+            return
+        
+        field_path, battle_path = hook.get_current_paths()
+        field_name = Path(field_path).name if field_path else "(empty)"
+        battle_name = Path(battle_path).name if battle_path else "(empty)"
+        
+        files_text = f"Field: {field_name}  |  Battle: {battle_name}"
+        self.kh2_hook_files_label.setText(files_text)
+    
+    def _start_kh2_monitor(self):
+        """Start background thread that monitors KH2 connection."""
+        if self._kh2_hook_monitor_thread and self._kh2_hook_monitor_thread.isRunning():
+            return
+        
+        self._kh2_hook_monitor_thread = QThread(self.window)
+        self._kh2_hook_monitor_worker = _KH2MonitorWorker()
+        self._kh2_hook_monitor_worker.moveToThread(self._kh2_hook_monitor_thread)
+        
+        self._kh2_hook_monitor_thread.started.connect(self._kh2_hook_monitor_worker.run)
+        self._kh2_hook_monitor_worker.connection_changed.connect(self._on_kh2_connection_changed)
+        self._kh2_hook_monitor_worker.finished.connect(self._kh2_hook_monitor_thread.quit)
+        self._kh2_hook_monitor_worker.finished.connect(self._kh2_hook_monitor_worker.deleteLater)
+        self._kh2_hook_monitor_thread.finished.connect(self._kh2_hook_monitor_thread.deleteLater)
+        
+        self._kh2_hook_monitor_thread.start()
+        logging.info("KH2 auto-connect monitor started")
+    
+    def _on_kh2_connection_changed(self, connected: bool):
+        """Handle connection state change from monitor."""
+        if connected:
+            self.kh2_hook_status_label.setText('Connected ✓')
+            self.kh2_hook_status_label.setStyleSheet("color: #90EE90; font-weight: bold;")
+            self._update_kh2_filenames()
+        else:
+            self.kh2_hook_status_label.setText('Waiting for KH2...')
+            self.kh2_hook_status_label.setStyleSheet("color: #CE9178; font-style: italic;")
+            self.kh2_hook_files_label.setText('')
+    
+    def send_to_kh2(self, file_path: str, slot: str = 'both'):
+        """Send an SCD file to KH2 via the hook."""
+        from core.kh2_hook import get_hook
+        
+        hook = get_hook()
+        
+        if not hook.is_connected():
+            show_themed_message(
+                self.window,
+                QMessageBox.Warning,
+                "KH2 Not Running",
+                "Kingdom Hearts II is not running.\n\nThe tool will automatically connect when the game starts."
+            )
+            return
+        
+        # Ensure SCD is normalized
+        try:
+            sanitized_path = self.window.converter.ensure_scd_ready_for_export(file_path)
+            send_path = sanitized_path if sanitized_path and sanitized_path != file_path else file_path
+            
+            # Send to slot(s)
+            field_path = send_path if slot in ('field', 'both') else None
+            battle_path = send_path if slot in ('battle', 'both') else None
+            
+            if hook.send_scd(field_path=field_path, battle_path=battle_path):
+                self._update_kh2_filenames()
+            else:
+                show_themed_message(
+                    self.window,
+                    QMessageBox.Warning,
+                    "Send Failed",
+                    f"Failed to send SCD:\n{os.path.basename(file_path)}"
+                )
+        
+        except Exception as e:
+            logging.exception("Error sending to KH2")
+            show_themed_message(
+                self.window,
+                QMessageBox.Critical,
+                "Error",
+                f"Error sending to KH2:\n{str(e)}"
             )
 
     # Library scan and filtering
@@ -1245,6 +1359,16 @@ class LibraryController:
             if file_ext == '.scd':
                 normalize_action = menu.addAction("Normalize...")
                 normalize_action.triggered.connect(lambda: self.open_normalize_dialog_for_paths([file_path]))
+                
+                menu.addSeparator()
+                send_menu = menu.addMenu("Send to KH2")
+                send_field_action = send_menu.addAction("Field Music")
+                send_field_action.triggered.connect(lambda: self.send_to_kh2(file_path, 'field'))
+                send_battle_action = send_menu.addAction("Battle Music")
+                send_battle_action.triggered.connect(lambda: self.send_to_kh2(file_path, 'battle'))
+                send_both_action = send_menu.addAction("Both (Field & Battle)")
+                send_both_action.triggered.connect(lambda: self.send_to_kh2(file_path, 'both'))
+                
                 menu.addSeparator()
             rename_action = menu.addAction("Rename")
             rename_action.triggered.connect(lambda: self.rename_file(file_path))
@@ -1721,6 +1845,9 @@ class NormalizeDialog(QDialog):
         self._checked_paths = set(checked_paths or [])
         self._show_normalize_all = bool(show_normalize_all)
         self._syncing_checks = False
+        self._normalize_thread = None
+        self._normalize_worker = None
+        self._progress_dialog = None
 
         self.setWindowTitle("Normalize SCDs")
         self.resize(640, 520)
@@ -1746,18 +1873,20 @@ class NormalizeDialog(QDialog):
         buttons_layout = QHBoxLayout()
         buttons_layout.addStretch()
 
-        normalize_selected_btn = QPushButton("Normalize Selected")
-        normalize_selected_btn.clicked.connect(self._normalize_selected)
-        buttons_layout.addWidget(normalize_selected_btn)
+        self.normalize_selected_btn = QPushButton("Normalize Selected")
+        self.normalize_selected_btn.clicked.connect(self._normalize_selected)
+        buttons_layout.addWidget(self.normalize_selected_btn)
 
         if self._show_normalize_all:
-            normalize_all_btn = QPushButton("Normalize All")
-            normalize_all_btn.clicked.connect(lambda: self._normalize_all_and_run())
-            buttons_layout.addWidget(normalize_all_btn)
+            self.normalize_all_btn = QPushButton("Normalize All")
+            self.normalize_all_btn.clicked.connect(lambda: self._normalize_all_and_run())
+            buttons_layout.addWidget(self.normalize_all_btn)
+        else:
+            self.normalize_all_btn = None
 
-        cancel_btn = QPushButton("Close")
-        cancel_btn.clicked.connect(self.reject)
-        buttons_layout.addWidget(cancel_btn)
+        self.close_btn = QPushButton("Close")
+        self.close_btn.clicked.connect(self.reject)
+        buttons_layout.addWidget(self.close_btn)
 
         layout.addLayout(buttons_layout)
         self.setLayout(layout)
@@ -1866,50 +1995,257 @@ class NormalizeDialog(QDialog):
             show_themed_message(self.window, QMessageBox.Information, "Nothing Selected", "Check at least one SCD to normalize.")
             return
 
-        progress = QProgressDialog("Normalizing SCDs...", None, 0, len(paths), self)
-        progress.setWindowModality(Qt.WindowModal)
-        progress.setMinimumDuration(0)
-        progress.setAutoClose(False)
-        progress.show()
+        if self._normalize_thread and self._normalize_thread.isRunning():
+            return
 
-        success_count = 0
-        errors = []
+        self._progress_dialog = QProgressDialog("Normalizing SCDs...", "Cancel", 0, len(paths), self)
+        self._progress_dialog.setWindowModality(Qt.WindowModal)
+        self._progress_dialog.setMinimumDuration(0)
+        self._progress_dialog.setAutoClose(False)
+        self._progress_dialog.canceled.connect(self._on_normalize_cancel_requested)
+        self._progress_dialog.show()
 
-        for idx, path_str in enumerate(paths, start=1):
-            progress.setLabelText(f"Normalizing {Path(path_str).name} ({idx}/{len(paths)})")
-            progress.setValue(idx - 1)
-            QApplication.processEvents()
+        self.normalize_selected_btn.setEnabled(False)
+        if self.normalize_all_btn:
+            self.normalize_all_btn.setEnabled(False)
+        self.close_btn.setEnabled(False)
+
+        self._normalize_thread = QThread(self)
+        max_workers = min(8, max(1, (os.cpu_count() or 2) // 2))
+        self._normalize_worker = _NormalizeWorker(self.converter, paths, max_workers=max_workers)
+        self._normalize_worker.moveToThread(self._normalize_thread)
+
+        self._normalize_thread.started.connect(self._normalize_worker.run)
+        self._normalize_worker.progress.connect(self._on_normalize_progress)
+        self._normalize_worker.finished.connect(self._on_normalize_finished)
+        self._normalize_worker.finished.connect(self._normalize_thread.quit)
+        self._normalize_worker.finished.connect(self._normalize_worker.deleteLater)
+        self._normalize_thread.finished.connect(self._normalize_thread.deleteLater)
+
+        self._normalize_thread.start()
+
+    def _on_normalize_cancel_requested(self):
+        if self._normalize_worker:
             try:
-                sanitized_path = self.converter.ensure_scd_ready_for_export(path_str)
-                if sanitized_path and os.path.exists(sanitized_path) and sanitized_path != path_str:
-                    shutil.copy2(sanitized_path, path_str)
-                    try:
-                        Path(sanitized_path).unlink(missing_ok=True)
-                    except Exception:
-                        pass
-                self.converter.mark_sanitized(path_str)
-                success_count += 1
-            except Exception as e:
-                logging.exception("Normalize failed")
-                errors.append((path_str, str(e)))
+                self._normalize_worker.request_cancel()
+            except Exception:
+                pass
+        if self._progress_dialog:
+            self._progress_dialog.setLabelText("Canceling... (finishing in-progress files)")
+            # Prevent repeated cancel clicks
+            try:
+                self._progress_dialog.cancelButton().setEnabled(False)
+            except Exception:
+                pass
 
-        progress.setValue(len(paths))
-        progress.close()
+    def _on_normalize_progress(self, idx: int, total: int, filename: str):
+        if not self._progress_dialog:
+            return
+        self._progress_dialog.setLabelText(f"Normalizing {filename} ({idx}/{total})")
+        self._progress_dialog.setValue(max(0, idx - 1))
 
+    def _on_normalize_finished(self, success_count: int, errors: list, paths: list, cancelled: bool):
+        # Worker threads use per-thread converter instances; refresh the main
+        # converter's cache from disk so subsequent exports don't re-normalize.
+        try:
+            if hasattr(self.converter, 'reload_sanitize_cache'):
+                self.converter.reload_sanitize_cache()
+        except Exception:
+            pass
+
+        error_paths = {p for p, _ in (errors or [])}
+        if self._progress_dialog:
+            self._progress_dialog.setValue(len(paths or []))
+            self._progress_dialog.close()
+            self._progress_dialog = None
+
+        # Gray out and uncheck successfully processed items
         for i in range(self.tree.topLevelItemCount() - 1, -1, -1):
             folder_item = self.tree.topLevelItem(i)
             for j in range(folder_item.childCount() - 1, -1, -1):
                 child = folder_item.child(j)
                 path_str = child.data(0, Qt.UserRole)
-                if path_str in paths and path_str not in [p for p, _ in errors]:
+                if path_str in (paths or []) and path_str not in error_paths:
                     child.setCheckState(0, Qt.Unchecked)
                     child.setForeground(0, QColor('gray'))
-                    child.setForeground(1, QColor('gray'))
-            # Update folder tri-state
             self._on_item_changed(folder_item, 0)
 
-        if errors:
+        self.normalize_selected_btn.setEnabled(True)
+        if self.normalize_all_btn:
+            self.normalize_all_btn.setEnabled(True)
+        self.close_btn.setEnabled(True)
+
+        self._normalize_thread = None
+        self._normalize_worker = None
+
+        if cancelled:
+            if errors:
+                message_lines = [f"Failed: {Path(p).name}\n{err}" for p, err in errors]
+                show_themed_message(
+                    self.window,
+                    QMessageBox.Warning,
+                    "Normalize Canceled",
+                    f"Canceled. Normalized {success_count} SCD file(s).\n\n" + "\n\n".join(message_lines),
+                )
+            else:
+                show_themed_message(
+                    self.window,
+                    QMessageBox.Information,
+                    "Normalize Canceled",
+                    f"Canceled. Normalized {success_count} SCD file(s).",
+                )
+        elif errors:
             message_lines = [f"Failed: {Path(p).name}\n{err}" for p, err in errors]
             show_themed_message(self.window, QMessageBox.Warning, "Normalize Completed with Errors", "\n\n".join(message_lines))
         else:
             show_themed_message(self.window, QMessageBox.Information, "Normalize Complete", f"Normalized {success_count} SCD file(s).")
+
+        # Close the dialog automatically once work is finished (success, error, or cancel).
+        try:
+            self.accept()
+        except Exception:
+            pass
+
+
+class _NormalizeWorker(QObject):
+    progress = pyqtSignal(int, int, str)
+    finished = pyqtSignal(int, list, list, bool)
+
+    def __init__(self, converter, paths, max_workers: int = 2):
+        super().__init__()
+        self.converter = converter
+        self.paths = list(paths or [])
+        self.max_workers = max(1, int(max_workers))
+        self._local = threading.local()
+        self._cancel_event = threading.Event()
+
+    def request_cancel(self):
+        self._cancel_event.set()
+
+    def _get_thread_converter(self):
+        from core.converter import AudioConverter
+
+        converter = getattr(self._local, "converter", None)
+        if converter is None:
+            converter = AudioConverter()
+            self._local.converter = converter
+        return converter
+
+    def _process_one(self, path_str: str):
+        converter = self._get_thread_converter()
+        sanitized_path = converter.ensure_scd_ready_for_export(path_str)
+        if sanitized_path and os.path.exists(sanitized_path) and sanitized_path != path_str:
+            shutil.copy2(sanitized_path, path_str)
+            try:
+                Path(sanitized_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+        converter.mark_sanitized(path_str)
+
+    def run(self):
+        success_count = 0
+        errors = []
+        total = len(self.paths)
+
+        done = 0
+        cancelled = False
+
+        max_workers = min(self.max_workers, max(1, total))
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        try:
+            in_flight = {}
+            paths_iter = iter(self.paths)
+
+            def _submit_next():
+                try:
+                    p = next(paths_iter)
+                except StopIteration:
+                    return False
+                fut = executor.submit(self._process_one, p)
+                in_flight[fut] = p
+                return True
+
+            for _ in range(max_workers):
+                if not _submit_next():
+                    break
+
+            while in_flight:
+                # If canceled, stop starting new work; let in-flight tasks complete.
+                if self._cancel_event.is_set():
+                    cancelled = True
+
+                done_futures, _ = wait(set(in_flight.keys()), timeout=0.2, return_when=FIRST_COMPLETED)
+                for future in done_futures:
+                    path_str = in_flight.pop(future, None)
+                    if not path_str:
+                        continue
+                    done += 1
+                    self.progress.emit(done, total, Path(path_str).name)
+                    try:
+                        future.result()
+                        success_count += 1
+                    except Exception as e:
+                        logging.exception("Normalize failed")
+                        errors.append((path_str, str(e)))
+
+                    if not cancelled:
+                        _submit_next()
+                
+                # If nothing completed during timeout, loop again.
+        except Exception:
+            # Fall back to reporting whatever we have; keep details in logs.
+            logging.exception("Normalize worker loop error")
+            cancelled = True
+        finally:
+            # If canceled, prevent queued-but-not-started tasks from running.
+            try:
+                executor.shutdown(wait=True, cancel_futures=cancelled)
+            except TypeError:
+                # Older Python compatibility (should not happen on 3.13)
+                executor.shutdown(wait=True)
+
+        self.finished.emit(success_count, errors, self.paths, cancelled)
+
+
+class _KH2MonitorWorker(QObject):
+    """Background worker that monitors KH2 connection state."""
+    connection_changed = pyqtSignal(bool)
+    finished = pyqtSignal()
+    
+    def __init__(self):
+        super().__init__()
+        self._stop_requested = False
+    
+    def request_stop(self):
+        self._stop_requested = True
+    
+    def run(self):
+        from core.kh2_hook import get_hook
+        import time
+        
+        hook = get_hook()
+        was_connected = False
+        
+        while not self._stop_requested:
+            # Check connection status
+            is_connected = hook.is_connected()
+            
+            # If not connected, try to connect
+            if not is_connected:
+                try:
+                    is_connected = hook.connect()
+                except Exception:
+                    pass
+            
+            # Emit signal if state changed
+            if is_connected != was_connected:
+                self.connection_changed.emit(is_connected)
+                was_connected = is_connected
+            
+            # Poll every 2 seconds
+            for _ in range(20):
+                if self._stop_requested:
+                    break
+                time.sleep(0.1)
+        
+        self.finished.emit()

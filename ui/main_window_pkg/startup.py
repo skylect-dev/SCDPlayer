@@ -8,6 +8,11 @@ class StartupController:
         self._overlay = None
         self._stage_index = 0
         self._stages = []
+        self._finished_callbacks = []
+
+    def add_finished_callback(self, callback):
+        if callable(callback):
+            self._finished_callbacks.append(callback)
 
     def begin(self):
         """Show the startup overlay and run staged initialization."""
@@ -41,3 +46,9 @@ class StartupController:
             if self._overlay:
                 self._overlay.update_progress(100, "Ready")
                 QTimer.singleShot(300, self._overlay.complete)
+            # Notify listeners after UI is ready.
+            for cb in list(self._finished_callbacks):
+                try:
+                    QTimer.singleShot(0, cb)
+                except Exception:
+                    pass

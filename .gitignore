@@ -54,6 +54,7 @@ temp_*
 *.wav.tmp
 *.wav
 
+
 # Temporary files
 *.log
 *.bak

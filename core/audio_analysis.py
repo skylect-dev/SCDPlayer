@@ -77,6 +77,28 @@ class AudioAnalyzer:
             return {"startupinfo": startupinfo, "creationflags": subprocess.CREATE_NO_WINDOW}
         return {}
 
+    def _read_wav_format(self, wav_path: str) -> Tuple[int, int, str]:
+        """Return (channels, sample_rate, sample_fmt) preserving source format when possible."""
+        try:
+            import wave
+
+            with wave.open(wav_path, 'rb') as wf:
+                channels = wf.getnchannels()
+                sample_rate = wf.getframerate()
+                sampwidth = wf.getsampwidth()
+            if sampwidth == 1:
+                sample_fmt = "u8"
+            elif sampwidth == 2:
+                sample_fmt = "s16"
+            elif sampwidth == 3:
+                sample_fmt = "s32"
+            else:
+                sample_fmt = "s32"
+            return channels, sample_rate, sample_fmt
+        except Exception as e:
+            logging.warning(f"Could not read WAV format, defaulting to s16: {e}")
+            return 2, 44100, "s16"
+
     def measure_true_loudness(self, wav_path: str, target_i: float = -12.0, target_tp: float = -1.0) -> Optional[Dict[str, float]]:
         """Run ffmpeg loudnorm analysis to get true LUFS and true peak."""
         try:
@@ -85,26 +107,7 @@ class AudioAnalyzer:
                 logging.warning("ffmpeg not found for loudness analysis")
                 return None
 
-            # Preserve original format
-            try:
-                import wave
-                with wave.open(wav_path, 'rb') as wf:
-                    channels = wf.getnchannels()
-                    sample_rate = wf.getframerate()
-                    sampwidth = wf.getsampwidth()
-                if sampwidth == 1:
-                    sample_fmt = "u8"
-                elif sampwidth == 2:
-                    sample_fmt = "s16"
-                elif sampwidth == 3:
-                    sample_fmt = "s32"
-                else:
-                    sample_fmt = "s32"
-            except Exception as e:
-                logging.warning(f"Could not read WAV format, defaulting to s16: {e}")
-                channels = 2
-                sample_rate = 44100
-                sample_fmt = "s16"
+            channels, sample_rate, sample_fmt = self._read_wav_format(wav_path)
 
             cmd = [
                 str(ffmpeg_path),
@@ -160,36 +163,58 @@ class AudioAnalyzer:
                 logging.error("ffmpeg not found for loudness normalization")
                 return None
 
-            # Read original format to preserve sample rate, channels, and bit depth
-            try:
-                import wave
-                with wave.open(wav_path, 'rb') as wf:
-                    channels = wf.getnchannels()
-                    sample_rate = wf.getframerate()
-                    sampwidth = wf.getsampwidth()
-                if sampwidth == 1:
-                    sample_fmt = "u8"
-                elif sampwidth == 2:
-                    sample_fmt = "s16"
-                elif sampwidth == 3:
-                    sample_fmt = "s32"  # ffmpeg doesn't have s24 sample_fmt, s32 keeps headroom
-                else:
-                    sample_fmt = "s32"
-            except Exception as e:
-                logging.warning(f"Could not read WAV format, defaulting to s16: {e}")
-                channels = 2
-                sample_rate = 44100
-                sample_fmt = "s16"
+            channels, sample_rate, sample_fmt = self._read_wav_format(wav_path)
 
-            # First pass: analyze
             analyze = self.measure_true_loudness(wav_path, target_i=target_i, target_tp=target_tp)
             if not analyze:
                 return None
 
-            # Prepare temp output to avoid corrupting the source on failure
+            return self.apply_loudnorm_second_pass(
+                wav_path,
+                analyze,
+                target_i=target_i,
+                target_tp=target_tp,
+                channels=channels,
+                sample_rate=sample_rate,
+                sample_fmt=sample_fmt,
+            )
+
+        except Exception as e:
+            logging.error(f"Loudness normalization failed: {e}")
+            return None
+        finally:
+            try:
+                if temp_out and Path(temp_out).exists():
+                    Path(temp_out).unlink()
+            except Exception:
+                pass
+
+    def apply_loudnorm_second_pass(
+        self,
+        wav_path: str,
+        analyze: Dict[str, float],
+        *,
+        target_i: float = -12.0,
+        target_tp: float = -1.0,
+        channels: int = 2,
+        sample_rate: int = 44100,
+        sample_fmt: str = "s16",
+    ) -> Optional[str]:
+        """Apply the loudnorm second pass using precomputed measurements.
+
+        This avoids re-running the first-pass analysis when the caller already
+        measured loudness.
+        """
+        temp_out = None
+        try:
+            ffmpeg_path = self._ffmpeg_path()
+            if not ffmpeg_path.exists():
+                logging.error("ffmpeg not found for loudness normalization")
+                return None
+
             temp_fd, temp_out = tempfile.mkstemp(suffix="_loudnorm.wav", prefix="scdtoolkit_")
             os.close(temp_fd)
-            Path(temp_out).unlink(missing_ok=True)  # will be written by ffmpeg
+            Path(temp_out).unlink(missing_ok=True)
 
             filter_second_pass = (
                 f"loudnorm=I={target_i}:TP={target_tp}:LRA=11:"
@@ -212,12 +237,18 @@ class AudioAnalyzer:
                 str(temp_out)
             ]
 
-            result = subprocess.run(cmd_second, capture_output=True, text=True, encoding="utf-8", errors="replace", **self._subprocess_kwargs())
+            result = subprocess.run(
+                cmd_second,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                **self._subprocess_kwargs(),
+            )
             if result.returncode != 0:
                 logging.error(f"ffmpeg loudnorm second pass failed: {result.stderr}")
                 return None
 
-            # Replace the original file atomically with retry/backoff if locked
             max_attempts = 5
             for attempt in range(1, max_attempts + 1):
                 try:
@@ -228,21 +259,20 @@ class AudioAnalyzer:
                         logging.error("Loudness normalization failed: could not replace output (file locked)")
                         return None
                     backoff = 0.2 * attempt
-                    logging.warning(f"Replace failed (attempt {attempt}/{max_attempts}), retrying after {backoff:.2f}s: {e}")
+                    logging.warning(
+                        f"Replace failed (attempt {attempt}/{max_attempts}), retrying after {backoff:.2f}s: {e}"
+                    )
                     time.sleep(backoff)
                 except Exception as e:
                     logging.error(f"Loudness normalization failed during replace: {e}")
                     return None
-        except Exception as e:
-            logging.error(f"Loudness normalization failed: {e}")
-            return None
         finally:
-            # Ensure temp file is cleaned up if replace didn't consume it
             try:
                 if temp_out and Path(temp_out).exists():
                     Path(temp_out).unlink()
             except Exception:
                 pass
+
         
     def analyze_audio_levels(self, audio_data: np.ndarray, sample_rate: int = 44100) -> AudioLevels:
         """

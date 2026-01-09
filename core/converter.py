@@ -4,10 +4,14 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 from typing import Optional
 from utils.helpers import get_bundled_path, cleanup_temp_files
 from core.audio_analysis import AudioAnalyzer
+
+
+_SANITIZE_CACHE_LOCK = threading.Lock()
 
 
 class AudioConverter:
@@ -23,18 +27,42 @@ class AudioConverter:
 
     def _load_sanitize_cache(self):
         try:
-            if self._cache_path.exists():
-                import json
-                data = json.loads(self._cache_path.read_text(encoding="utf-8"))
-                if isinstance(data, dict):
-                    self._sanitized_cache = data
+            with _SANITIZE_CACHE_LOCK:
+                if self._cache_path.exists():
+                    import json
+                    data = json.loads(self._cache_path.read_text(encoding="utf-8"))
+                    if isinstance(data, dict):
+                        self._sanitized_cache = data
         except Exception:
             self._sanitized_cache = {}
+
+    def reload_sanitize_cache(self):
+        """Reload sanitize cache from disk.
+
+        Useful when other threads or helper converter instances update the
+        persistent cache (e.g., parallel batch normalization).
+        """
+        self._load_sanitize_cache()
 
     def _save_sanitize_cache(self):
         try:
             import json
-            self._cache_path.write_text(json.dumps(self._sanitized_cache), encoding="utf-8")
+            with _SANITIZE_CACHE_LOCK:
+                # Merge with on-disk data to avoid losing updates when multiple
+                # converters save concurrently (e.g., parallel normalization).
+                merged = {}
+                try:
+                    if self._cache_path.exists():
+                        on_disk = json.loads(self._cache_path.read_text(encoding="utf-8"))
+                        if isinstance(on_disk, dict):
+                            merged.update(on_disk)
+                except Exception:
+                    pass
+                merged.update(self._sanitized_cache)
+                tmp_path = self._cache_path.with_suffix(self._cache_path.suffix + ".tmp")
+                tmp_path.write_text(json.dumps(merged), encoding="utf-8")
+                tmp_path.replace(self._cache_path)
+                self._sanitized_cache = merged
         except Exception:
             pass
 
@@ -69,9 +97,10 @@ class AudioConverter:
     def clear_sanitize_cache(self) -> bool:
         """Clear sanitize cache from memory and disk."""
         try:
-            self._sanitized_cache.clear()
-            if self._cache_path.exists():
-                self._cache_path.unlink(missing_ok=True)
+            with _SANITIZE_CACHE_LOCK:
+                self._sanitized_cache.clear()
+                if self._cache_path.exists():
+                    self._cache_path.unlink(missing_ok=True)
             return True
         except Exception:
             return False
@@ -416,9 +445,10 @@ class AudioConverter:
                 encoder_template.unlink(missing_ok=True)
                 encoder_wav.unlink(missing_ok=True)
                 encoder_output_scd.unlink(missing_ok=True)
-                
-                # Clean up any other temp files in encoder directory
-                self._cleanup_encoder_temps(encoder_dir)
+
+                # IMPORTANT: Do not glob-delete input_*.wav here.
+                # This function can run in parallel across multiple files.
+                # We only delete the exact files we created above.
             
         except subprocess.TimeoutExpired:
             logging.error("SCD conversion timed out")
@@ -428,18 +458,12 @@ class AudioConverter:
             return False
     
     def _cleanup_encoder_temps(self, encoder_dir):
-        """Clean up temporary files from encoder directory"""
-        try:
-            # Clean up any remaining temp files matching our patterns
-            temp_patterns = ['temp_template_*.scd', 'input_*.wav']
-            for pattern in temp_patterns:
-                for temp_file in encoder_dir.glob(pattern):
-                    try:
-                        temp_file.unlink(missing_ok=True)
-                    except:
-                        pass
-        except:
-            pass
+        """Legacy no-op cleanup.
+
+        Intentionally left blank: broad glob deletes are not safe when running
+        multiple conversions in parallel.
+        """
+        return
     
     def cleanup_temp_files(self) -> None:
         """Clean up all temporary files"""
@@ -539,7 +563,20 @@ class AudioConverter:
                 needs_loudnorm = abs(loudness['input_i'] - target_lufs) > lufs_tolerance
 
             if needs_loudnorm:
-                self.normalize_wav_loudness(wav_path, target_i=target_lufs, target_tp=-1.0)
+                # Avoid running the loudnorm analysis twice. We already measured above,
+                # so go straight to the second-pass normalization.
+                channels, sample_rate, sample_fmt = analyzer._read_wav_format(wav_path)
+                normalized = analyzer.apply_loudnorm_second_pass(
+                    wav_path,
+                    loudness,
+                    target_i=target_lufs,
+                    target_tp=-1.0,
+                    channels=channels,
+                    sample_rate=sample_rate,
+                    sample_fmt=sample_fmt,
+                )
+                if normalized:
+                    logging.info(f"Normalized WAV to {target_lufs} LUFS / -1.0 dBTP: {wav_path}")
 
                 temp_fd, temp_scd = tempfile.mkstemp(suffix=".scd", prefix="scdtoolkit_norm_")
                 os.close(temp_fd)
