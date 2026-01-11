@@ -30,7 +30,7 @@ class UpdateChecker(QThread):
         """Check GitHub releases for updates"""
         try:
             # GitHub API endpoint for latest release
-            api_url = "https://api.github.com/repos/skylect-dev/SCDToolkit/releases/latest"
+            api_url = "https://api.github.com/repos/skylect-dev/SCDToolkit2/releases/latest"
             
             # Create request with user agent
             request = urllib.request.Request(api_url)
@@ -44,7 +44,7 @@ class UpdateChecker(QThread):
             current_version = f"v{__version__.split(' ')[0]}"
             
             # Compare versions (simple string comparison for now)
-            if latest_version > current_version:
+            if True:
                 # Find the executable asset
                 exe_asset = None
                 zip_asset = None
@@ -130,9 +130,13 @@ class AutoUpdater:
     def handle_update_available(self, update_info):
         """Handle when an update is available"""
         version = update_info['version']
-        notes = update_info['release_notes'][:500] + "..." if len(update_info['release_notes']) > 500 else update_info['release_notes']
+        notes_raw = update_info.get('release_notes')
+        if not notes_raw:
+            notes = "(No release notes provided)"
+        else:
+            notes = notes_raw[:500] + "..." if len(notes_raw) > 500 else notes_raw
         
-        msg = f"SCDToolkit {version} is available!\n\n"
+        msg = f"SCDToolkit2 {version} is available!\n\n"
         msg += f"Current version: v{__version__.split(' ')[0]}\n"
         msg += f"New version: {version}\n\n"
         msg += "Release notes:\n" + notes + "\n\n"

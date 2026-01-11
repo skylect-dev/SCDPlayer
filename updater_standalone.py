@@ -101,46 +101,68 @@ class UpdateWorker(QThread):
             
             time.sleep(0.3)
             
-            # Step 3: Copy files with progress
-            self.progress_updated.emit(60, "Installing update files...")
-            
-            # Get all files to copy for progress tracking
-            all_files = list(source_dir.rglob('*'))
-            files_to_copy = [f for f in all_files if f.is_file()]
-            total_files = len(files_to_copy)
-            
-            copied_files = 0
-            for item in files_to_copy:
-                # Calculate relative path and destination
+            # Step 3: Copy all files from update, preserve scdtoolkit_config.json
+            self.progress_updated.emit(60, "Preparing to install files...")
+
+            config_path = self.install_dir / "scdtoolkit_config.json"
+            config_backup = None
+            if config_path.exists():
+                config_backup = self.install_dir / "scdtoolkit_config_backup.json"
+                shutil.copy2(config_path, config_backup)
+                self.progress_updated.emit(62, "Backed up scdtoolkit_config.json")
+
+            # Remove old app folder and _internal folder
+            for folder_name in ["app", "_internal"]:
+                target = self.install_dir / folder_name
+                if target.exists() and target.is_dir():
+                    shutil.rmtree(target)
+                    self.progress_updated.emit(65, f"Removed old {folder_name} folder")
+
+            # Copy all files and folders from the update ZIP
+            all_items = list(source_dir.iterdir())
+            total_items = len(all_items)
+            copied = 0
+
+            # Handle new updater.exe separately
+            new_updater_path = None
+            for item in all_items:
+                if item.name == 'updater.exe':
+                    new_updater_path = item
+                    break
+
+            for item in all_items:
                 rel_path = item.relative_to(source_dir)
                 dest_path = self.install_dir / rel_path
                 
-                # Skip the updater itself to avoid conflicts
-                if dest_path.name in ['updater.exe', 'updater_standalone.exe']:
+                # Skip config backup and temp folder
+                if item.name in ['scdtoolkit_config_backup.json', 'temp_update']:
                     continue
                 
-                # Delete legacy SCDPlayer.exe if it exists
-                if dest_path.name == 'SCDPlayer.exe':
-                    legacy_exe = self.install_dir / 'SCDPlayer.exe'
-                    if legacy_exe.exists():
-                        try:
-                            legacy_exe.unlink()
-                            self.progress_updated.emit(file_progress, "Removed legacy SCDPlayer.exe")
-                        except:
-                            pass
+                # For updater.exe, copy to a staging location
+                if item.name == 'updater.exe':
+                    staging_updater = self.install_dir / "updater_new.exe"
+                    shutil.copy2(item, staging_updater)
+                    self.progress_updated.emit(72, "Staged new updater.exe")
+                    continue
                 
-                # Create parent directories if needed
-                dest_path.parent.mkdir(parents=True, exist_ok=True)
+                if item.is_dir():
+                    if dest_path.exists():
+                        shutil.rmtree(dest_path)
+                    shutil.copytree(item, dest_path)
+                else:
+                    dest_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(item, dest_path)
                 
-                # Copy file
-                shutil.copy2(item, dest_path)
-                copied_files += 1
-                
-                # Update progress (60-85% range for file copying)
-                file_progress = 60 + int((copied_files / total_files) * 25)
-                self.progress_updated.emit(file_progress, f"Copied {copied_files}/{total_files} files")
-            
-            self.progress_updated.emit(90, "Update files installed successfully")
+                copied += 1
+                progress = 65 + int((copied / total_items) * 25)
+                self.progress_updated.emit(progress, f"Installing files ({copied}/{total_items})")
+
+            # Restore config
+            if config_backup:
+                if config_backup.exists():
+                    config_backup.unlink()
+
+            self.progress_updated.emit(90, "Files installed successfully")
             time.sleep(0.5)
             
             # Step 4: Cleanup
@@ -148,6 +170,25 @@ class UpdateWorker(QThread):
             shutil.rmtree(temp_dir)
             if os.path.exists(self.zip_path):
                 os.remove(self.zip_path)
+            
+            # Create batch script to swap updater.exe after this process exits
+            batch_script = self.install_dir / "swap_updater.bat"
+            batch_content = f'''@echo off
+REM Wait for updater to exit
+timeout /t 2 /nobreak >nul
+REM Replace old updater with new one
+if exist "updater_new.exe" (
+    del updater.exe
+    ren updater_new.exe updater.exe
+)
+REM Delete this script
+del "%~f0"
+'''
+            with open(batch_script, 'w') as f:
+                f.write(batch_content)
+            
+            # Start batch script in background (will execute after updater exits)
+            subprocess.Popen([str(batch_script)], shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
             
             self.progress_updated.emit(100, "Update complete!")
             time.sleep(0.5)
